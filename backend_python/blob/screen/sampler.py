@@ -15,10 +15,13 @@ class ScreenSampler:
             if not self.privacy_shield.is_active:
                 try:
                     if self.config.screen_capture_mode == "active_window":
-                        # In a real implementation, we would get the active window bounding box
-                        # using X11/Win32 APIs. For now we just grab the screen.
-                        logger.debug("Sampling active window (stub)")
-                        img = ImageGrab.grab()
+                        win_info = self.privacy_shield.monitor.get_active_window()
+                        if win_info and win_info.bbox:
+                            logger.debug(f"Sampling active window bbox: {win_info.bbox}")
+                            img = ImageGrab.grab(bbox=win_info.bbox)
+                        else:
+                            logger.debug("Active window bbox not found, falling back to full screen")
+                            img = ImageGrab.grab(all_screens=True)
                     else:
                         logger.debug("Sampling full screen")
                         img = ImageGrab.grab(all_screens=True)
