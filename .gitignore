@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+venv/
+env/
+.env
+
+# C++ Build
+build/
+bin/
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+
+# Database / Local Data
+data/chroma_db/
+*.db
+*.sqlite3
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/

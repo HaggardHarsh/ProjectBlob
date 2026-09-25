@@ -1,0 +1,248 @@
+syntax = "proto3";
+package blob;
+
+option cc_enable_arenas = true;
+
+// ─────────────────────────────────────────────────────────────────────
+// BlobService — Bidirectional IPC between C++ overlay and Python AI
+// ─────────────────────────────────────────────────────────────────────
+service BlobService {
+  // Primary channel: bidirectional event stream for real-time comms
+  rpc EventStream(stream FrontendEvent) returns (stream BackendEvent);
+
+  // One-shot RPCs for structured request/response patterns
+  rpc RegisterSkill(SkillRegistration) returns (SkillRegistrationResponse);
+  rpc GetBlobState(Empty) returns (BlobState);
+  rpc SendUserMessage(UserMessage) returns (AssistantResponse);
+  rpc UpdateConfig(ConfigUpdate) returns (ConfigUpdateResponse);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Frontend → Backend Events
+// ─────────────────────────────────────────────────────────────────────
+message FrontendEvent {
+  uint64 timestamp_ms = 15;  // Unix epoch milliseconds
+
+  oneof event {
+    UserInteraction user_interaction = 1;
+    SkillPillDrop skill_pill_drop = 2;
+    OverlayStateChange overlay_state = 3;
+    UserMessage user_message = 4;
+    HeartbeatPing heartbeat = 5;
+  }
+}
+
+message UserInteraction {
+  enum InteractionType {
+    CLICK = 0;
+    DOUBLE_CLICK = 1;
+    PET = 2;         // sustained drag gesture on blob body
+    POKE = 3;        // quick tap
+    RIGHT_CLICK = 4;
+  }
+  InteractionType type = 1;
+  int32 x = 2;
+  int32 y = 3;
+  float velocity = 4;  // for PET: drag speed
+}
+
+message SkillPillDrop {
+  string file_path = 1;
+  string skill_name = 2;  // extracted from YAML if available
+  bytes file_hash = 3;    // SHA-256 for integrity verification
+}
+
+message OverlayStateChange {
+  bool is_visible = 1;
+  bool is_minimized = 2;
+  int32 screen_width = 3;
+  int32 screen_height = 4;
+}
+
+message UserMessage {
+  string text = 1;
+  repeated string attachments = 2;  // local file paths
+  string conversation_id = 3;      // for multi-turn context
+}
+
+message HeartbeatPing {
+  uint64 frontend_uptime_ms = 1;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Backend → Frontend Events
+// ─────────────────────────────────────────────────────────────────────
+message BackendEvent {
+  uint64 timestamp_ms = 15;
+
+  oneof event {
+    EmoteCommand emote = 1;
+    StateCommand state = 2;
+    NotificationBubble notification = 3;
+    SkillAcknowledgment skill_ack = 4;
+    PrivacyShieldEvent privacy = 5;
+    ColorShiftEvent color_shift = 6;
+    HeartbeatPong heartbeat = 7;
+    BlobPositionHint position_hint = 8;
+  }
+}
+
+message EmoteCommand {
+  enum Emote {
+    IDLE = 0;
+    HAPPY = 1;
+    TIRED = 2;
+    EXCITED = 3;
+    THINKING = 4;
+    OFFER_COFFEE = 5;
+    CELEBRATE = 6;
+    SHY = 7;
+    SLEEPING = 8;
+    EATING = 9;
+    CONFUSED = 10;
+    PROUD = 11;
+    WORRIED = 12;
+    PLAYFUL = 13;
+  }
+  Emote emote = 1;
+  float intensity = 2;     // 0.0 - 1.0
+  uint32 duration_ms = 3;  // 0 = until next emote
+  string trigger_reason = 4;  // debug: why this emote was chosen
+}
+
+message StateCommand {
+  enum State {
+    NORMAL = 0;
+    SLEEP = 1;
+    CRAWL = 2;
+    DIVIDE = 3;      // celebration: blob splits into two briefly
+    MERGE = 4;       // two blobs merge back
+    HIDE = 5;        // blob slides off-screen
+    BLINDFOLD = 6;   // privacy shield: blob puts on sleeping mask
+    BOUNCE = 7;      // excited bouncing
+  }
+  State state = 1;
+  map<string, string> params = 2;  // state-specific parameters
+}
+
+message NotificationBubble {
+  string text = 1;
+  uint32 display_ms = 2;  // how long to show (0 = until dismissed)
+  enum Priority {
+    LOW = 0;
+    NORMAL = 1;
+    HIGH = 2;
+  }
+  Priority priority = 3;
+  bool actionable = 4;     // show accept/dismiss buttons
+  string action_label = 5; // text for the action button
+}
+
+message SkillAcknowledgment {
+  string skill_name = 1;
+  bool success = 2;
+  string description = 3;   // human-readable summary
+  string error_message = 4; // populated on failure
+}
+
+message PrivacyShieldEvent {
+  bool activated = 1;
+  string reason = 2;         // e.g., "Detected: 1Password"
+  string blocked_process = 3;
+}
+
+message ColorShiftEvent {
+  float r = 1;  // 0.0 - 1.0
+  float g = 2;
+  float b = 3;
+  float a = 4;
+  uint32 transition_ms = 5;  // smooth transition duration
+}
+
+message HeartbeatPong {
+  uint64 backend_uptime_ms = 1;
+  float memory_usage_mb = 2;
+  bool llm_loaded = 3;
+  bool privacy_shield_active = 4;
+}
+
+message BlobPositionHint {
+  enum Anchor {
+    BOTTOM_RIGHT = 0;
+    BOTTOM_LEFT = 1;
+    TOP_RIGHT = 2;
+    TOP_LEFT = 3;
+    CENTER = 4;
+    FOLLOW_CURSOR = 5;
+  }
+  Anchor anchor = 1;
+  int32 offset_x = 2;
+  int32 offset_y = 3;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Skill Registration
+// ─────────────────────────────────────────────────────────────────────
+message SkillRegistration {
+  string name = 1;
+  string description = 2;
+  string module_path = 3;
+  repeated string required_permissions = 4;
+  SkillMetadata metadata = 5;
+}
+
+message SkillMetadata {
+  string icon = 1;
+  string color_hex = 2;  // e.g., "#F05032"
+  string author = 3;
+  string version = 4;
+  repeated string trigger_phrases = 5;
+}
+
+message SkillRegistrationResponse {
+  bool success = 1;
+  string error = 2;
+  string skill_id = 3;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// State Queries
+// ─────────────────────────────────────────────────────────────────────
+message BlobState {
+  EmoteCommand.Emote current_emote = 1;
+  StateCommand.State current_state = 2;
+  repeated string loaded_skills = 3;
+  bool privacy_shield_active = 4;
+  float energy_level = 5;     // 0.0 - 1.0 (affects animation speed)
+  uint64 uptime_ms = 6;
+  uint32 memories_stored = 7;
+  AssistantResponse last_response = 8;
+}
+
+message AssistantResponse {
+  string text = 1;
+  EmoteCommand emote = 2;
+  repeated SkillInvocation skills_used = 3;
+}
+
+message SkillInvocation {
+  string skill_name = 1;
+  string tool_name = 2;
+  string result_summary = 3;
+  bool success = 4;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Configuration
+// ─────────────────────────────────────────────────────────────────────
+message ConfigUpdate {
+  map<string, string> settings = 1;  // key-value config overrides
+}
+
+message ConfigUpdateResponse {
+  bool success = 1;
+  string error = 2;
+  map<string, string> effective_config = 3;
+}
+
+message Empty {}

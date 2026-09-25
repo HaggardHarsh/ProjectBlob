@@ -1,0 +1,52 @@
+skill:
+  name: "Git Status Checker"
+  version: "1.0.0"
+  description: "Check git repository status, recent commits, and branch information"
+  author: "BlobBuiltins"
+  color: "#F05032"
+  icon: "git-branch"
+
+  permissions:
+    - shell.execute      # Run git commands
+    - filesystem.read    # Read .git directory
+
+  triggers:
+    - "git status"
+    - "what changed"
+    - "recent commits"
+    - "git log"
+    - "branch"
+    - "uncommitted changes"
+    - "what did I work on"
+
+  tools:
+    - name: "git_status"
+      description: "Get current git status (modified, staged, untracked files)"
+      command: "git status --porcelain"
+
+    - name: "git_log_short"
+      description: "Get last 10 commits in short format"
+      command: "git log --oneline -10"
+
+    - name: "git_log_today"
+      description: "Get today's commits with details"
+      command: "git log --since='midnight' --pretty=format:'%h %s (%cr)'"
+
+    - name: "git_branch"
+      description: "Show current branch and list all branches"
+      command: "git branch -a"
+
+    - name: "git_diff_stat"
+      description: "Show diff statistics for uncommitted changes"
+      command: "git diff --stat"
+
+    - name: "git_stash_list"
+      description: "List stashed changes"
+      command: "git stash list"
+
+  response_template: |
+    Here's your git status:
+    {result}
+
+  emote_on_success: "HAPPY"
+  emote_on_failure: "CONFUSED"
