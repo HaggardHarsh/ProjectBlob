@@ -31,6 +31,13 @@ int main(int argc, char* argv[]) {
         else if (arg == "--ipc-address" && i + 1 < argc) ipc_address = argv[++i];
     }
 
+    // On Linux systems with Wayland/XWayland, SDL2 defaults to the native Wayland
+    // driver which prohibits desktop overlay positioning (SDL_SetWindowPosition is a no-op
+    // and SDL_GetGlobalMouseState returns 0,0). Prefer X11/XWayland when DISPLAY is present.
+    if (!std::getenv("SDL_VIDEODRIVER") && std::getenv("DISPLAY")) {
+        setenv("SDL_VIDEODRIVER", "x11", 1);
+    }
+
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_TIMER) < 0) {
         std::cerr << "Failed to initialize SDL2: " << SDL_GetError() << std::endl;
         return -1;
@@ -80,7 +87,12 @@ int main(int argc, char* argv[]) {
                 if (window.isDragging()) {
                     int gx, gy;
                     SDL_GetGlobalMouseState(&gx, &gy);
-                    window.updateDrag(gx, gy);
+                    if (gx != 0 || gy != 0) {
+                        window.updateDrag(gx, gy);
+                    } else {
+                        // Fallback to relative motion delta if global mouse state query is restricted
+                        window.updateDragRelative(event.motion.xrel, event.motion.yrel);
+                    }
                 }
             }
             else if (event.type == SDL_MOUSEBUTTONUP &&

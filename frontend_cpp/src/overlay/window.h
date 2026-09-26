@@ -21,6 +21,7 @@ public:
     /// Dragging helpers — call from event loop.
     void startDrag(int globalMouseX, int globalMouseY);
     void updateDrag(int globalMouseX, int globalMouseY);
+    void updateDragRelative(int xrel, int yrel);
     void stopDrag();
     bool isDragging() const { return dragging_; }
 

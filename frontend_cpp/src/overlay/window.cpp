@@ -44,6 +44,7 @@ void OverlayWindow::updateShape(SDL_Surface* shapeSurface) {
 
 void OverlayWindow::startDrag(int gx, int gy) {
     dragging_ = true;
+    SDL_CaptureMouse(SDL_TRUE);
     int wx, wy;
     SDL_GetWindowPosition(window_, &wx, &wy);
     dragWinX_ = wx;
@@ -59,6 +60,14 @@ void OverlayWindow::updateDrag(int gx, int gy) {
     SDL_SetWindowPosition(window_, dragWinX_ + dx, dragWinY_ + dy);
 }
 
+void OverlayWindow::updateDragRelative(int xrel, int yrel) {
+    if (!dragging_) return;
+    int wx, wy;
+    SDL_GetWindowPosition(window_, &wx, &wy);
+    SDL_SetWindowPosition(window_, wx + xrel, wy + yrel);
+}
+
 void OverlayWindow::stopDrag() {
     dragging_ = false;
+    SDL_CaptureMouse(SDL_FALSE);
 }
