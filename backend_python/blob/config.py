@@ -2,6 +2,12 @@ import os
 import yaml
 from pydantic import BaseModel, Field
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 class BlobConfig(BaseModel):
     ipc_address: str = Field(default="localhost:50051")
     model_name: str = Field(default="nvidia/Nemotron-3_5-Lightning") # NVIDIA Open Source Model
