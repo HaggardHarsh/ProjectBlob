@@ -9,6 +9,7 @@ htmlcov/
 venv/
 env/
 .env
+.env.local
 
 # C++ Build
 build/
