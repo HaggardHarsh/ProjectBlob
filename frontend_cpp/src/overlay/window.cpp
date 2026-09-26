@@ -1,63 +1,64 @@
 #include "window.h"
 #include <iostream>
 
-#ifdef _WIN32
-#include <SDL2/SDL_syswm.h>
-#include <windows.h>
-#elif defined(__linux__)
-#include <SDL2/SDL_syswm.h>
-#include <X11/Xlib.h>
-#include <X11/extensions/shape.h>
-#endif
+OverlayWindow::OverlayWindow(int w, int h) : width_(w), height_(h) {
+    // SDL_CreateShapedWindow creates a non-rectangular window whose visible
+    // area is determined by an alpha-mask surface passed to SDL_SetWindowShape.
+    window_ = SDL_CreateShapedWindow(
+        "Blob",
+        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+        width_, height_,
+        SDL_WINDOW_BORDERLESS | SDL_WINDOW_ALWAYS_ON_TOP | SDL_WINDOW_ALLOW_HIGHDPI);
 
-OverlayWindow::OverlayWindow(int w, int h) : width(w), height(h) {
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-
-    // Alpha blending and transparency
-    SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
-    SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8);
-
-    window = SDL_CreateWindow("Blob Overlay",
-                              SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                              width, height,
-                              SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS | SDL_WINDOW_ALWAYS_ON_TOP | SDL_WINDOW_ALLOW_HIGHDPI);
-    
-    if (!window) {
-        throw std::runtime_error("Window creation failed: " + std::string(SDL_GetError()));
+    if (!window_) {
+        // Fallback to a normal window if shaped windows aren't supported
+        std::cerr << "Shaped window not available (" << SDL_GetError()
+                  << "), falling back to normal window.\n";
+        window_ = SDL_CreateWindow(
+            "Blob",
+            SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+            width_, height_,
+            SDL_WINDOW_BORDERLESS | SDL_WINDOW_ALWAYS_ON_TOP);
+        if (!window_) {
+            throw std::runtime_error("Window creation failed: " + std::string(SDL_GetError()));
+        }
     }
 
-    glContext = SDL_GL_CreateContext(window);
-    if (!glContext) {
-        throw std::runtime_error("GL context creation failed: " + std::string(SDL_GetError()));
-    }
-    
     SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
-    makeClickThrough(true);
 }
 
 OverlayWindow::~OverlayWindow() {
-    if (glContext) SDL_GL_DeleteContext(glContext);
-    if (window) SDL_DestroyWindow(window);
+    if (window_) SDL_DestroyWindow(window_);
 }
 
-void OverlayWindow::makeClickThrough(bool clickThrough) {
-#ifdef _WIN32
-    SDL_SysWMinfo wmInfo;
-    SDL_VERSION(&wmInfo.version);
-    if (SDL_GetWindowWMInfo(window, &wmInfo)) {
-        HWND hwnd = wmInfo.info.win.window;
-        LONG lExStyle = GetWindowLong(hwnd, GWL_EXSTYLE);
-        if (clickThrough) {
-            SetWindowLong(hwnd, GWL_EXSTYLE, lExStyle | WS_EX_TRANSPARENT | WS_EX_LAYERED);
-        } else {
-            SetWindowLong(hwnd, GWL_EXSTYLE, (lExStyle & ~WS_EX_TRANSPARENT) | WS_EX_LAYERED);
-        }
+void OverlayWindow::updateShape(SDL_Surface* shapeSurface) {
+    if (!shapeSurface) return;
+    if (SDL_IsShapedWindow(window_)) {
+        SDL_WindowShapeMode mode;
+        mode.mode = ShapeModeBinarizeAlpha;
+        mode.parameters.binarizationCutoff = 1;
+        SDL_SetWindowShape(window_, shapeSurface, &mode);
+        shapedOnce_ = true;
     }
-#elif defined(__linux__)
-    // Simple clickthrough logic for X11 if needed.
-#endif
+}
+
+void OverlayWindow::startDrag(int gx, int gy) {
+    dragging_ = true;
+    int wx, wy;
+    SDL_GetWindowPosition(window_, &wx, &wy);
+    dragWinX_ = wx;
+    dragWinY_ = wy;
+    dragMouseX_ = gx;
+    dragMouseY_ = gy;
+}
+
+void OverlayWindow::updateDrag(int gx, int gy) {
+    if (!dragging_) return;
+    int dx = gx - dragMouseX_;
+    int dy = gy - dragMouseY_;
+    SDL_SetWindowPosition(window_, dragWinX_ + dx, dragWinY_ + dy);
+}
+
+void OverlayWindow::stopDrag() {
+    dragging_ = false;
 }
