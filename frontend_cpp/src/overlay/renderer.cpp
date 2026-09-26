@@ -4,15 +4,15 @@
 #include <cmath>
 
 // ════════════════════════════════════════════════════════════════
-//  Colour palette — Rimuru slime
+//  Colour palette — Rimuru Tempest slime
 // ════════════════════════════════════════════════════════════════
-static const Color COL_OUTER     = {185, 215, 240, 160};   // translucent light blue
-static const Color COL_OUTLINE   = { 95, 140, 190, 200};   // thin blue border
-static const Color COL_INNER     = {130, 170, 215, 200};   // darker inner core
-static const Color COL_INNER_LT  = {155, 195, 235, 180};   // lighter part of inner
-static const Color COL_HIGHLIGHT = {255, 255, 255, 160};   // specular white
-static const Color COL_EYE       = { 50,  60,  85, 255};   // dark eye dot
-static const Color COL_MOUTH     = { 65,  85, 130, 180};   // whisker lines
+static const Color COL_OUTER     = {175, 210, 240, 165};   // translucent light blue body
+static const Color COL_OUTLINE   = { 80, 130, 185, 210};   // blue outline
+static const Color COL_INNER     = {115, 155, 200, 210};   // dark inner core
+static const Color COL_INNER_LT  = {145, 190, 230, 170};   // lighter inner highlight
+static const Color COL_HIGHLIGHT = {245, 250, 255, 175};   // specular white
+static const Color COL_EYE       = { 40,  50,  75, 255};   // dark eye
+static const Color COL_MOUTH     = { 55,  75, 120, 210};   // whisker lines
 
 // ════════════════════════════════════════════════════════════════
 //  Construction / Destruction
@@ -21,15 +21,11 @@ static const Color COL_MOUTH     = { 65,  85, 130, 180};   // whisker lines
 Renderer::Renderer(SDL_Window* window, int w, int h) : width_(w), height_(h) {
     sdlRenderer_ = SDL_CreateRenderer(
         window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-    if (!sdlRenderer_) {
-        std::cerr << "HW renderer failed, trying SW\n";
+    if (!sdlRenderer_)
         sdlRenderer_ = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
-    }
     if (!sdlRenderer_)
         throw std::runtime_error("SDL_CreateRenderer failed");
-
     SDL_SetRenderDrawBlendMode(sdlRenderer_, SDL_BLENDMODE_BLEND);
-
     shapeSurface_ = SDL_CreateRGBSurface(
         0, width_, height_, 32,
         0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000);
@@ -39,10 +35,6 @@ Renderer::~Renderer() {
     if (shapeSurface_) SDL_FreeSurface(shapeSurface_);
     if (sdlRenderer_)  SDL_DestroyRenderer(sdlRenderer_);
 }
-
-// ════════════════════════════════════════════════════════════════
-//  Frame management
-// ════════════════════════════════════════════════════════════════
 
 void Renderer::clear() {
     SDL_SetRenderDrawColor(sdlRenderer_, 0, 0, 0, 0);
@@ -55,7 +47,7 @@ void Renderer::clear() {
 void Renderer::present() { SDL_RenderPresent(sdlRenderer_); }
 
 // ════════════════════════════════════════════════════════════════
-//  Outer body — filled triangle fan, translucent light blue
+//  Outer body — translucent dome, gradient from lighter centre
 // ════════════════════════════════════════════════════════════════
 
 void Renderer::drawOuterBody(const std::vector<Vec2>& verts) {
@@ -66,12 +58,11 @@ void Renderer::drawOuterBody(const std::vector<Vec2>& verts) {
     cx /= (float)verts.size();
     cy /= (float)verts.size();
 
-    // Slightly lighter centre for a 3-D gel look
     Color lighter = {
-        (uint8_t)std::min(255, COL_OUTER.r + 30),
-        (uint8_t)std::min(255, COL_OUTER.g + 25),
+        (uint8_t)std::min(255, COL_OUTER.r + 35),
+        (uint8_t)std::min(255, COL_OUTER.g + 30),
         (uint8_t)std::min(255, COL_OUTER.b + 15),
-        COL_OUTER.a
+        (uint8_t)std::min(255, COL_OUTER.a + 20)
     };
 
     auto toSDL = [](Color c) -> SDL_Color { return {c.r, c.g, c.b, c.a}; };
@@ -79,26 +70,16 @@ void Renderer::drawOuterBody(const std::vector<Vec2>& verts) {
     for (size_t i = 0; i < verts.size(); ++i) {
         size_t next = (i + 1) % verts.size();
         SDL_Vertex v0, v1, v2;
-
-        v0.position  = {cx, cy};
-        v0.color     = toSDL(lighter);
-        v0.tex_coord = {0, 0};
-
-        v1.position  = {verts[i].x, verts[i].y};
-        v1.color     = toSDL(COL_OUTER);
-        v1.tex_coord = {0, 0};
-
-        v2.position  = {verts[next].x, verts[next].y};
-        v2.color     = toSDL(COL_OUTER);
-        v2.tex_coord = {0, 0};
-
+        v0.position  = {cx, cy};        v0.color = toSDL(lighter); v0.tex_coord = {0,0};
+        v1.position  = {verts[i].x, verts[i].y};   v1.color = toSDL(COL_OUTER);  v1.tex_coord = {0,0};
+        v2.position  = {verts[next].x, verts[next].y}; v2.color = toSDL(COL_OUTER);  v2.tex_coord = {0,0};
         SDL_Vertex tri[3] = {v0, v1, v2};
         SDL_RenderGeometry(sdlRenderer_, nullptr, tri, 3, nullptr, 0);
     }
 }
 
 // ════════════════════════════════════════════════════════════════
-//  Outline — thin blue border connecting vertices
+//  Outline — blue border, 2px thick
 // ════════════════════════════════════════════════════════════════
 
 void Renderer::drawOutline(const std::vector<Vec2>& verts) {
@@ -107,130 +88,134 @@ void Renderer::drawOutline(const std::vector<Vec2>& verts) {
                            COL_OUTLINE.b, COL_OUTLINE.a);
     for (size_t i = 0; i < verts.size(); ++i) {
         size_t next = (i + 1) % verts.size();
-        SDL_RenderDrawLineF(sdlRenderer_,
-                            verts[i].x, verts[i].y,
-                            verts[next].x, verts[next].y);
-        // Double-up for a slightly thicker line
-        SDL_RenderDrawLineF(sdlRenderer_,
-                            verts[i].x, verts[i].y + 1,
-                            verts[next].x, verts[next].y + 1);
+        for (int off = -1; off <= 1; ++off) {
+            SDL_RenderDrawLineF(sdlRenderer_,
+                                verts[i].x, verts[i].y + off,
+                                verts[next].x, verts[next].y + off);
+        }
     }
 }
 
 // ════════════════════════════════════════════════════════════════
-//  Inner "core" body — darker blue blob inside the dome
-//  This mimics the Rimuru inner body silhouette.
+//  Inner "core" body — the darker blob visible inside Rimuru
+//  Much larger and more prominent than before
 // ════════════════════════════════════════════════════════════════
 
 void Renderer::drawInnerBody(float cx, float cy, float rx, float ry,
                              float time) {
-    // The inner core is a small blob shape sitting in the lower portion.
-    // It has a "head" on the left and a "body" extending right, like
-    // the reference image.
+    // The inner body is a blob shape sitting inside the dome.
+    // Head on the left, body extending right — matching reference.
+    float breathe = std::sin(time * 1.3f) * 2.0f;
 
-    float bodyX  = cx + rx * 0.02f;        // slightly right of centre
-    float bodyY  = cy + ry * 0.25f;        // lower portion
-    float bodyRX = rx * 0.38f;
-    float bodyRY = ry * 0.28f;
-
-    float headX  = cx - rx * 0.18f;        // head to the left
-    float headY  = cy + ry * 0.02f;
-    float headR  = rx * 0.22f;
-
-    // Subtle breathing animation
-    float breathe = std::sin(time * 1.5f) * 1.5f;
-    bodyRY += breathe * 0.3f;
-    headR  += breathe * 0.15f;
-
-    // Draw body ellipse
+    // === Main body oval (centre-right of dome) ===
+    float bodyX  = cx + rx * 0.05f;
+    float bodyY  = cy + ry * 0.15f;
+    float bodyRX = rx * 0.42f;
+    float bodyRY = ry * 0.28f + breathe * 0.4f;
     fillEllipse((int)bodyX, (int)bodyY, (int)bodyRX, (int)bodyRY, COL_INNER);
 
-    // Draw head circle (overlapping body to form connected shape)
+    // === Head circle (left side, overlapping body) ===
+    float headX  = cx - rx * 0.20f;
+    float headY  = cy - ry * 0.05f;
+    float headR  = rx * 0.28f + breathe * 0.2f;
     fillCircle((int)headX, (int)headY, (int)headR, COL_INNER);
 
-    // Lighter highlight stripe on the inner body for depth
-    fillEllipse((int)(bodyX - bodyRX * 0.15f), (int)(bodyY - bodyRY * 0.3f),
-                (int)(bodyRX * 0.5f), (int)(bodyRY * 0.35f), COL_INNER_LT);
+    // === Lighter highlight on the inner body for depth ===
+    fillEllipse((int)(headX + headR * 0.1f), (int)(headY - headR * 0.25f),
+                (int)(headR * 0.55f), (int)(headR * 0.4f), COL_INNER_LT);
 }
 
 // ════════════════════════════════════════════════════════════════
-//  Specular highlights — white ovals on upper-left
+//  Specular highlights — white glossy spots, upper-left
 // ════════════════════════════════════════════════════════════════
 
 void Renderer::drawHighlights(float cx, float cy, float rx, float ry) {
-    // Large highlight — upper-left of dome
-    float h1x = cx - rx * 0.30f;
+    // Large oval highlight — upper left of dome
+    float h1x = cx - rx * 0.32f;
     float h1y = cy - ry * 0.55f;
-    fillEllipse((int)h1x, (int)h1y, (int)(rx * 0.18f), (int)(ry * 0.14f),
-                COL_HIGHLIGHT);
+    fillEllipse((int)h1x, (int)h1y,
+                (int)(rx * 0.20f), (int)(ry * 0.13f), COL_HIGHLIGHT);
 
-    // Small highlight — just below and left of the large one
-    float h2x = cx - rx * 0.48f;
-    float h2y = cy - ry * 0.35f;
-    fillCircle((int)h2x, (int)h2y, (int)(rx * 0.06f), COL_HIGHLIGHT);
+    // Medium circle highlight — below and left
+    float h2x = cx - rx * 0.50f;
+    float h2y = cy - ry * 0.32f;
+    fillCircle((int)h2x, (int)h2y, (int)(rx * 0.08f), COL_HIGHLIGHT);
 
-    // Tiny dot highlight
-    float h3x = cx - rx * 0.42f;
-    float h3y = cy - ry * 0.22f;
-    fillCircle((int)h3x, (int)h3y, (int)(rx * 0.03f),
-               {255, 255, 255, 120});
+    // Small dot highlight
+    float h3x = cx - rx * 0.43f;
+    float h3y = cy - ry * 0.18f;
+    fillCircle((int)h3x, (int)h3y, (int)(rx * 0.04f),
+               {255, 255, 255, 130});
 }
 
 // ════════════════════════════════════════════════════════════════
-//  Face — single dot eye + whisker mouth lines
+//  Face — BIG eye + prominent whisker-mouth
 // ════════════════════════════════════════════════════════════════
 
 void Renderer::drawFace(float cx, float cy, float rx, float ry, float time) {
-    // Eye position — on the inner body's "head" area
-    float eyeX = cx - rx * 0.12f;
-    float eyeY = cy + ry * 0.0f;
-    float eyeR = rx * 0.04f;
+    // ─── EYE ───
+    // Large dark oval on the inner body's "head"
+    float eyeX = cx - rx * 0.14f;
+    float eyeY = cy - ry * 0.02f;
+    float eyeRX = rx * 0.065f;
+    float eyeRY = ry * 0.07f;
 
-    // Subtle look-around animation
-    float lookX = std::sin(time * 0.6f) * 1.0f;
-    float lookY = std::cos(time * 0.9f) * 0.8f;
+    // Subtle look-around
+    float lookX = std::sin(time * 0.5f) * 2.0f;
+    float lookY = std::cos(time * 0.8f) * 1.5f;
 
-    fillCircle((int)(eyeX + lookX), (int)(eyeY + lookY), (int)eyeR, COL_EYE);
+    fillEllipse((int)(eyeX + lookX), (int)(eyeY + lookY),
+                (int)eyeRX, (int)eyeRY, COL_EYE);
 
-    // Whisker/mouth lines — three small horizontal lines extending right
+    // Tiny white eye highlight
+    fillCircle((int)(eyeX + lookX - 1), (int)(eyeY + lookY - 2),
+               (int)(eyeRX * 0.4f), {255, 255, 255, 200});
+
+    // ─── WHISKER MOUTH ───
+    // Three prominent lines extending from the face to the right
     SDL_SetRenderDrawColor(sdlRenderer_, COL_MOUTH.r, COL_MOUTH.g,
                            COL_MOUTH.b, COL_MOUTH.a);
-    float mouthStartX = cx + rx * 0.0f;
-    float mouthY      = cy + ry * 0.20f;
-    float lineLen      = rx * 0.18f;
-    float spacing      = ry * 0.06f;
+
+    float mouthX = cx + rx * 0.02f;
+    float mouthY = cy + ry * 0.15f;
+    float lineLen = rx * 0.22f;
+    float spacing = ry * 0.07f;
 
     for (int i = -1; i <= 1; ++i) {
         float y = mouthY + (float)i * spacing;
-        float angle = (float)i * 0.12f;  // slight splay
-        SDL_RenderDrawLineF(sdlRenderer_,
-                            mouthStartX, y,
-                            mouthStartX + lineLen, y + angle * lineLen);
-        // Thicken
-        SDL_RenderDrawLineF(sdlRenderer_,
-                            mouthStartX, y + 0.5f,
-                            mouthStartX + lineLen, y + angle * lineLen + 0.5f);
+        float splay = (float)i * 0.15f;   // slight fan-out angle
+
+        // Draw 3 parallel lines for thickness
+        for (int t = -1; t <= 1; ++t) {
+            SDL_RenderDrawLineF(sdlRenderer_,
+                                mouthX, y + (float)t * 0.7f,
+                                mouthX + lineLen,
+                                y + splay * lineLen + (float)t * 0.7f);
+        }
     }
 }
 
 // ════════════════════════════════════════════════════════════════
-//  Shape mask — stamp opaque region for SDL_SetWindowShape
+//  Shape mask
 // ════════════════════════════════════════════════════════════════
 
 void Renderer::stampShape(const std::vector<Vec2>& verts, float cx, float cy) {
     if (!shapeSurface_ || verts.empty()) return;
 
-    float maxR = 0;
+    // Find bounding ellipse
+    float maxRX = 0, maxRYup = 0, maxRYdn = 0;
     for (auto& v : verts) {
-        float dx = v.x - cx, dy = v.y - cy;
-        float r = std::sqrt(dx * dx + dy * dy);
-        if (r > maxR) maxR = r;
+        float dx = std::abs(v.x - cx);
+        if (dx > maxRX) maxRX = dx;
+        float dy = v.y - cy;
+        if (dy < 0 && std::abs(dy) > maxRYup) maxRYup = std::abs(dy);
+        if (dy > 0 && dy > maxRYdn) maxRYdn = dy;
     }
+    float maxRY = std::max(maxRYup, maxRYdn);
 
     Uint32 opaque = SDL_MapRGBA(shapeSurface_->format, 255, 255, 255, 255);
-    // Use an ellipse that covers the full dome
     fillEllipseOnSurface(shapeSurface_, (int)cx, (int)cy,
-                         (int)(maxR + 8), (int)(maxR * 0.7f + 8), opaque);
+                         (int)(maxRX + 10), (int)(maxRY + 10), opaque);
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -238,6 +223,7 @@ void Renderer::stampShape(const std::vector<Vec2>& verts, float cx, float cy) {
 // ════════════════════════════════════════════════════════════════
 
 void Renderer::fillCircle(int cx, int cy, int r, Color c) {
+    if (r <= 0) return;
     SDL_SetRenderDrawColor(sdlRenderer_, c.r, c.g, c.b, c.a);
     for (int dy = -r; dy <= r; ++dy) {
         int dx = (int)std::sqrt((float)(r * r - dy * dy));
@@ -257,6 +243,7 @@ void Renderer::fillEllipse(int cx, int cy, int rx, int ry, Color c) {
 
 void Renderer::fillCircleOnSurface(SDL_Surface* surf, int cx, int cy,
                                    int r, Uint32 color) {
+    if (r <= 0) return;
     SDL_LockSurface(surf);
     Uint32* px = (Uint32*)surf->pixels;
     int pitch = surf->pitch / 4;

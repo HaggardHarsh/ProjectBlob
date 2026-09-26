@@ -20,8 +20,8 @@ int main(int argc, char* argv[]) {
     std::srand((unsigned)std::time(nullptr));
 
     // Rimuru dome is wider than tall
-    int width  = 250;
-    int height = 180;
+    int width  = 280;
+    int height = 220;
     std::string ipc_address = "localhost:50051";
 
     for (int i = 1; i < argc; ++i) {
