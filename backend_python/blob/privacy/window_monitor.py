@@ -24,18 +24,24 @@ class WindowMonitor:
     def _get_active_window_linux(self) -> Optional[WindowInfo]:
         try:
             # Requires xdotool to be installed: sudo dnf install xdotool
-            win_id = subprocess.check_output(["xdotool", "getactivewindow"]).decode().strip()
-            title = subprocess.check_output(["xdotool", "getwindowname", win_id]).decode().strip()
+            win_id = subprocess.check_output(["xdotool", "getactivewindow"], stderr=subprocess.DEVNULL).decode().strip()
+            title = subprocess.check_output(["xdotool", "getwindowname", win_id], stderr=subprocess.DEVNULL).decode().strip()
             
-            pid_str = subprocess.check_output(["xdotool", "getwindowpid", win_id]).decode().strip()
-            pid = int(pid_str) if pid_str.isdigit() else 0
+            try:
+                pid_str = subprocess.check_output(["xdotool", "getwindowpid", win_id], stderr=subprocess.DEVNULL).decode().strip()
+                pid = int(pid_str) if pid_str.isdigit() else 0
+            except subprocess.CalledProcessError:
+                pid = 0
             
             process_name = ""
             if pid > 0:
-                process_name = subprocess.check_output(["ps", "-p", str(pid), "-o", "comm="]).decode().strip()
+                try:
+                    process_name = subprocess.check_output(["ps", "-p", str(pid), "-o", "comm="], stderr=subprocess.DEVNULL).decode().strip()
+                except subprocess.CalledProcessError:
+                    pass
 
             # Get Geometry for bounding box
-            geom_output = subprocess.check_output(["xdotool", "getwindowgeometry", win_id]).decode()
+            geom_output = subprocess.check_output(["xdotool", "getwindowgeometry", win_id], stderr=subprocess.DEVNULL).decode()
             # Parse output like:
             # Position: 100,50 (screen: 0)
             # Geometry: 800x600
