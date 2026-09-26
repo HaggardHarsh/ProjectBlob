@@ -11,6 +11,11 @@ class LLMEngine(abc.ABC):
         pass
 
     @abc.abstractmethod
+    async def generate_from_messages(self, messages: list[dict], system_prompt: str) -> any:
+        """Generate from a full message list (for multi-turn ReAct loop)."""
+        pass
+
+    @abc.abstractmethod
     async def generate_streaming(self, prompt: str, context: str, system_prompt: str) -> AsyncIterator[str]:
         pass
 
@@ -34,6 +39,23 @@ class NebiusEngine(LLMEngine):
             kwargs["tools"] = tools
 
         resp = await self.client.chat.completions.create(**kwargs)
+        return resp.choices[0].message
+
+    async def generate_from_messages(self, messages: list[dict], system_prompt: str) -> any:
+        """Generate a response from a full conversation message list.
+        
+        The messages list should already include the system prompt as the first
+        message. If it doesn't, one will be prepended. This method is used by
+        the ReAct loop to maintain multi-turn context with tool observations.
+        """
+        # Ensure system prompt is first
+        if not messages or messages[0].get("role") != "system":
+            messages = [{"role": "system", "content": system_prompt}] + messages
+
+        resp = await self.client.chat.completions.create(
+            model=self.model_name,
+            messages=messages
+        )
         return resp.choices[0].message
 
     async def generate_streaming(self, prompt: str, context: str, system_prompt: str) -> AsyncIterator[str]:

@@ -16,7 +16,8 @@ dependencies = [
     "pillow>=10.0.1",
     "psutil>=5.9.6",
     "pydantic>=2.4.2",
-    "watchdog>=3.0.0"
+    "watchdog>=3.0.0",
+    "dbus-next>=0.2.3"
 ]
 
 [project.optional-dependencies]
