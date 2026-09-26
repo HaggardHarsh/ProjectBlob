@@ -11,85 +11,102 @@
 
 ## What is Blob?
 
-Blob is a living desktop companion — a soft, translucent slime creature that resides on your screen. It passively observes your workflow, builds long-term memory about your projects and habits, offers empathetic check-ins when you've been coding too long, and can learn new skills when you feed it "Skill Pills."
+Blob is a living desktop companion — a soft, translucent slime creature (styled like Rimuru Tempest) that resides on your screen. It observes your workflow, builds long-term memory about your projects and habits, offers empathetic check-ins, and executes real tasks via a ReAct skill loop.
 
 **Key principles:**
 - **Zero-Trust Privacy** — 100% local data. No telemetry. Hardcoded visual blind spots for sensitive apps.
-- **Persistent Memory** — Blob remembers your projects, struggles, and wins across sessions.
-- **Living Personality** — Fluid animations, state-machine emotions, and contextual reactions.
-- **Expandable Skills** — Drag-and-drop `.skill.yaml` files to teach Blob new tricks.
-- **Lightweight** — Sub-2% CPU overhead. Lives alongside your heaviest workloads.
+- **Persistent Memory** — Blob remembers your projects, struggles, and wins across sessions via ChromaDB.
+- **Living Personality** — Fluid spring-mass physics, state-machine emotions, and contextual reactions.
+- **Expandable Skills** — Teach Blob new tricks with `.skill.yaml` files.
+- **Lightweight** — Sub-2% CPU overhead. No local GPU required.
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────┐     gRPC (Unix Socket)     ┌─────────────────────────────┐
-│   C++ Frontend Overlay      │◄──────────────────────────►│   Python AI Backend          │
-│                             │                             │                             │
-│  • SDL2/OpenGL transparent  │  Bidirectional Streaming    │  • NVIDIA Nemotron (Local)   │
-│    always-on-top window     │                             │  • NemoClaw Guardrails       │
-│  • Spring-mass blob physics │  EmoteCommand ──────────►   │  • Hermes Agent Tasks        │
-│  • State machine animations │  StateCommand ──────────►   │  • ChromaDB Memory           │
-│  • Drag-drop skill pills    │  ◄────────── FrontendEvent  │  • Privacy Shield            │
-│  • Speech bubble UI         │                             │  • Screen OCR Sampler        │
-│  • System tray              │                             │  • OpenShell Sandbox         │
-└─────────────────────────────┘                             └─────────────────────────────┘
+┌─────────────────────────────┐     gRPC (localhost:50051)     ┌─────────────────────────────┐
+│   C++ Frontend Overlay      │◄──────────────────────────────►│   Python AI Backend          │
+│                             │                                 │                             │
+│  • SDL2/OpenGL transparent  │  Bidirectional Streaming        │  • Nebius API (cloud LLM)    │
+│    always-on-top window     │                                 │  • ReAct Skill Loop          │
+│  • Spring-mass blob physics │  EmoteCommand ──────────►       │  • ChromaDB Memory           │
+│  • State machine animations │  NotificationBubble ────►       │  • Privacy Shield            │
+│  • Rimuru-style renderer    │  ◄──────── FrontendEvent        │  • Screen Capture (Wayland)  │
+│                             │                                 │  • Skill Registry            │
+└─────────────────────────────┘                                 └─────────────────────────────┘
 ```
 
 ---
 
-## NVIDIA Toolchain
+## Tech Stack
 
-| Tool | Role | Integration |
-|------|------|-------------|
-| **Nemotron-3-Nano (4B)** | Local LLM brain | vLLM / llama.cpp on RTX GPU |
-| **NemoClaw** | Security & guardrails | Input/output policy enforcement |
-| **Hermes Agent** | Task execution | Plan-Act-Observe-Reflect loops |
-| **OpenShell** | Sandboxed execution | Kernel-level isolation for tools |
-| **Nebius Serverless** | Cloud burst (opt-in) | Heavy reasoning via Token Factory |
+| Component | Technology |
+|-----------|-----------|
+| **LLM** | [Nebius AI](https://studio.nebius.ai) — cloud API, no local GPU needed |
+| **Model** | `nvidia/Nemotron-3_5-Lightning` via Nebius |
+| **Memory** | ChromaDB (local vector store) + Ebbinghaus decay |
+| **Frontend** | C++ · SDL2 · OpenGL 3.3 |
+| **Backend** | Python 3.11+ · asyncio · gRPC |
+| **Skills** | ReAct loop (Reason → Act → Observe) with built-in: `reminder`, `weather`, `shell_command`, `file_search`, `git_status`, `screen_capture` |
+
+---
+
+## Prerequisites
+
+- **OS**: Linux (X11 or Wayland), Windows 10+, or macOS 12+
+- **GPU**: ❌ **Not required** — inference runs on Nebius cloud API
+- **Python**: 3.11+
+- **C++ Compiler**: GCC 12+ or Clang 15+
+- **System packages**: `SDL2`, `OpenGL 3.3+`, `gRPC`, `Protobuf`
+- **Optional (screen capture)**: `gnome-screenshot` or `grim` (Wayland), or `xdotool` (X11)
+- **Nebius API Key**: Free at [studio.nebius.ai](https://studio.nebius.ai)
 
 ---
 
 ## Quick Start
 
-### Prerequisites
-
-- **OS**: Linux (X11/Wayland), Windows 10+, or macOS 12+
-- **GPU**: NVIDIA RTX with ≥8 GB VRAM (for local inference)
-- **Python**: 3.11+
-- **C++ Compiler**: GCC 12+ or Clang 15+
-- **SDL2**, **OpenGL 3.3+**, **gRPC**, **Protobuf**
-
-### Build & Run
+### 1. Clone & Set Up
 
 ```bash
-# 1. Clone
 git clone <repo-url> ProjectBlob && cd ProjectBlob
-
-# 2. Generate Proto stubs
-make proto
-
-# 3. Build C++ frontend
-make frontend
-
-# 4. Install Python backend
-make backend-install
-
-# 5. Start both (backend first, then frontend)
-make run
 ```
 
-### Individual Components
+### 2. Set your Nebius API key
 
 ```bash
-# Backend only
-cd backend_python && pip install -e . && blob-backend --config data/blob_personality.yaml
-
-# Frontend only
-cd frontend_cpp && mkdir build && cd build && cmake .. && make && ./blob_overlay
+export NEBIUS_API_KEY=your_key_here
+# Or add it to a .env file:
+cp .env.example .env
+# then edit .env with your key and: export $(cat .env | xargs)
 ```
+
+### 3. Create a virtual environment & install
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -e backend_python/
+```
+
+### 4. Build the C++ frontend
+
+```bash
+make frontend
+```
+
+### 5. Run
+
+```bash
+# Backend + Frontend together:
+make run
+
+# Or separately (two terminals):
+make run-backend-only   # Terminal 1: Python AI backend + CLI chat
+make run-frontend       # Terminal 2: C++ Rimuru overlay
+```
+
+The backend also exposes a **CLI debug prompt** (`Blob>`) so you can chat directly from the terminal while the C++ frontend is optional.
 
 ---
 
@@ -109,7 +126,7 @@ skill:
       command: "git status --porcelain"
 ```
 
-Blob will play an **eating animation**, register the skill, and tint its color briefly. See [Skill Authoring Guide](docs/skill_authoring_guide.md) for details.
+Blob will play an **eating animation**, register the skill, and tint its color briefly.
 
 ---
 
@@ -117,10 +134,10 @@ Blob will play an **eating animation**, register the skill, and tint its color b
 
 Blob enforces a **zero-trust privacy shield**:
 
-1. **No data leaves your machine** (unless you explicitly enable Nebius burst mode)
+1. **No data leaves your machine** (except LLM inference calls to Nebius — opt-in cloud burst)
 2. **Sensitive app detection**: Banking sites, password managers, and incognito windows trigger an automatic blindfold
-3. **Screen captures are ephemeral**: Processed in memory, never written to disk
-4. **Memory is local**: ChromaDB stores everything in `~/.blob/memory/`
+3. **Screen captures are ephemeral**: Processed in memory, temp files cleaned up immediately after OCR
+4. **Memory is local**: ChromaDB stores everything in `backend_python/data/chroma_db/`
 5. **Configurable blacklist**: Edit `data/blacklist.yaml` to add your own patterns
 
 ---
@@ -129,24 +146,22 @@ Blob enforces a **zero-trust privacy shield**:
 
 ```
 ProjectBlob/
+├── .env.example              # Copy to .env and add your NEBIUS_API_KEY
 ├── proto/                    # gRPC/Protobuf IPC definitions
 ├── frontend_cpp/             # C++ transparent overlay engine
 │   ├── src/
-│   │   ├── overlay/          # Window, renderer, input
-│   │   ├── blob/             # State machine, physics, animations
-│   │   ├── ipc/              # gRPC client
-│   │   └── ui/               # Notifications, tray, chat
-│   └── assets/               # Sprites, shaders, sounds
+│   │   ├── blob/             # State machine, physics, Rimuru renderer
+│   │   └── ipc/              # gRPC client
+│   └── build/                # Built binary: blob_overlay
 ├── backend_python/           # Python AI engine
 │   ├── blob/
-│   │   ├── ai/               # LLM engine, orchestrator, guardrails
-│   │   ├── memory/           # ChromaDB, episodic, decay
+│   │   ├── ai/               # LLM engine, ReAct orchestrator, guardrails, prompts
+│   │   ├── memory/           # ChromaDB, episodic, semantic, Ebbinghaus decay
 │   │   ├── privacy/          # Shield, window monitor, blacklist
-│   │   ├── screen/           # Sampler, OCR, context analyzer
-│   │   ├── skills/           # Registry, validator, builtins
-│   │   └── agents/           # Hermes, OpenShell wrappers
-│   └── data/                 # Config files
-├── skills/                   # User-facing skill pill files
+│   │   ├── screen/           # Multi-backend screen capture, OCR
+│   │   └── skills/           # Registry, base class, builtins
+│   └── data/                 # Personality config, blacklist
+├── skills/                   # User-facing .skill.yaml pill files
 └── docs/                     # Architecture & guides
 ```
 
