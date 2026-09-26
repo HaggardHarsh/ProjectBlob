@@ -8,8 +8,12 @@ from blob.screen.sampler import ScreenSampler
 from blob.memory.vector_store import VectorStore
 from blob.ai.orchestrator import BlobOrchestrator
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# Suppress httpx HTTP request spam
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 async def main_async():
     config = BlobConfig.load()
@@ -65,7 +69,7 @@ async def main_async():
     # Start tasks
     tasks = [
         asyncio.create_task(privacy_shield.run()),
-        asyncio.create_task(screen_sampler.run()),
+        # asyncio.create_task(screen_sampler.run()), # Disabled for now due to X11 grab errors
         asyncio.create_task(orchestrator.semantic.consolidation_loop()),
         asyncio.create_task(cli_input_loop())
     ]

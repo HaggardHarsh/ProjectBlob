@@ -91,26 +91,29 @@ class BlobOrchestrator:
         # Dispatch back to frontend
         await self.dispatch_emote(emote_str)
         
-        resp_event = blob_service_pb2.ServerEvent()
-        resp_event.assistant_response.text = response_text
-        self.event_dispatcher.broadcast(resp_event)
+        resp_event = blob_service_pb2.BackendEvent()
+        resp_event.notification.text = response_text
+        await self.event_dispatcher.broadcast(resp_event)
         
-        logger.info(f"Blob replied: {response_text} (Emote: {emote_str})")
+        # Clean CLI output
+        print(f"\n\033[96mBlob ({emote_str}):\033[0m {response_text}\n")
 
     async def dispatch_emote(self, emote_str: str):
         # Map string to enum
         emote_map = {
-            "IDLE": blob_service_pb2.EMOTE_IDLE,
-            "HAPPY": blob_service_pb2.EMOTE_HAPPY,
-            "SAD": blob_service_pb2.EMOTE_SAD,
-            "ANGRY": blob_service_pb2.EMOTE_ANGRY,
-            "CONFUSED": blob_service_pb2.EMOTE_CONFUSED,
-            "THINKING": blob_service_pb2.EMOTE_THINKING,
-            "WORRIED": blob_service_pb2.EMOTE_WORRIED,
-            "CELEBRATE": blob_service_pb2.EMOTE_CELEBRATE
+            "IDLE": blob_service_pb2.EmoteCommand.IDLE,
+            "HAPPY": blob_service_pb2.EmoteCommand.HAPPY,
+            "SAD": blob_service_pb2.EmoteCommand.WORRIED,
+            "ANGRY": blob_service_pb2.EmoteCommand.CONFUSED,
+            "CONFUSED": blob_service_pb2.EmoteCommand.CONFUSED,
+            "THINKING": blob_service_pb2.EmoteCommand.THINKING,
+            "WORRIED": blob_service_pb2.EmoteCommand.WORRIED,
+            "CELEBRATE": blob_service_pb2.EmoteCommand.CELEBRATE,
+            "TIRED": blob_service_pb2.EmoteCommand.TIRED,
+            "EXCITED": blob_service_pb2.EmoteCommand.EXCITED
         }
-        emote_val = emote_map.get(emote_str, blob_service_pb2.EMOTE_IDLE)
+        emote_val = emote_map.get(emote_str, blob_service_pb2.EmoteCommand.IDLE)
         
-        evt = blob_service_pb2.ServerEvent()
-        evt.emote_command.emote = emote_val
-        self.event_dispatcher.broadcast(evt)
+        evt = blob_service_pb2.BackendEvent()
+        evt.emote.emote = emote_val
+        await self.event_dispatcher.broadcast(evt)

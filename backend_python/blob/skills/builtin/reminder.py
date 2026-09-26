@@ -21,18 +21,22 @@ class ReminderSkill(SkillInterface):
     def set_dispatcher(self, dispatcher):
         self.dispatcher = dispatcher
         
-    def _fire_reminder(self, message):
+    def _fire_reminder(self, message, loop):
         if self.dispatcher:
             # We can't easily import protobuf here if we want decoupling, but let's assume we can:
             from blob.ipc import blob_service_pb2
-            evt = blob_service_pb2.ServerEvent()
-            evt.assistant_response.text = f"⏰ REMINDER: {message}"
-            self.dispatcher.broadcast(evt)
+            import asyncio
+            
+            evt = blob_service_pb2.BackendEvent()
+            evt.notification.text = f"⏰ REMINDER: {message}"
             
             # also send an emote
-            emote_evt = blob_service_pb2.ServerEvent()
-            emote_evt.emote_command.emote = blob_service_pb2.EMOTE_HAPPY
-            self.dispatcher.broadcast(emote_evt)
+            emote_evt = blob_service_pb2.BackendEvent()
+            emote_evt.emote.emote = blob_service_pb2.EmoteCommand.HAPPY
+            
+            if loop:
+                asyncio.run_coroutine_threadsafe(self.dispatcher.broadcast(evt), loop)
+                asyncio.run_coroutine_threadsafe(self.dispatcher.broadcast(emote_evt), loop)
 
     def execute(self, args):
         msg = args.get('message')
@@ -46,8 +50,14 @@ class ReminderSkill(SkillInterface):
         except ValueError:
             return SkillResult("Minutes must be a number", False, "CONFUSED")
             
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+            
         def timer_func():
-            self._fire_reminder(msg)
+            self._fire_reminder(msg, loop)
             
         timer = threading.Timer(mins * 60, timer_func)
         timer.start()
