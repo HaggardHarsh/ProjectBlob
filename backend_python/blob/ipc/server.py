@@ -8,12 +8,12 @@ from blob.ipc.servicer import BlobServiceServicer
 
 logger = logging.getLogger(__name__)
 
-async def start_grpc_server(config, orchestrator):
+async def start_grpc_server(config, orchestrator, dispatcher):
     server = aio.server()
-    dispatcher = EventDispatcher()
     servicer = BlobServiceServicer(dispatcher, orchestrator)
     blob_service_pb2_grpc.add_BlobServiceServicer_to_server(servicer, server)
     server.add_insecure_port(config.ipc_address)
     logger.info(f"Starting gRPC server on {config.ipc_address}")
     await server.start()
-    return server, dispatcher
+    return server
+
