@@ -120,6 +120,10 @@ class BlobOrchestrator:
         context = self._build_context(clean_text)
         sys_prompt = self._build_system_prompt()
         
+        # Immediately set thinking emote on frontend & print indicator in CLI
+        await self.dispatch_emote("THINKING")
+        print("\033[90m(Thinking...)\033[0m", end="", flush=True)
+
         # Build conversation messages for multi-turn reasoning
         messages = [
             {"role": "system", "content": sys_prompt},
@@ -208,8 +212,8 @@ class BlobOrchestrator:
         resp_event.notification.text = final_response
         await self.event_dispatcher.broadcast(resp_event)
         
-        # Clean CLI output
-        print(f"\n\033[96mBlob ({emote_str}):\033[0m {final_response}\n")
+        # Clean CLI output (clears the thinking indicator line)
+        print(f"\r\033[K\033[96mBlob ({emote_str}):\033[0m {final_response}\n")
 
     async def dispatch_emote(self, emote_str: str):
         """Map emote string to protobuf enum and broadcast to frontend."""
