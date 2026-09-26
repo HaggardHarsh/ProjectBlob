@@ -47,12 +47,15 @@ backend-install:
 	@echo "✓ Backend installed"
 
 # ─── Run both components ───
-run: run-backend run-frontend
+run:
+	@echo "═══ Starting C++ Frontend (Desktop Overlay) ═══"
+	@$(FRONTEND_DIR)/build/blob_overlay & FRONTEND_PID=$$!; \
+	trap 'kill $$FRONTEND_PID 2>/dev/null' EXIT INT TERM; \
+	sleep 1; \
+	echo "═══ Starting Python Backend (Interactive CLI) ═══"; \
+	cd $(BACKEND_DIR) && $(BLOB_BACKEND)
 
-run-backend:
-	@echo "═══ Starting Python Backend ═══"
-	cd $(BACKEND_DIR) && $(BLOB_BACKEND) &
-	@sleep 2  # Give backend time to start gRPC server
+run-backend: run-backend-only
 
 run-frontend:
 	@echo "═══ Starting C++ Frontend ═══"
