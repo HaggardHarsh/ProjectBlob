@@ -5,6 +5,11 @@ FRONTEND_DIR := frontend_cpp
 BACKEND_DIR := backend_python
 PROTO_FILE := $(PROTO_DIR)/blob_service.proto
 
+VENV_BIN := $(if $(wildcard venv/bin),$(abspath venv/bin),)
+PYTHON := $(if $(VENV_BIN),$(VENV_BIN)/python,python)
+PIP := $(if $(VENV_BIN),$(VENV_BIN)/pip,pip)
+BLOB_BACKEND := $(if $(VENV_BIN),$(VENV_BIN)/blob-backend,blob-backend)
+
 # ─── Default target ───
 all: proto frontend backend-install
 
@@ -12,7 +17,7 @@ all: proto frontend backend-install
 proto:
 	@echo "═══ Generating Protobuf stubs ═══"
 	# Python stubs
-	python -m grpc_tools.protoc \
+	$(PYTHON) -m grpc_tools.protoc \
 		-I$(PROTO_DIR) \
 		--python_out=$(BACKEND_DIR)/blob/ipc \
 		--pyi_out=$(BACKEND_DIR)/blob/ipc \
@@ -38,7 +43,7 @@ frontend-debug:
 # ─── Install Python backend ───
 backend-install:
 	@echo "═══ Installing Python Backend ═══"
-	cd $(BACKEND_DIR) && pip install -e ".[dev]"
+	cd $(BACKEND_DIR) && $(PIP) install -e ".[dev]"
 	@echo "✓ Backend installed"
 
 # ─── Run both components ───
@@ -46,7 +51,7 @@ run: run-backend run-frontend
 
 run-backend:
 	@echo "═══ Starting Python Backend ═══"
-	cd $(BACKEND_DIR) && blob-backend &
+	cd $(BACKEND_DIR) && $(BLOB_BACKEND) &
 	@sleep 2  # Give backend time to start gRPC server
 
 run-frontend:
@@ -55,14 +60,14 @@ run-frontend:
 
 run-backend-only:
 	@echo "═══ Starting Python Backend (foreground) ═══"
-	cd $(BACKEND_DIR) && blob-backend
+	cd $(BACKEND_DIR) && $(BLOB_BACKEND)
 
 # ─── Tests ───
 test: test-backend test-frontend
 
 test-backend:
 	@echo "═══ Running Python Tests ═══"
-	cd $(BACKEND_DIR) && python -m pytest tests/ -v
+	cd $(BACKEND_DIR) && $(PYTHON) tests/run_tests.py
 
 test-frontend:
 	@echo "═══ Running C++ Tests ═══"

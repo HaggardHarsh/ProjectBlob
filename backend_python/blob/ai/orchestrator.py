@@ -65,28 +65,45 @@ class BlobOrchestrator:
         )
 
     def _parse_tool_call(self, response_text: str):
-        """Extract a ```tool_call JSON block from the LLM response.
+        """Extract a tool_call JSON block from the LLM response.
+        
+        Supports:
+        - ```tool_call ... ```
+        - ```json ... ``` (with "tool")
+        - Raw JSON containing "tool" and "args"
+        - Automatically unescapes {{ ... }} if present
         
         Returns (tool_name, tool_args) or (None, None) if no valid tool call found.
         """
-        match = re.search(r'```tool_call\s*(.*?)\s*```', response_text, re.DOTALL)
-        if not match:
-            return None, None
+        patterns = [
+            r'```(?:tool_call|json)?\s*(\{.*?\})\s*```',
+            r'(\{\s*"tool"\s*:\s*".*?"\s*,\s*"args"\s*:\s*\{.*?\}\s*\})',
+            r'(\{\{\s*"tool"\s*:\s*".*?"\s*,\s*"args"\s*:\s*\{.*?\}\s*\}\})'
+        ]
         
-        try:
-            tool_data = json.loads(match.group(1))
-            tool_name = tool_data.get('tool')
-            tool_args = tool_data.get('args', {})
-            if tool_name:
-                return tool_name, tool_args
-        except (json.JSONDecodeError, AttributeError) as e:
-            logger.error(f"Failed to parse tool_call JSON: {e}")
+        for pat in patterns:
+            match = re.search(pat, response_text, re.DOTALL)
+            if match:
+                raw_json = match.group(1).strip()
+                if raw_json.startswith("{{") and raw_json.endswith("}}"):
+                    raw_json = raw_json[1:-1]
+                try:
+                    tool_data = json.loads(raw_json)
+                    tool_name = tool_data.get('tool')
+                    tool_args = tool_data.get('args', {})
+                    if tool_name:
+                        return tool_name, tool_args
+                except (json.JSONDecodeError, AttributeError) as e:
+                    logger.debug(f"Failed parsing matched tool JSON: {e}")
+                    continue
         
         return None, None
 
     def _strip_tool_call_block(self, text: str) -> str:
-        """Remove ```tool_call blocks from text for display."""
-        return re.sub(r'```tool_call\s*.*?\s*```', '', text, flags=re.DOTALL).strip()
+        """Remove tool call blocks and raw tool JSON from text for display."""
+        text = re.sub(r'```(?:tool_call|json)?\s*\{.*?\}\s*```', '', text, flags=re.DOTALL)
+        text = re.sub(r'\{\{?\s*"tool"\s*:.*?"args"\s*:.*?\}\}?', '', text, flags=re.DOTALL)
+        return text.strip()
 
     def _extract_emote(self, text: str) -> tuple[str, str]:
         """Extract <emote>...</emote> tag from text. Returns (emote_str, clean_text)."""

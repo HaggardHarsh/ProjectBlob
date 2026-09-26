@@ -13,17 +13,17 @@ You have access to the following tools (skills):
 When you need to use a tool, output EXACTLY this format (and nothing else in that message):
 
 ```tool_call
-{{"tool": "<tool_name>", "args": {{<arguments as JSON>}}}}
+{"tool": "<tool_name>", "args": {<arguments as JSON>}}
 ```
 
 For example, to set a reminder:
 ```tool_call
-{{"tool": "reminder", "args": {{"message": "stretch break", "minutes": 5}}}}
+{"tool": "reminder", "args": {"message": "stretch break", "minutes": 5}}
 ```
 
 For example, to capture the screen:
 ```tool_call
-{{"tool": "screen_capture", "args": {{}}}}
+{"tool": "screen_capture", "args": {}}
 ```
 
 **IMPORTANT rules for tool calling:**
