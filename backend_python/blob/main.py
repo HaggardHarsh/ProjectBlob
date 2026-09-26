@@ -45,11 +45,29 @@ async def main_async():
     
     server = await start_grpc_server(config, orchestrator, event_dispatcher)
     
+    # Simple CLI debug input loop
+    async def cli_input_loop():
+        loop = asyncio.get_running_loop()
+        while True:
+            try:
+                # Use print for prompt to avoid messing up logs
+                line = await loop.run_in_executor(None, input, "Blob> ")
+                if line.strip():
+                    from blob.ipc.blob_service_pb2 import UserMessage
+                    msg = UserMessage(text=line.strip())
+                    await orchestrator.handle_user_message(msg)
+            except EOFError:
+                break
+            except Exception as e:
+                logger.error(f"CLI input error: {e}")
+                await asyncio.sleep(1)
+
     # Start tasks
     tasks = [
         asyncio.create_task(privacy_shield.run()),
         asyncio.create_task(screen_sampler.run()),
-        asyncio.create_task(orchestrator.semantic.consolidation_loop())
+        asyncio.create_task(orchestrator.semantic.consolidation_loop()),
+        asyncio.create_task(cli_input_loop())
     ]
     
     stop_event = asyncio.Event()
