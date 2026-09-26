@@ -46,16 +46,15 @@ class SemanticMemory:
     async def consolidation_loop(self):
         """Periodically scans recent episodes and consolidates them into semantic facts."""
         import asyncio
+        # Initial brief wait on startup, then check periodically
+        await asyncio.sleep(10)
         while True:
-            await asyncio.sleep(3600)  # Run every hour
-            logger.info("Running memory consolidation...")
-            
-            # Fetch recent episodes (in a real app we'd track which ones are unprocessed)
-            # For now, let's just grab the last 20 by using a blank query 
-            # (or we could expose a get_recent() on episodic, but let's just query metadata)
-            
-            # Let's use a dummy query since chroma needs a query text
-            results = self.vector_store.episodic.query(query_texts=["*"], n_results=20)
-            if results and results['documents'] and results['documents'][0]:
-                episodes = [{"text": doc} for doc in results['documents'][0]]
-                await self.summarize_and_store(episodes)
+            try:
+                # Fetch recent episodes directly from Chroma collection
+                docs_data = self.vector_store.episodic.get(limit=20)
+                if docs_data and docs_data.get('documents'):
+                    episodes = [{"text": doc} for doc in docs_data['documents']]
+                    await self.summarize_and_store(episodes)
+            except Exception as e:
+                logger.debug(f"Consolidation check: {e}")
+            await asyncio.sleep(60)
