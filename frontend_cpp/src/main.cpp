@@ -19,8 +19,9 @@ static bool running = true;
 int main(int argc, char* argv[]) {
     std::srand((unsigned)std::time(nullptr));
 
-    int width  = 200;
-    int height = 200;
+    // Rimuru dome is wider than tall
+    int width  = 250;
+    int height = 180;
     std::string ipc_address = "localhost:50051";
 
     for (int i = 1; i < argc; ++i) {
@@ -35,7 +36,6 @@ int main(int argc, char* argv[]) {
         return -1;
     }
 
-    // ── Create window & renderer ──
     OverlayWindow window(width, height);
     Renderer renderer(window.getSDLWindow(), width, height);
     InputHandler input;
@@ -56,7 +56,7 @@ int main(int argc, char* argv[]) {
 
     // Idle jiggle timer
     float jiggleTimer = 0.0f;
-    float nextJiggle  = 2.0f + (std::rand() % 300) / 100.0f;
+    float nextJiggle  = 3.0f + (std::rand() % 400) / 100.0f;
 
     while (running) {
         Uint32 frameStart = SDL_GetTicks();
@@ -69,12 +69,12 @@ int main(int argc, char* argv[]) {
             if (event.type == SDL_QUIT) {
                 running = false;
             }
-            else if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT) {
+            else if (event.type == SDL_MOUSEBUTTONDOWN &&
+                     event.button.button == SDL_BUTTON_LEFT) {
                 int gx, gy;
                 SDL_GetGlobalMouseState(&gx, &gy);
                 window.startDrag(gx, gy);
-                // Give the blob a little poke jiggle
-                physics.jiggle();
+                physics.jiggle();   // poke reaction
             }
             else if (event.type == SDL_MOUSEMOTION) {
                 if (window.isDragging()) {
@@ -83,16 +83,17 @@ int main(int argc, char* argv[]) {
                     window.updateDrag(gx, gy);
                 }
             }
-            else if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT) {
+            else if (event.type == SDL_MOUSEBUTTONUP &&
+                     event.button.button == SDL_BUTTON_LEFT) {
                 window.stopDrag();
             }
-            else if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE) {
+            else if (event.type == SDL_KEYDOWN &&
+                     event.key.keysym.sym == SDLK_ESCAPE) {
                 running = false;
             }
 
-            // Process other input events (drag-drop, etc.)
             auto input_event = input.processEvent(event);
-            (void)input_event; // will be wired to IPC later
+            (void)input_event;
         }
 
         // ── Physics & animation ──
@@ -105,30 +106,40 @@ int main(int argc, char* argv[]) {
         if (jiggleTimer >= nextJiggle) {
             physics.jiggle();
             jiggleTimer = 0.0f;
-            nextJiggle = 2.0f + (std::rand() % 300) / 100.0f;
+            nextJiggle = 3.0f + (std::rand() % 400) / 100.0f;
         }
 
-        // ── Render ──
+        // ── Render (layered, back to front) ──
         renderer.clear();
 
         auto vertices = physics.getVertices();
         Vec2 center   = physics.getCenter();
-        float radius  = physics.getRadius();
+        float rx      = physics.getRadiusX();
+        float ry      = physics.getRadiusY();
+        float time    = (float)SDL_GetTicks() / 1000.0f;
 
-        // Cute slime-green body
-        renderer.drawBlobMesh(vertices, {60, 210, 90, 255});
+        // 1) Translucent outer dome body
+        renderer.drawOuterBody(vertices);
 
-        // Face
-        float time = (float)SDL_GetTicks() / 1000.0f;
-        renderer.drawEyes(center.x, center.y, radius, time);
-        renderer.drawMouth(center.x, center.y, radius, time);
+        // 2) Thin blue outline
+        renderer.drawOutline(vertices);
+
+        // 3) Darker inner "core" body
+        renderer.drawInnerBody(center.x, center.y, rx, ry, time);
+
+        // 4) White specular highlights
+        renderer.drawHighlights(center.x, center.y, rx, ry);
+
+        // 5) Eye + whisker-mouth
+        renderer.drawFace(center.x, center.y, rx, ry, time);
 
         renderer.present();
 
-        // ── Update window shape (transparency mask) ──
+        // ── Transparency mask ──
+        renderer.stampShape(vertices, center.x, center.y);
         window.updateShape(renderer.getShapeSurface());
 
-        // ── Frame-rate limiter ──
+        // ── Frame-rate cap ──
         Uint32 frameTime = SDL_GetTicks() - frameStart;
         if (frameDelay > (int)frameTime) {
             SDL_Delay(frameDelay - frameTime);

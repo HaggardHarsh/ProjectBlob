@@ -5,8 +5,12 @@
 #include "common/types.h"
 
 /**
- * Renderer — draws the Blob using SDL2's hardware-accelerated 2D renderer.
- * Also generates an alpha-mask surface used by the shaped window.
+ * Renderer — draws a Rimuru-style translucent blue slime with:
+ *   • Translucent light-blue dome body
+ *   • Thin blue outline
+ *   • Darker-blue inner "core" shape
+ *   • White specular highlights
+ *   • Single dot eye & whisker mouth on the core
  */
 class Renderer {
 public:
@@ -16,21 +20,31 @@ public:
     void clear();
     void present();
 
-    /// Draw the blob body (filled polygon from spring-mass vertices).
-    void drawBlobMesh(const std::vector<Vec2>& vertices, Color color);
+    /// Draw the translucent outer dome body.
+    void drawOuterBody(const std::vector<Vec2>& vertices);
 
-    /// Draw blob eyes (white sclera + black pupil).
-    void drawEyes(float cx, float cy, float blobRadius, float time);
+    /// Draw the thin outline around the dome.
+    void drawOutline(const std::vector<Vec2>& vertices);
 
-    /// Draw blob mouth (a cute smile).
-    void drawMouth(float cx, float cy, float blobRadius, float time);
+    /// Draw the darker inner "core" body.
+    void drawInnerBody(float cx, float cy, float rx, float ry, float time);
 
-    /// Return the shape-mask surface for the current frame (caller must NOT free it).
+    /// Draw white specular highlight spots.
+    void drawHighlights(float cx, float cy, float rx, float ry);
+
+    /// Draw eye + whisker-mouth on the inner core.
+    void drawFace(float cx, float cy, float rx, float ry, float time);
+
+    /// Build shape mask for the current frame.
+    void stampShape(const std::vector<Vec2>& vertices, float cx, float cy);
+
     SDL_Surface* getShapeSurface() const { return shapeSurface_; }
 
 private:
-    void fillCircle(int cx, int cy, int radius, Color color);
-    void fillCircleOnSurface(SDL_Surface* surf, int cx, int cy, int radius, Uint32 color);
+    void fillCircle(int cx, int cy, int r, Color color);
+    void fillEllipse(int cx, int cy, int rx, int ry, Color color);
+    void fillCircleOnSurface(SDL_Surface* s, int cx, int cy, int r, Uint32 c);
+    void fillEllipseOnSurface(SDL_Surface* s, int cx, int cy, int rx, int ry, Uint32 c);
 
     SDL_Renderer* sdlRenderer_ = nullptr;
     SDL_Surface*  shapeSurface_ = nullptr;
