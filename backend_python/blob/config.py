@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 class BlobConfig(BaseModel):
     ipc_address: str = Field(default="localhost:50051")
     model_name: str = Field(default="nvidia/Llama-3.1-Nemotron-70B-Instruct-HF") # NVIDIA Open Source Model
-    nebius_api_key: str = Field(default=os.environ.get("NEBIUS_API_KEY", ""))
+    nebius_api_key: str = Field(default=os.environ.get("NEBIUS_API_KEY", "v1.CmMKHHN0YXRpY2tleS1lMDBwYnRjNmF6Njh2NHQxazMSIXNlcnZpY2VhY2NvdW50LWUwMHdtMHFudHNueW40Y3hrejILCOqT29UGENDr2EA6DAjplvOgBxDA1-zvAUACWgNlMDA.AAAAAAAAAAEumDUrvfJF7FlDsgQ_uA6UAeL2NtlqKjJpU59NpN3DCjL3i23xbpV5qVAIIG9ljZvDAgt1bDHIb_naySNVaiUD"))
     nebius_base_url: str = Field(default="https://api.studio.nebius.ai/v1")
     memory_db_path: str = Field(default="./data/chroma_db")
     blacklist_path: str = Field(default="./data/blacklist.yaml")

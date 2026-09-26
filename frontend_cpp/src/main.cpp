@@ -68,8 +68,8 @@ int main(int argc, char* argv[]) {
         animation.update(dt);
         
         renderer.clear();
-        physics.getVertices();
-        renderer.drawBlobMesh({}, {255, 255, 255, 255});
+        auto vertices = physics.getVertices();
+        renderer.drawBlobMesh(vertices, {0, 255, 128, 255});
         renderer.present();
 
         Uint32 frameTime = SDL_GetTicks() - frameStart;
