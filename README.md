@@ -14,11 +14,11 @@
 Blob is a living desktop companion — a soft, translucent slime creature that resides on your screen. It passively observes your workflow, builds long-term memory about your projects and habits, offers empathetic check-ins when you've been coding too long, and can learn new skills when you feed it "Skill Pills."
 
 **Key principles:**
-- 🔒 **Zero-Trust Privacy** — 100% local data. No telemetry. Hardcoded visual blind spots for sensitive apps.
-- 🧠 **Persistent Memory** — Blob remembers your projects, struggles, and wins across sessions.
-- 🎨 **Living Personality** — Fluid animations, state-machine emotions, and contextual reactions.
-- 🔌 **Expandable Skills** — Drag-and-drop `.skill.yaml` files to teach Blob new tricks.
-- ⚡ **Lightweight** — Sub-2% CPU overhead. Lives alongside your heaviest workloads.
+- **Zero-Trust Privacy** — 100% local data. No telemetry. Hardcoded visual blind spots for sensitive apps.
+- **Persistent Memory** — Blob remembers your projects, struggles, and wins across sessions.
+- **Living Personality** — Fluid animations, state-machine emotions, and contextual reactions.
+- **Expandable Skills** — Drag-and-drop `.skill.yaml` files to teach Blob new tricks.
+- **Lightweight** — Sub-2% CPU overhead. Lives alongside your heaviest workloads.
 
 ---
 
