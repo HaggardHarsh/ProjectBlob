@@ -51,6 +51,7 @@ async def test_screen_capture_skill():
 
     mock_sampler = MagicMock()
     mock_sampler.get_active_window_title.return_value = "Test Terminal"
+    mock_sampler.privacy_shield.is_capture_blocked.return_value = False
     
     mock_image = MagicMock()
     mock_sampler.capture = AsyncMock(return_value=mock_image)

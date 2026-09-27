@@ -8,6 +8,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # ─── Find Dependencies ───
 find_package(SDL2 REQUIRED CONFIG)
 find_package(gRPC CONFIG REQUIRED)
+find_package(X11 QUIET)
 
 # ─── Proto Generation ───
 set(PROTO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../proto")
@@ -51,9 +52,35 @@ target_link_libraries(blob_overlay
     protobuf::libprotobuf
 )
 
+if(X11_FOUND)
+    target_compile_definitions(blob_overlay PRIVATE BLOB_HAVE_X11=1)
+    target_include_directories(blob_overlay PRIVATE ${X11_INCLUDE_DIR})
+    target_link_libraries(blob_overlay ${X11_LIBRARIES})
+endif()
+
 # ─── Compiler Warnings ───
 target_compile_options(blob_overlay PRIVATE
     -Wall -Wextra -Wpedantic
     -Wno-unused-parameter
     -Wno-unused-variable
 )
+
+add_executable(blob_ipc_smoke
+    tests/grpc_client_smoke.cpp
+    src/ipc/grpc_client.cpp
+    ${PROTO_SRC}
+    ${GRPC_SRC}
+)
+target_include_directories(blob_ipc_smoke PRIVATE ${CMAKE_CURRENT_BINARY_DIR} src)
+target_link_libraries(blob_ipc_smoke gRPC::grpc++ gRPC::grpc protobuf::libprotobuf)
+
+enable_testing()
+add_executable(blob_chat_smoke
+    tests/chat_window_smoke.cpp
+    src/ui/chat_window.cpp
+    src/ui/text.cpp
+)
+target_include_directories(blob_chat_smoke PRIVATE src)
+target_link_libraries(blob_chat_smoke SDL2::SDL2)
+add_test(NAME blob_chat_smoke COMMAND blob_chat_smoke)
+set_tests_properties(blob_chat_smoke PROPERTIES ENVIRONMENT "SDL_VIDEODRIVER=dummy")

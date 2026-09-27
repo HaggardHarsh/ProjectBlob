@@ -2,6 +2,11 @@
 
 > Technical architecture documentation for Project Blob
 
+This document includes the intended architecture. The C++ chat, notification,
+X11 tray, and gRPC event stream are implemented. The backend loads declarative
+skill pills, while the agent sandbox and some advanced animations in the
+diagrams remain planned rather than implemented.
+
 ---
 
 ## High-Level Architecture
@@ -14,7 +19,7 @@ Project Blob is a two-process desktop application:
 │                                                                         │
 │  ┌──────────────────────────┐     gRPC      ┌──────────────────────────┐│
 │  │  C++ Frontend Overlay    │◄─────────────►│  Python AI Backend       ││
-│  │  (Process 1)             │  Unix Socket   │  (Process 2)             ││
+│  │  (Process 1)             │  TCP / socket  │  (Process 2)             ││
 │  │                          │  Bidirectional │                          ││
 │  │  • SDL2 Window Manager   │  Streaming     │  • NVIDIA Nemotron LLM   ││
 │  │  • OpenGL 3.3 Renderer   │               │  • NemoClaw Guardrails   ││
@@ -22,7 +27,7 @@ Project Blob is a two-process desktop application:
 │  │  • Spring-Mass Physics   │  ◄─ States    │  • ChromaDB Memory       ││
 │  │  • Drag-Drop Handler     │  Events ──►   │  • Privacy Shield        ││
 │  │  • System Tray           │               │  • Screen OCR Sampler    ││
-│  │  • Chat Window           │               │  • OpenShell Sandbox     ││
+│  │  • Chat Window           │               │  • Restricted Skills     ││
 │  └──────────────────────────┘               │  • Skill Registry        ││
 │                                              │  • Nebius Burst (opt-in) ││
 │                                              └──────────────────────────┘│
@@ -45,7 +50,8 @@ Project Blob is a two-process desktop application:
 
 ### IPC Protocol
 
-Communication uses **gRPC bidirectional streaming** over a **Unix domain socket** (`unix:///tmp/blob.sock`):
+Communication uses **gRPC bidirectional streaming** over `localhost:50051` by
+default. The address is configurable and can also be a Unix domain socket.
 
 - **Frontend → Backend**: User interactions, skill pill drops, heartbeats
 - **Backend → Frontend**: Emote commands, state changes, notifications, privacy shield events

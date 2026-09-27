@@ -152,7 +152,14 @@ void Renderer::drawHighlights(float cx, float cy, float rx, float ry) {
 //  Face — BIG eye + prominent whisker-mouth
 // ════════════════════════════════════════════════════════════════
 
-void Renderer::drawFace(float cx, float cy, float rx, float ry, float time) {
+void Renderer::drawFace(float cx, float cy, float rx, float ry, float time, BlobState state) {
+    if (state == BlobState::BLINDFOLDED) {
+        fillEllipse((int)cx, (int)(cy + ry * 0.02f), (int)(rx * 0.37f),
+                    (int)(ry * 0.15f), COL_EYE);
+        fillCircle((int)(cx - rx * 0.2f), (int)(cy - ry * 0.02f), 3,
+                   {173, 224, 249, 220});
+        return;
+    }
     // ─── EYE ───
     // Large dark oval on the inner body's "head"
     float eyeX = cx - rx * 0.14f;
@@ -162,7 +169,7 @@ void Renderer::drawFace(float cx, float cy, float rx, float ry, float time) {
 
     // Subtle look-around
     float lookX = std::sin(time * 0.5f) * 2.0f;
-    float lookY = std::cos(time * 0.8f) * 1.5f;
+    float lookY = state == BlobState::THINKING ? -3.0f : std::cos(time * 0.8f) * 1.5f;
 
     fillEllipse((int)(eyeX + lookX), (int)(eyeY + lookY),
                 (int)eyeRX, (int)eyeRY, COL_EYE);

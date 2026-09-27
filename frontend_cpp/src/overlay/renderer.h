@@ -3,6 +3,7 @@
 #include <string>
 #include <SDL2/SDL.h>
 #include "common/types.h"
+#include "blob/state_machine.h"
 
 /**
  * Renderer — draws a Rimuru-style translucent blue slime with:
@@ -33,7 +34,7 @@ public:
     void drawHighlights(float cx, float cy, float rx, float ry);
 
     /// Draw eye + whisker-mouth on the inner core.
-    void drawFace(float cx, float cy, float rx, float ry, float time);
+    void drawFace(float cx, float cy, float rx, float ry, float time, BlobState state);
 
     /// Build shape mask for the current frame.
     void stampShape(const std::vector<Vec2>& vertices, float cx, float cy);

@@ -10,7 +10,8 @@ class EpisodicMemory:
         text = f"User: {user_msg}\nBlob: {blob_msg}"
         metadata = {
             "type": "episodic",
-            "timestamp": time.time()
+            "timestamp": time.time(),
+            "consolidated": False,
         }
         if context:
             # Flatten context for metadata storage (Chroma only accepts int/float/str/bool)

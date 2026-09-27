@@ -33,6 +33,7 @@ async def test_screen_capture_skill():
 
     mock_sampler = MagicMock()
     mock_sampler.get_active_window_title.return_value = "Test Terminal"
+    mock_sampler.privacy_shield.is_capture_blocked.return_value = False
     
     # Mock image capture returning a dummy PIL image or path
     mock_image = MagicMock()
@@ -53,6 +54,9 @@ async def test_screen_capture_skill():
 @pytest.mark.asyncio
 async def test_orchestrator_react_loop_tool_execution():
     config = MagicMock()
+    config.nebius_api_key = "test_key"
+    config.nebius_base_url = "http://test"
+    config.model_name = "test_model"
     vector_store = MagicMock()
     event_dispatcher = AsyncMock()
     

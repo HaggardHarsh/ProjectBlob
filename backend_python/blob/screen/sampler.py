@@ -35,66 +35,43 @@ class ScreenSampler:
 
     async def capture(self):
         """
-        Tries to capture the screen using multiple backends in priority order.
+        Tries available screenshot backends in priority order.
         Returns a PIL Image on success, None on failure.
         """
-        # 1. Try D-Bus XDG Desktop Portal
-        image = await self._capture_dbus()
-        if image:
-            logger.info("Captured screen using D-Bus XDG Desktop Portal")
-            return image
-            
-        # 2. Try gnome-screenshot
+        if self.privacy_shield.is_capture_blocked():
+            logger.info("Screen capture blocked by privacy shield")
+            return None
+
+        # 1. Try gnome-screenshot
         image = await self._capture_gnome_screenshot()
         if image:
+            if self.privacy_shield.is_capture_blocked():
+                image.close()
+                return None
             logger.info("Captured screen using gnome-screenshot")
             return image
             
-        # 3. Try grim
+        # 2. Try grim
         image = await self._capture_grim()
         if image:
+            if self.privacy_shield.is_capture_blocked():
+                image.close()
+                return None
             logger.info("Captured screen using grim")
             return image
             
-        # 4. Try PIL.ImageGrab
+        # 3. Try PIL.ImageGrab
         image = await self._capture_pil()
         if image:
+            if self.privacy_shield.is_capture_blocked():
+                image.close()
+                return None
             logger.info("Captured screen using PIL.ImageGrab")
             return image
             
         logger.error("All screen capture backends failed")
         return None
         
-    async def _capture_dbus(self):
-        try:
-            from dbus_next.aio import MessageBus
-            from dbus_next.constants import BusType
-            from dbus_next import Message, Variant
-            import urllib.parse
-            
-            # Note: A full implementation of org.freedesktop.portal.Screenshot requires
-            # creating a request and listening to a Response signal. We are including
-            # this as a placeholder/stub for the DBus call that initiates it.
-            # Realistically, if this doesn't complete the full async dance, it will
-            # fail gracefully and fall back to the CLI tools which are much more robust.
-            
-            bus = await MessageBus(bus_type=BusType.SESSION).connect()
-            reply = await bus.call(
-                Message(
-                    destination='org.freedesktop.portal.Desktop',
-                    path='/org/freedesktop/portal/desktop',
-                    interface='org.freedesktop.portal.Screenshot',
-                    member='Screenshot',
-                    signature='sa{sv}',
-                    body=['', {'interactive': Variant('b', False)}]
-                )
-            )
-            # This returns a request path. Signal handling would be needed here to get the URI.
-            pass
-        except Exception as e:
-            logger.debug(f"D-Bus XDG Desktop Portal capture failed or not fully implemented: {e}")
-        return None
-
     async def _capture_gnome_screenshot(self):
         path = self._get_temp_path()
         try:

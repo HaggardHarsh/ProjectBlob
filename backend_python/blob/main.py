@@ -1,6 +1,9 @@
 import asyncio
+import argparse
 import logging
 import signal
+import threading
+from pathlib import Path
 from blob.config import BlobConfig
 from blob.ipc.server import start_grpc_server
 from blob.privacy.shield import PrivacyShield
@@ -16,6 +19,32 @@ logger.setLevel(logging.INFO)
 # Suppress httpx HTTP request spam
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
+
+async def read_cli_line():
+    """Read from stdin without leaving a blocking default-executor task on shutdown."""
+    loop = asyncio.get_running_loop()
+    future = loop.create_future()
+
+    def complete(value=None, error=None):
+        if not future.done():
+            if error is not None:
+                future.set_exception(error)
+            else:
+                future.set_result(value)
+
+    def read():
+        try:
+            value = input("Blob> ")
+            loop.call_soon_threadsafe(complete, value, None)
+        except Exception as exc:
+            try:
+                loop.call_soon_threadsafe(complete, None, exc)
+            except RuntimeError:
+                pass
+
+    threading.Thread(target=read, name="blob-cli-input", daemon=True).start()
+    return await future
+
 async def main_async():
     config = BlobConfig.load()
     
@@ -28,12 +57,14 @@ async def main_async():
     from blob.skills.builtin.shell_command import ShellCommandSkill
     from blob.skills.builtin.reminder import ReminderSkill
     from blob.skills.builtin.screen_capture import ScreenCaptureSkill
+    from blob.skills.builtin.camera import CameraSkill
+    from blob.vision.camera import CameraVision
     
     from blob.ipc.event_dispatcher import EventDispatcher
     event_dispatcher = EventDispatcher()
     
     # ── Build skill registry ─────────────────────────────────────────
-    skill_registry = SkillRegistry()
+    skill_registry = SkillRegistry(config.skills_dir_path)
     skill_registry.register(WeatherSkill())
     skill_registry.register(FileSearchSkill())
     skill_registry.register(GitStatusSkill())
@@ -45,7 +76,7 @@ async def main_async():
     skill_registry.register(reminder_skill)
     
     # ── Screen capture setup ─────────────────────────────────────────
-    privacy_shield = PrivacyShield(config)
+    privacy_shield = PrivacyShield(config, event_dispatcher)
     screen_sampler = ScreenSampler(config, privacy_shield)
     ocr_processor = OCRProcessor()
     
@@ -53,6 +84,13 @@ async def main_async():
     screen_capture_skill.set_sampler(screen_sampler)
     screen_capture_skill.set_ocr(ocr_processor)
     skill_registry.register(screen_capture_skill)
+
+    camera_vision = CameraVision(config)
+    skill_registry.register(CameraSkill(camera_vision))
+
+    bundled_skills = Path(__file__).resolve().parents[2] / "skills"
+    skill_registry.load_directory(bundled_skills)
+    skill_registry.load_directory(config.skills_dir_path)
     
     # ── Orchestrator (with screen sampler) ───────────────────────────
     orchestrator = BlobOrchestrator(
@@ -64,14 +102,13 @@ async def main_async():
     
     # Simple CLI debug input loop
     async def cli_input_loop():
-        loop = asyncio.get_running_loop()
         print("\n\033[92m╔══════════════════════════════════════════════╗\033[0m")
         print("\033[92m║   🟦 Project Blob — Rimuru AI Companion 🟦   ║\033[0m")
         print("\033[92m╚══════════════════════════════════════════════╝\033[0m")
         print("\033[90mType a message to chat. Ctrl+C to quit.\033[0m\n")
         while True:
             try:
-                line = await loop.run_in_executor(None, input, "Blob> ")
+                line = await read_cli_line()
                 if line.strip():
                     from blob.ipc.blob_service_pb2 import UserMessage
                     msg = UserMessage(text=line.strip())
@@ -104,11 +141,21 @@ async def main_async():
     # Cancel tasks
     for task in tasks:
         task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
     
     await server.stop(grace=5)
     logger.info("Shutdown complete")
 
 def main():
+    parser = argparse.ArgumentParser(description="Project Blob backend")
+    parser.add_argument("--install-skill", metavar="FILE", help="Validate and install a .skill.yaml file")
+    args = parser.parse_args()
+    if args.install_skill:
+        from blob.skills.registry import SkillRegistry
+        config = BlobConfig.load()
+        skill_id = SkillRegistry(config.skills_dir_path).install_file(args.install_skill)
+        print(f"Installed skill: {skill_id}")
+        return
     asyncio.run(main_async())
 
 if __name__ == "__main__":

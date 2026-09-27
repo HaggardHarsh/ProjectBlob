@@ -34,11 +34,18 @@ class ScreenCaptureSkill(SkillInterface):
         if not self.sampler:
             return SkillResult("Screen sampler is not configured.", False, "WORRIED")
 
+        if self.sampler.privacy_shield.is_capture_blocked():
+            return SkillResult("Screen capture is blocked by the privacy shield.", False, "WORRIED")
+
         # Get active window title (lightweight)
         window_title = self.sampler.get_active_window_title() or "Unknown Window"
 
         # Attempt screen capture
         image = await self.sampler.capture()
+        if image and self.sampler.privacy_shield.is_capture_blocked():
+            if hasattr(image, "close"):
+                image.close()
+            return SkillResult("Screen capture is blocked by the privacy shield.", False, "WORRIED")
         if not image:
             return SkillResult(
                 f"Active Window: {window_title}\n\nScreen capture failed — could not grab the screen. "
@@ -47,15 +54,18 @@ class ScreenCaptureSkill(SkillInterface):
                 "WORRIED"
             )
 
-        # Run OCR if available
-        if self.ocr:
-            try:
+        # Run OCR if available, then release the image promptly.
+        try:
+            if self.ocr:
                 text = self.ocr.extract_text(image)
-            except Exception as e:
-                logger.error(f"OCR failed: {e}")
-                text = f"(OCR failed: {e})"
-        else:
-            text = "(OCR processor not configured)"
+            else:
+                text = "(OCR processor not configured)"
+        except Exception as e:
+            logger.error(f"OCR failed: {e}")
+            text = f"(OCR failed: {e})"
+        finally:
+            if hasattr(image, "close"):
+                image.close()
 
         output = f"Active Window: {window_title}\n\nExtracted Screen Text:\n{text}"
         return SkillResult(output, True, "THINKING")

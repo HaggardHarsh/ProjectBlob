@@ -19,7 +19,7 @@ skill:
   tools:
     - name: "current_weather"
       description: "Get current weather for a location"
-      command: "curl -s 'wttr.in/{location}?format=3'"
+      command: "curl -s 'https://wttr.in/{location}?format=3'"
       args:
         - name: "location"
           description: "City name or coordinates"
@@ -28,7 +28,7 @@ skill:
 
     - name: "detailed_forecast"
       description: "Get detailed weather forecast"
-      command: "curl -s 'wttr.in/{location}?format=j1'"
+      command: "curl -s 'https://wttr.in/{location}?format=j1'"
       args:
         - name: "location"
           description: "City name or coordinates"

@@ -8,6 +8,10 @@ You have access to the following tools (skills):
 
 {skills}
 
+Camera access is available only through explicit user commands: /camera scan,
+/camera enroll <name>, /camera forget <name>, and /camera list. Never call a
+camera tool or claim you saw a camera frame without a command result.
+
 ### How to Call a Tool
 
 When you need to use a tool, output EXACTLY this format (and nothing else in that message):

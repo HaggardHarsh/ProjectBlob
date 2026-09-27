@@ -1,6 +1,7 @@
 #include <iostream>
 #include <cstdlib>
 #include <ctime>
+#include <string>
 #include <SDL2/SDL.h>
 #include "overlay/window.h"
 #include "overlay/renderer.h"
@@ -52,8 +53,14 @@ int main(int argc, char* argv[]) {
     AnimationController animation;
     EmoteRenderer emotes;
     NotificationManager notifications;
+    notifications.setAnchor(window.getSDLWindow());
     SystemTray tray;
     ChatWindow chat_window;
+    chat_window.setSendHandler([&](const std::string& message) {
+        if (!grpc_client.sendMessage(message)) {
+            chat_window.addAssistantMessage("Message queue is full. Please try again.");
+        }
+    });
 
     grpc_client.start();
 
@@ -64,6 +71,7 @@ int main(int argc, char* argv[]) {
     // Idle jiggle timer
     float jiggleTimer = 0.0f;
     float nextJiggle  = 3.0f + (std::rand() % 400) / 100.0f;
+    bool privacyActive = false;
 
     while (running) {
         Uint32 frameStart = SDL_GetTicks();
@@ -73,17 +81,35 @@ int main(int argc, char* argv[]) {
         // ── Event loop ──
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
+            chat_window.handleEvent(event);
             if (event.type == SDL_QUIT) {
                 running = false;
             }
+            else if (event.type == SDL_WINDOWEVENT &&
+                     event.window.event == SDL_WINDOWEVENT_CLOSE &&
+                     event.window.windowID == SDL_GetWindowID(window.getSDLWindow())) {
+                running = false;
+            }
             else if (event.type == SDL_MOUSEBUTTONDOWN &&
+                     event.button.windowID == SDL_GetWindowID(window.getSDLWindow()) &&
+                     event.button.button == SDL_BUTTON_RIGHT) {
+                chat_window.toggle();
+            }
+            else if (event.type == SDL_MOUSEBUTTONDOWN &&
+                     event.button.windowID == SDL_GetWindowID(window.getSDLWindow()) &&
+                     event.button.button == SDL_BUTTON_LEFT && event.button.clicks >= 2) {
+                chat_window.toggle();
+            }
+            else if (event.type == SDL_MOUSEBUTTONDOWN &&
+                     event.button.windowID == SDL_GetWindowID(window.getSDLWindow()) &&
                      event.button.button == SDL_BUTTON_LEFT) {
                 int gx, gy;
                 SDL_GetGlobalMouseState(&gx, &gy);
                 window.startDrag(gx, gy);
                 physics.jiggle();   // poke reaction
             }
-            else if (event.type == SDL_MOUSEMOTION) {
+            else if (event.type == SDL_MOUSEMOTION &&
+                     event.motion.windowID == SDL_GetWindowID(window.getSDLWindow())) {
                 if (window.isDragging()) {
                     int gx, gy;
                     SDL_GetGlobalMouseState(&gx, &gy);
@@ -96,16 +122,56 @@ int main(int argc, char* argv[]) {
                 }
             }
             else if (event.type == SDL_MOUSEBUTTONUP &&
+                     event.button.windowID == SDL_GetWindowID(window.getSDLWindow()) &&
                      event.button.button == SDL_BUTTON_LEFT) {
                 window.stopDrag();
             }
             else if (event.type == SDL_KEYDOWN &&
+                     event.key.windowID == SDL_GetWindowID(window.getSDLWindow()) &&
                      event.key.keysym.sym == SDLK_ESCAPE) {
                 running = false;
             }
 
-            auto input_event = input.processEvent(event);
-            (void)input_event;
+            if (event.type == SDL_DROPFILE) {
+                auto input_event = input.processEvent(event);
+                const std::string& path = input_event.filepath;
+                if (path.size() >= 11 && path.substr(path.size() - 11) == ".skill.yaml") {
+                    const std::string status = grpc_client.installSkill(path) ? "Installing skill pill..." : "Could not queue skill installation.";
+                    if (chat_window.isVisible()) chat_window.addAssistantMessage(status);
+                    else notifications.show(status);
+                } else {
+                    if (chat_window.isVisible()) chat_window.addAssistantMessage("Drop a .skill.yaml file to install a skill.");
+                    else notifications.show("Drop a .skill.yaml file to install a skill.");
+                }
+            }
+        }
+
+        tray.poll();
+        if (tray.takeActivated()) chat_window.toggle();
+        chat_window.setConnected(grpc_client.isConnected());
+        while (auto event = grpc_client.pollEvent()) {
+            if (event->has_notification()) {
+                const std::string text = event->notification().text();
+                chat_window.addAssistantMessage(text);
+                if (!chat_window.isVisible()) notifications.show(text, event->notification().display_ms());
+            } else if (event->has_skill_ack()) {
+                const auto& ack = event->skill_ack();
+                const std::string text = ack.success() ? ack.description() : "Skill install failed: " + ack.error_message();
+                chat_window.addAssistantMessage(text);
+                if (!chat_window.isVisible()) notifications.show(text);
+                if (ack.success()) physics.jiggle();
+            } else if (event->has_emote()) {
+                const auto emote = event->emote().emote();
+                if (privacyActive) state_machine.changeState(BlobState::BLINDFOLDED);
+                else if (emote == blob::EmoteCommand::THINKING) state_machine.changeState(BlobState::THINKING);
+                else if (emote == blob::EmoteCommand::EATING) state_machine.changeState(BlobState::EATING);
+                else state_machine.changeState(BlobState::IDLE);
+                if (emote == blob::EmoteCommand::HAPPY || emote == blob::EmoteCommand::EXCITED ||
+                    emote == blob::EmoteCommand::CELEBRATE) physics.jiggle();
+            } else if (event->has_privacy()) {
+                privacyActive = event->privacy().activated();
+                state_machine.changeState(privacyActive ? BlobState::BLINDFOLDED : BlobState::IDLE);
+            }
         }
 
         // ── Physics & animation ──
@@ -143,9 +209,12 @@ int main(int argc, char* argv[]) {
         renderer.drawHighlights(center.x, center.y, rx, ry);
 
         // 5) Eye + whisker-mouth
-        renderer.drawFace(center.x, center.y, rx, ry, time);
+        renderer.drawFace(center.x, center.y, rx, ry, time, state_machine.getCurrentState());
 
         renderer.present();
+        notifications.update(dt);
+        notifications.render();
+        chat_window.render();
 
         // ── Transparency mask ──
         renderer.stampShape(vertices, center.x, center.y);

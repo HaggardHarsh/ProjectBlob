@@ -34,6 +34,8 @@ class BlobOrchestrator:
         """Format registered skills for the system prompt."""
         lines = []
         for name, skill in self.skill_registry.skills.items():
+            if name == "camera":
+                continue  # Camera commands require explicit user text, never an LLM tool call.
             lines.append(f"- **{name}**: {skill.description}")
         return "\n".join(lines) if lines else "No tools available."
 
@@ -49,7 +51,10 @@ class BlobOrchestrator:
         
         # Try to get active window title (lightweight, no screenshot)
         active_window = "Unknown"
-        if self.screen_sampler:
+        shielded = bool(self.screen_sampler and self.screen_sampler.privacy_shield.is_capture_blocked())
+        if shielded:
+            self.last_screen_context = "No screen data captured yet."
+        if self.screen_sampler and not shielded:
             try:
                 title = self.screen_sampler.get_active_window_title()
                 if title:
@@ -59,7 +64,7 @@ class BlobOrchestrator:
 
         return CONTEXT_TEMPLATE.format(
             active_window=active_window,
-            screen_context=self.last_screen_context,
+            screen_context="Blocked by privacy shield" if shielded else self.last_screen_context,
             semantic_memories="\n".join([f['text'] for f in facts]) or "None",
             episodic_memories="\n".join([m['text'] for m in episodes]) or "None"
         )
@@ -117,6 +122,9 @@ class BlobOrchestrator:
     async def handle_user_message(self, user_msg):
         """Main entry point: handles a user message with a ReAct loop."""
         clean_text = self.guardrails.sanitize_input(user_msg.text)
+        stripped = clean_text.strip()
+        if stripped and stripped.split(maxsplit=1)[0].lower() == "/camera":
+            return await self._handle_camera_command(stripped)
         context = self._build_context(clean_text)
         sys_prompt = self._build_system_prompt()
         
@@ -150,18 +158,22 @@ class BlobOrchestrator:
             
             # ── Tool Execution ──────────────────────────────────────────
             skill = self.skill_registry.get_skill(tool_name)
+            if tool_name == "camera":
+                skill = None
             if not skill:
                 logger.warning(f"Tool '{tool_name}' not found in registry")
                 # Tell the LLM the tool wasn't found
                 messages.append({"role": "assistant", "content": response_text})
-                messages.append({"role": "user", "content": f"[Observation] Tool '{tool_name}' not found. Available tools: {', '.join(self.skill_registry.skills.keys())}. Please try again or respond without a tool."})
+                available = ", ".join(name for name in self.skill_registry.skills if name != "camera")
+                messages.append({"role": "user", "content": f"[Observation] Tool '{tool_name}' not found. Available tools: {available}. Please try again or respond without a tool."})
                 continue
             
             logger.info(f"Executing skill: {tool_name} with args: {tool_args}")
             
             try:
                 result = await skill.async_execute(tool_args)
-                observation = f"[Observation] Tool '{tool_name}' executed successfully.\nResult: {result.output}"
+                outcome = "executed successfully" if result.success else "failed"
+                observation = f"[Observation] Tool '{tool_name}' {outcome}.\nResult: {result.output}"
                 logger.info(f"Skill result: {result.output[:200]}")
                 
                 # If it's a screen capture, update the stored context
@@ -202,7 +214,8 @@ class BlobOrchestrator:
         final_response = self.guardrails.filter_output(final_response)
         
         # Save episodic memory
-        self.episodic.add_episode(clean_text, final_response)
+        if not (self.screen_sampler and self.screen_sampler.privacy_shield.is_capture_blocked()):
+            self.episodic.add_episode(clean_text, final_response)
         
         # Dispatch emote to frontend
         await self.dispatch_emote(emote_str)
@@ -214,6 +227,32 @@ class BlobOrchestrator:
         
         # Clean CLI output (clears the thinking indicator line)
         print(f"\r\033[K\033[96mBlob ({emote_str}):\033[0m {final_response}\n")
+        return final_response
+
+    async def _handle_camera_command(self, command: str):
+        parts = command.split(maxsplit=2)
+        action = parts[1].lower() if len(parts) > 1 else "scan"
+        name = parts[2] if len(parts) > 2 else ""
+        skill = self.skill_registry.get_skill("camera")
+        if skill is None:
+            result_text = "Camera support is unavailable."
+            success = False
+        elif action in {"enroll", "forget"} and not name:
+            result_text = f"Usage: /camera {action} <name>"
+            success = False
+        else:
+            try:
+                result = await skill.async_execute({"action": action, "name": name})
+                result_text, success = result.output, result.success
+            except Exception:
+                logger.exception("Camera command failed")
+                result_text, success = "Camera command failed. Check the local logs.", False
+        await self.dispatch_emote("HAPPY" if success else "WORRIED")
+        event = blob_service_pb2.BackendEvent()
+        event.notification.text = result_text
+        await self.event_dispatcher.broadcast(event)
+        print(f"\nBlob: {result_text}\n")
+        return result_text
 
     async def dispatch_emote(self, emote_str: str):
         """Map emote string to protobuf enum and broadcast to frontend."""
@@ -227,7 +266,13 @@ class BlobOrchestrator:
             "WORRIED": blob_service_pb2.EmoteCommand.WORRIED,
             "CELEBRATE": blob_service_pb2.EmoteCommand.CELEBRATE,
             "TIRED": blob_service_pb2.EmoteCommand.TIRED,
-            "EXCITED": blob_service_pb2.EmoteCommand.EXCITED
+            "EXCITED": blob_service_pb2.EmoteCommand.EXCITED,
+            "OFFER_COFFEE": blob_service_pb2.EmoteCommand.OFFER_COFFEE,
+            "SHY": blob_service_pb2.EmoteCommand.SHY,
+            "SLEEPING": blob_service_pb2.EmoteCommand.SLEEPING,
+            "EATING": blob_service_pb2.EmoteCommand.EATING,
+            "PROUD": blob_service_pb2.EmoteCommand.PROUD,
+            "PLAYFUL": blob_service_pb2.EmoteCommand.PLAYFUL,
         }
         emote_val = emote_map.get(emote_str, blob_service_pb2.EmoteCommand.IDLE)
         

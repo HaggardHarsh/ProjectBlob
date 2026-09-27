@@ -21,7 +21,7 @@ skill:
   tools:
     - name: "find_by_name"
       description: "Find files matching a name pattern"
-      command: "find {directory} -maxdepth 5 -iname '*{pattern}*' -type f 2>/dev/null | head -20"
+      command: "find {directory} -maxdepth 5 -iname '*{pattern}*' -type f"
       args:
         - name: "pattern"
           description: "Filename pattern to search for"
@@ -33,7 +33,7 @@ skill:
 
     - name: "find_by_extension"
       description: "Find files with a specific extension"
-      command: "find {directory} -maxdepth 5 -name '*.{ext}' -type f 2>/dev/null | head -20"
+      command: "find {directory} -maxdepth 5 -name '*.{ext}' -type f"
       args:
         - name: "ext"
           description: "File extension (e.g., py, cpp, md)"
@@ -45,7 +45,7 @@ skill:
 
     - name: "find_by_content"
       description: "Search for files containing specific text"
-      command: "grep -rl --include='*.{ext}' '{text}' {directory} 2>/dev/null | head -20"
+      command: "grep -rl --include='*.{ext}' '{text}' {directory}"
       args:
         - name: "text"
           description: "Text to search for in file contents"
@@ -61,7 +61,7 @@ skill:
 
     - name: "recent_files"
       description: "Find recently modified files"
-      command: "find {directory} -maxdepth 3 -type f -mmin -{minutes} 2>/dev/null | head -20"
+      command: "find {directory} -maxdepth 3 -type f -mmin -{minutes}"
       args:
         - name: "minutes"
           description: "Files modified within this many minutes"

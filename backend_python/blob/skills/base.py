@@ -1,7 +1,10 @@
 import abc
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Optional
+
+
+_skill_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="blob-skill")
 
 
 @dataclass
@@ -33,5 +36,4 @@ class SkillInterface(abc.ABC):
         """Async execution. Default wraps sync execute() in a thread executor.
         Override this directly for natively async skills (e.g., ReminderSkill).
         """
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self.execute, args)
+        return await asyncio.wrap_future(_skill_executor.submit(self.execute, args))
