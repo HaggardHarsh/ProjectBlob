@@ -25,7 +25,8 @@ class SemanticMemory:
             return True
         prompt = (
             "Extract only durable facts explicitly stated by the user below, such as "
-            "preferences or ongoing projects. Do not infer facts from assistant replies. "
+            "preferences (especially how Blob should speak to them or how familiar it should be) "
+            "or ongoing projects. Do not infer facts from assistant replies. "
             "Return one short fact per line, or exactly NONE. No numbering.\n\n"
             + "\n".join(f"User: {message}" for message in user_messages)
         )

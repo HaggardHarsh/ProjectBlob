@@ -75,12 +75,12 @@ target_include_directories(blob_ipc_smoke PRIVATE ${CMAKE_CURRENT_BINARY_DIR} sr
 target_link_libraries(blob_ipc_smoke gRPC::grpc++ gRPC::grpc protobuf::libprotobuf)
 
 enable_testing()
-add_executable(blob_chat_smoke
-    tests/chat_window_smoke.cpp
-    src/ui/chat_window.cpp
-    src/ui/text.cpp
+add_executable(blob_render_smoke
+    tests/render_smoke.cpp
+    src/blob/physics.cpp
+    src/overlay/renderer.cpp
 )
-target_include_directories(blob_chat_smoke PRIVATE src)
-target_link_libraries(blob_chat_smoke SDL2::SDL2)
-add_test(NAME blob_chat_smoke COMMAND blob_chat_smoke)
-set_tests_properties(blob_chat_smoke PROPERTIES ENVIRONMENT "SDL_VIDEODRIVER=dummy")
+target_include_directories(blob_render_smoke PRIVATE src)
+target_link_libraries(blob_render_smoke SDL2::SDL2)
+add_test(NAME blob_render_smoke COMMAND blob_render_smoke)
+set_tests_properties(blob_render_smoke PROPERTIES ENVIRONMENT "SDL_VIDEODRIVER=dummy")

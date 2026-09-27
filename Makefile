@@ -23,6 +23,7 @@ proto:
 		--pyi_out=$(BACKEND_DIR)/blob/ipc \
 		--grpc_python_out=$(BACKEND_DIR)/blob/ipc \
 		$(PROTO_FILE)
+	$(PYTHON) -c 'from pathlib import Path; p = Path("$(BACKEND_DIR)/blob/ipc/blob_service_pb2_grpc.py"); p.write_text(p.read_text().replace("import blob_service_pb2 as blob__service__pb2", "from . import blob_service_pb2 as blob__service__pb2"))'
 	@echo "✓ Python protobuf stubs generated"
 	# C++ stubs (generated during cmake build)
 	@echo "✓ C++ stubs will be generated during frontend build"

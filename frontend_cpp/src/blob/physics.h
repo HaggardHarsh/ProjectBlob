@@ -4,12 +4,11 @@
 #include "common/types.h"
 
 /**
- * BlobPhysics — spring-mass system arranged as a dome (half-ellipse)
- * to mimic the Rimuru-style slime shape.
+ * BlobPhysics — spring-mass outline for the small, rounded slime.
  */
 class BlobPhysics {
 public:
-    BlobPhysics();
+    BlobPhysics(int windowWidth = 180, int windowHeight = 150);
     void update(float dt);
     std::vector<Vec2> getVertices() const;
     Vec2 getCenter() const;
@@ -33,9 +32,9 @@ private:
     std::vector<Point> points;
     std::vector<Spring> springs;
     float gravity_       = 15.0f;
-    float radiusX_       = 85.0f;
-    float topRadiusY_    = 58.0f;
-    float bottomRadiusY_ = 10.0f;
+    float radiusX_       = 70.0f;
+    float topRadiusY_    = 56.0f;
+    float bottomRadiusY_ = 49.0f;
     float centerX_, centerY_;
     int windowW_, windowH_;
 };

@@ -100,3 +100,18 @@ async def test_orchestrator_react_loop_tool_execution():
     # Verify reminder was registered
     assert len(reminder_skill.reminders) == 1
     assert reminder_skill.reminders[0]["message"] == "Water break"
+
+
+def test_style_preference_is_recalled_for_unrelated_message():
+    config = MagicMock(nebius_api_key="test", nebius_base_url="http://test", model_name="test")
+    orchestrator = BlobOrchestrator(config, MagicMock(), SkillRegistry(), AsyncMock())
+    orchestrator.episodic.recall_relevant = MagicMock(return_value=[])
+    orchestrator.semantic.recall_facts = MagicMock(side_effect=[
+        [],
+        [{"text": "The user prefers a professional, less familiar tone."}],
+    ])
+
+    context = orchestrator._build_context("What is the weather?")
+
+    assert "The user prefers a professional, less familiar tone." in context
+    assert orchestrator.semantic.recall_facts.call_count == 2

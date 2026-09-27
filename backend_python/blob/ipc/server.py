@@ -15,5 +15,4 @@ async def start_grpc_server(config, orchestrator, dispatcher):
     server.add_insecure_port(config.ipc_address)
     logger.info(f"Starting gRPC server on {config.ipc_address}")
     await server.start()
-    return server
-
+    return server, servicer

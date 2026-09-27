@@ -5,14 +5,12 @@
 #include "common/types.h"
 #include "blob/state_machine.h"
 
-/**
- * Renderer — draws a Rimuru-style translucent blue slime with:
- *   • Translucent light-blue dome body
- *   • Thin blue outline
- *   • Darker-blue inner "core" shape
- *   • White specular highlights
- *   • Single dot eye & whisker mouth on the core
- */
+enum class BlobExpression {
+    IDLE, HAPPY, EXCITED, CELEBRATE, THINKING, WORRIED, SAD, ANGRY,
+    CONFUSED, SHY, SLEEPING, TIRED, EATING, PROUD, PLAYFUL
+};
+
+/** Draws the compact blue slime and its facial expressions. */
 class Renderer {
 public:
     Renderer(SDL_Window* window, int w, int h);
@@ -21,20 +19,21 @@ public:
     void clear();
     void present();
 
-    /// Draw the translucent outer dome body.
+    /// Draw the translucent body.
     void drawOuterBody(const std::vector<Vec2>& vertices);
 
-    /// Draw the thin outline around the dome.
+    /// Draw the outline around the body.
     void drawOutline(const std::vector<Vec2>& vertices);
 
-    /// Draw the darker inner "core" body.
+    /// Draw subtle depth inside the body.
     void drawInnerBody(float cx, float cy, float rx, float ry, float time);
 
     /// Draw white specular highlight spots.
     void drawHighlights(float cx, float cy, float rx, float ry);
 
-    /// Draw eye + whisker-mouth on the inner core.
-    void drawFace(float cx, float cy, float rx, float ry, float time, BlobState state);
+    /// Draw the current expression.
+    void drawFace(float cx, float cy, float rx, float ry, float time,
+                  BlobState state, BlobExpression expression);
 
     /// Build shape mask for the current frame.
     void stampShape(const std::vector<Vec2>& vertices, float cx, float cy);
@@ -44,8 +43,8 @@ public:
 private:
     void fillCircle(int cx, int cy, int r, Color color);
     void fillEllipse(int cx, int cy, int rx, int ry, Color color);
-    void fillCircleOnSurface(SDL_Surface* s, int cx, int cy, int r, Uint32 c);
-    void fillEllipseOnSurface(SDL_Surface* s, int cx, int cy, int rx, int ry, Uint32 c);
+    void drawCurve(float x0, float y0, float x1, float y1,
+                   float bend, Color color, int thickness);
 
     SDL_Renderer* sdlRenderer_ = nullptr;
     SDL_Surface*  shapeSurface_ = nullptr;

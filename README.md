@@ -16,7 +16,7 @@ Blob is a living desktop companion — a soft, translucent slime creature (style
 **Key principles:**
 - **Privacy Controls** — Local memory and optional camera processing, with a window blacklist for screen capture.
 - **Persistent Memory** — Blob recalls conversations and consolidates durable user facts across sessions via ChromaDB.
-- **Living Personality** — Fluid spring-mass physics, state-machine emotions, and contextual reactions.
+- **Living Personality** — A warm buddy by default, with fluid physics and visible facial expressions; Blob follows requests for a different tone.
 - **Expandable Skills** — Built-in tools plus validated `.skill.yaml` files loaded at startup or dropped on Blob.
 - **No local GPU required** — Inference runs through the configured Nebius API.
 
@@ -31,7 +31,7 @@ Blob is a living desktop companion — a soft, translucent slime creature (style
 │  • SDL2 transparent overlay │  Bidirectional Streaming        │  • Nebius API (cloud LLM)    │
 │    always-on-top window     │                                 │  • ReAct Skill Loop          │
 │  • Spring-mass blob physics │  EmoteCommand ──────────►       │  • ChromaDB Memory           │
-│  • State machine animations │  NotificationBubble ────►       │  • Privacy Shield            │
+│  • Facial expressions       │  EmoteCommand ──────────►       │  • Privacy Shield            │
 │  • Rimuru-style renderer    │  ◄──────── FrontendEvent        │  • Screen Capture (Wayland)  │
 │                             │                                 │  • Skill Registry            │
 └─────────────────────────────┘                                 └─────────────────────────────┘
@@ -107,7 +107,7 @@ make run-backend-only   # Terminal 1: Python AI backend + CLI chat
 make run-frontend       # Terminal 2: C++ Rimuru overlay
 ```
 
-Right-click or double-click Blob to open the chat window. Type a message and press Enter. Backend replies also appear in a temporary notification bubble. On X11 desktops with a tray manager, clicking Blob's tray icon opens chat; the right-click gesture works when no tray is available. Drag a `.skill.yaml` file onto Blob to install it. The backend also exposes a CLI prompt (`Blob>`) for terminal chat.
+Chat with Blob only at the backend's `Blob>` terminal prompt. The smaller desktop slime starts near the lower-right corner and shows emotions, but does not open a chat box or display replies. Drag it to move it; click, right-click, double-click, or click its optional X11 tray icon for a little jiggle. Drop a `.skill.yaml` file onto Blob to install it; the result appears in the terminal.
 
 To run the backend test suite, install `backend_python[dev]` and run `python -m pytest backend_python/tests -q` from the repository root.
 
@@ -120,7 +120,7 @@ pip install -e 'backend_python[vision]'
 BLOB_CAMERA_ENABLED=1
 ```
 
-Restart the backend, then use these commands in the chat window or CLI:
+Restart the backend, then use these commands at the `Blob>` prompt:
 
 ```text
 /camera scan

@@ -24,6 +24,12 @@ OverlayWindow::OverlayWindow(int w, int h) : width_(w), height_(h) {
         }
     }
 
+    SDL_Rect usable{};
+    const int display = SDL_GetWindowDisplayIndex(window_);
+    if (display >= 0 && SDL_GetDisplayUsableBounds(display, &usable) == 0) {
+        SDL_SetWindowPosition(window_, usable.x + usable.w - width_ - 24,
+                             usable.y + usable.h - height_ - 24);
+    }
     SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
 }
 

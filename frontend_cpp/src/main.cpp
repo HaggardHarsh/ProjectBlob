@@ -10,19 +10,35 @@
 #include "blob/state_machine.h"
 #include "blob/physics.h"
 #include "blob/animation.h"
-#include "blob/emotes.h"
-#include "ui/notification.h"
 #include "ui/tray.h"
-#include "ui/chat_window.h"
 
 static bool running = true;
+
+static BlobExpression expressionFor(blob::EmoteCommand::Emote emote) {
+    switch (emote) {
+        case blob::EmoteCommand::HAPPY: return BlobExpression::HAPPY;
+        case blob::EmoteCommand::EXCITED: return BlobExpression::EXCITED;
+        case blob::EmoteCommand::CELEBRATE: return BlobExpression::CELEBRATE;
+        case blob::EmoteCommand::THINKING: return BlobExpression::THINKING;
+        case blob::EmoteCommand::WORRIED: return BlobExpression::WORRIED;
+        case blob::EmoteCommand::SAD: return BlobExpression::SAD;
+        case blob::EmoteCommand::ANGRY: return BlobExpression::ANGRY;
+        case blob::EmoteCommand::CONFUSED: return BlobExpression::CONFUSED;
+        case blob::EmoteCommand::SHY: return BlobExpression::SHY;
+        case blob::EmoteCommand::SLEEPING: return BlobExpression::SLEEPING;
+        case blob::EmoteCommand::TIRED: return BlobExpression::TIRED;
+        case blob::EmoteCommand::EATING: return BlobExpression::EATING;
+        case blob::EmoteCommand::PROUD: return BlobExpression::PROUD;
+        case blob::EmoteCommand::PLAYFUL: return BlobExpression::PLAYFUL;
+        default: return BlobExpression::IDLE;
+    }
+}
 
 int main(int argc, char* argv[]) {
     std::srand((unsigned)std::time(nullptr));
 
-    // Rimuru dome is wider than tall
-    int width  = 280;
-    int height = 220;
+    int width  = 180;
+    int height = 150;
     std::string ipc_address = "localhost:50051";
 
     for (int i = 1; i < argc; ++i) {
@@ -49,18 +65,9 @@ int main(int argc, char* argv[]) {
     InputHandler input;
     GrpcClient grpc_client(ipc_address);
     BlobStateMachine state_machine;
-    BlobPhysics physics;
+    BlobPhysics physics(width, height);
     AnimationController animation;
-    EmoteRenderer emotes;
-    NotificationManager notifications;
-    notifications.setAnchor(window.getSDLWindow());
     SystemTray tray;
-    ChatWindow chat_window;
-    chat_window.setSendHandler([&](const std::string& message) {
-        if (!grpc_client.sendMessage(message)) {
-            chat_window.addAssistantMessage("Message queue is full. Please try again.");
-        }
-    });
 
     grpc_client.start();
 
@@ -72,6 +79,8 @@ int main(int argc, char* argv[]) {
     float jiggleTimer = 0.0f;
     float nextJiggle  = 3.0f + (std::rand() % 400) / 100.0f;
     bool privacyActive = false;
+    BlobExpression expression = BlobExpression::IDLE;
+    Uint32 expressionUntil = 0;
 
     while (running) {
         Uint32 frameStart = SDL_GetTicks();
@@ -81,7 +90,6 @@ int main(int argc, char* argv[]) {
         // ── Event loop ──
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
-            chat_window.handleEvent(event);
             if (event.type == SDL_QUIT) {
                 running = false;
             }
@@ -93,12 +101,12 @@ int main(int argc, char* argv[]) {
             else if (event.type == SDL_MOUSEBUTTONDOWN &&
                      event.button.windowID == SDL_GetWindowID(window.getSDLWindow()) &&
                      event.button.button == SDL_BUTTON_RIGHT) {
-                chat_window.toggle();
+                physics.jiggle();
             }
             else if (event.type == SDL_MOUSEBUTTONDOWN &&
                      event.button.windowID == SDL_GetWindowID(window.getSDLWindow()) &&
                      event.button.button == SDL_BUTTON_LEFT && event.button.clicks >= 2) {
-                chat_window.toggle();
+                physics.jiggle();
             }
             else if (event.type == SDL_MOUSEBUTTONDOWN &&
                      event.button.windowID == SDL_GetWindowID(window.getSDLWindow()) &&
@@ -136,32 +144,25 @@ int main(int argc, char* argv[]) {
                 auto input_event = input.processEvent(event);
                 const std::string& path = input_event.filepath;
                 if (path.size() >= 11 && path.substr(path.size() - 11) == ".skill.yaml") {
-                    const std::string status = grpc_client.installSkill(path) ? "Installing skill pill..." : "Could not queue skill installation.";
-                    if (chat_window.isVisible()) chat_window.addAssistantMessage(status);
-                    else notifications.show(status);
+                    std::cout << (grpc_client.installSkill(path) ? "Installing skill pill...\n" :
+                                  "Could not queue skill installation. Start the backend and try again.\n");
                 } else {
-                    if (chat_window.isVisible()) chat_window.addAssistantMessage("Drop a .skill.yaml file to install a skill.");
-                    else notifications.show("Drop a .skill.yaml file to install a skill.");
+                    std::cout << "Drop a .skill.yaml file to install a skill.\n";
                 }
             }
         }
 
         tray.poll();
-        if (tray.takeActivated()) chat_window.toggle();
-        chat_window.setConnected(grpc_client.isConnected());
+        if (tray.takeActivated()) physics.jiggle();
         while (auto event = grpc_client.pollEvent()) {
-            if (event->has_notification()) {
-                const std::string text = event->notification().text();
-                chat_window.addAssistantMessage(text);
-                if (!chat_window.isVisible()) notifications.show(text, event->notification().display_ms());
-            } else if (event->has_skill_ack()) {
+            if (event->has_skill_ack()) {
                 const auto& ack = event->skill_ack();
-                const std::string text = ack.success() ? ack.description() : "Skill install failed: " + ack.error_message();
-                chat_window.addAssistantMessage(text);
-                if (!chat_window.isVisible()) notifications.show(text);
                 if (ack.success()) physics.jiggle();
             } else if (event->has_emote()) {
                 const auto emote = event->emote().emote();
+                expression = expressionFor(emote);
+                expressionUntil = expression == BlobExpression::THINKING ? 0 :
+                    SDL_GetTicks() + (event->emote().duration_ms() ? event->emote().duration_ms() : 3500);
                 if (privacyActive) state_machine.changeState(BlobState::BLINDFOLDED);
                 else if (emote == blob::EmoteCommand::THINKING) state_machine.changeState(BlobState::THINKING);
                 else if (emote == blob::EmoteCommand::EATING) state_machine.changeState(BlobState::EATING);
@@ -172,6 +173,11 @@ int main(int argc, char* argv[]) {
                 privacyActive = event->privacy().activated();
                 state_machine.changeState(privacyActive ? BlobState::BLINDFOLDED : BlobState::IDLE);
             }
+        }
+        if (expressionUntil && SDL_TICKS_PASSED(SDL_GetTicks(), expressionUntil)) {
+            expression = BlobExpression::IDLE;
+            expressionUntil = 0;
+            if (!privacyActive) state_machine.changeState(BlobState::IDLE);
         }
 
         // ── Physics & animation ──
@@ -196,25 +202,23 @@ int main(int argc, char* argv[]) {
         float ry      = physics.getRadiusY();
         float time    = (float)SDL_GetTicks() / 1000.0f;
 
-        // 1) Translucent outer dome body
+        // 1) Translucent rounded body
         renderer.drawOuterBody(vertices);
 
         // 2) Thin blue outline
         renderer.drawOutline(vertices);
 
-        // 3) Darker inner "core" body
+        // 3) Soft interior depth
         renderer.drawInnerBody(center.x, center.y, rx, ry, time);
 
         // 4) White specular highlights
         renderer.drawHighlights(center.x, center.y, rx, ry);
 
-        // 5) Eye + whisker-mouth
-        renderer.drawFace(center.x, center.y, rx, ry, time, state_machine.getCurrentState());
+        // 5) The expression sent by the backend
+        renderer.drawFace(center.x, center.y, rx, ry, time,
+                          state_machine.getCurrentState(), expression);
 
         renderer.present();
-        notifications.update(dt);
-        notifications.render();
-        chat_window.render();
 
         // ── Transparency mask ──
         renderer.stampShape(vertices, center.x, center.y);

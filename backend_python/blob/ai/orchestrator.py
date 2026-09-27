@@ -48,6 +48,13 @@ class BlobOrchestrator:
         """Build the context block with memories, active window, and screen data."""
         episodes = self.episodic.recall_relevant(clean_text, top_k=5)
         facts = self.semantic.recall_facts(clean_text, top_k=3)
+        # Tone preferences must remain in view even when the current question
+        # is about an unrelated task.
+        style_facts = self.semantic.recall_facts(
+            "How does the user want Blob to speak to them: friendly buddy, formal, professional, direct, or quiet?",
+            top_k=2,
+        )
+        fact_texts = list(dict.fromkeys(item["text"] for item in style_facts + facts))
         
         # Try to get active window title (lightweight, no screenshot)
         active_window = "Unknown"
@@ -65,7 +72,7 @@ class BlobOrchestrator:
         return CONTEXT_TEMPLATE.format(
             active_window=active_window,
             screen_context="Blocked by privacy shield" if shielded else self.last_screen_context,
-            semantic_memories="\n".join([f['text'] for f in facts]) or "None",
+            semantic_memories="\n".join(fact_texts) or "None",
             episodic_memories="\n".join([m['text'] for m in episodes]) or "None"
         )
 
@@ -259,8 +266,8 @@ class BlobOrchestrator:
         emote_map = {
             "IDLE": blob_service_pb2.EmoteCommand.IDLE,
             "HAPPY": blob_service_pb2.EmoteCommand.HAPPY,
-            "SAD": blob_service_pb2.EmoteCommand.WORRIED,
-            "ANGRY": blob_service_pb2.EmoteCommand.CONFUSED,
+            "SAD": blob_service_pb2.EmoteCommand.SAD,
+            "ANGRY": blob_service_pb2.EmoteCommand.ANGRY,
             "CONFUSED": blob_service_pb2.EmoteCommand.CONFUSED,
             "THINKING": blob_service_pb2.EmoteCommand.THINKING,
             "WORRIED": blob_service_pb2.EmoteCommand.WORRIED,

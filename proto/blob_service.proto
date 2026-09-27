@@ -103,6 +103,8 @@ message EmoteCommand {
     PROUD = 11;
     WORRIED = 12;
     PLAYFUL = 13;
+    SAD = 14;
+    ANGRY = 15;
   }
   Emote emote = 1;
   float intensity = 2;     // 0.0 - 1.0

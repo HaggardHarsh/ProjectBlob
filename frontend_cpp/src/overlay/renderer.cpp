@@ -1,286 +1,250 @@
 #include "renderer.h"
-#include <iostream>
+
 #include <algorithm>
 #include <cmath>
+#include <stdexcept>
 
-// ════════════════════════════════════════════════════════════════
-//  Colour palette — Rimuru Tempest slime
-// ════════════════════════════════════════════════════════════════
-static const Color COL_OUTER     = {175, 210, 240, 165};   // translucent light blue body
-static const Color COL_OUTLINE   = { 80, 130, 185, 210};   // blue outline
-static const Color COL_INNER     = {115, 155, 200, 210};   // dark inner core
-static const Color COL_INNER_LT  = {145, 190, 230, 170};   // lighter inner highlight
-static const Color COL_HIGHLIGHT = {245, 250, 255, 175};   // specular white
-static const Color COL_EYE       = { 40,  50,  75, 255};   // dark eye
-static const Color COL_MOUTH     = { 55,  75, 120, 210};   // whisker lines
-
-// ════════════════════════════════════════════════════════════════
-//  Construction / Destruction
-// ════════════════════════════════════════════════════════════════
+namespace {
+constexpr Color SKY_TOP{177, 237, 253, 255};
+constexpr Color SKY_LOWER{76, 178, 226, 255};
+constexpr Color OUTLINE{36, 127, 185, 230};
+constexpr Color INK{35, 65, 96, 255};
+constexpr Color BLUSH{255, 124, 160, 105};
+}
 
 Renderer::Renderer(SDL_Window* window, int w, int h) : width_(w), height_(h) {
-    sdlRenderer_ = SDL_CreateRenderer(
-        window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-    if (!sdlRenderer_)
-        sdlRenderer_ = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
-    if (!sdlRenderer_)
-        throw std::runtime_error("SDL_CreateRenderer failed");
+    sdlRenderer_ = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    if (!sdlRenderer_) sdlRenderer_ = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
+    if (!sdlRenderer_) throw std::runtime_error("SDL_CreateRenderer failed");
     SDL_SetRenderDrawBlendMode(sdlRenderer_, SDL_BLENDMODE_BLEND);
-    shapeSurface_ = SDL_CreateRGBSurface(
-        0, width_, height_, 32,
-        0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000);
+    shapeSurface_ = SDL_CreateRGBSurface(0, width_, height_, 32,
+                                        0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000);
+    if (!shapeSurface_) throw std::runtime_error("SDL_CreateRGBSurface failed");
 }
 
 Renderer::~Renderer() {
     if (shapeSurface_) SDL_FreeSurface(shapeSurface_);
-    if (sdlRenderer_)  SDL_DestroyRenderer(sdlRenderer_);
+    if (sdlRenderer_) SDL_DestroyRenderer(sdlRenderer_);
 }
 
 void Renderer::clear() {
     SDL_SetRenderDrawColor(sdlRenderer_, 0, 0, 0, 0);
     SDL_RenderClear(sdlRenderer_);
-    if (shapeSurface_)
-        SDL_FillRect(shapeSurface_, nullptr,
-                     SDL_MapRGBA(shapeSurface_->format, 0, 0, 0, 0));
+    SDL_FillRect(shapeSurface_, nullptr, SDL_MapRGBA(shapeSurface_->format, 0, 0, 0, 0));
 }
 
 void Renderer::present() { SDL_RenderPresent(sdlRenderer_); }
 
-// ════════════════════════════════════════════════════════════════
-//  Outer body — translucent dome, gradient from lighter centre
-// ════════════════════════════════════════════════════════════════
-
 void Renderer::drawOuterBody(const std::vector<Vec2>& verts) {
     if (verts.size() < 3) return;
-
-    float cx = 0, cy = 0;
-    for (auto& v : verts) { cx += v.x; cy += v.y; }
-    cx /= (float)verts.size();
-    cy /= (float)verts.size();
-
-    Color lighter = {
-        (uint8_t)std::min(255, COL_OUTER.r + 35),
-        (uint8_t)std::min(255, COL_OUTER.g + 30),
-        (uint8_t)std::min(255, COL_OUTER.b + 15),
-        (uint8_t)std::min(255, COL_OUTER.a + 20)
-    };
-
-    auto toSDL = [](Color c) -> SDL_Color { return {c.r, c.g, c.b, c.a}; };
-
+    Vec2 center{0, 0};
+    float minY = verts.front().y, maxY = minY;
+    for (const auto& v : verts) {
+        center.x += v.x;
+        center.y += v.y;
+        minY = std::min(minY, v.y);
+        maxY = std::max(maxY, v.y);
+    }
+    center.x /= verts.size();
+    center.y /= verts.size();
+    const SDL_Color middle{139, 223, 251, 255};
     for (size_t i = 0; i < verts.size(); ++i) {
-        size_t next = (i + 1) % verts.size();
-        SDL_Vertex v0, v1, v2;
-        v0.position  = {cx, cy};        v0.color = toSDL(lighter); v0.tex_coord = {0,0};
-        v1.position  = {verts[i].x, verts[i].y};   v1.color = toSDL(COL_OUTER);  v1.tex_coord = {0,0};
-        v2.position  = {verts[next].x, verts[next].y}; v2.color = toSDL(COL_OUTER);  v2.tex_coord = {0,0};
-        SDL_Vertex tri[3] = {v0, v1, v2};
-        SDL_RenderGeometry(sdlRenderer_, nullptr, tri, 3, nullptr, 0);
+        const auto& a = verts[i];
+        const auto& b = verts[(i + 1) % verts.size()];
+        auto edgeColor = [&](float y) {
+            const float t = std::clamp((y - minY) / std::max(1.0f, maxY - minY), 0.0f, 1.0f);
+            return SDL_Color{
+                Uint8(SKY_TOP.r + (SKY_LOWER.r - SKY_TOP.r) * t),
+                Uint8(SKY_TOP.g + (SKY_LOWER.g - SKY_TOP.g) * t),
+                Uint8(SKY_TOP.b + (SKY_LOWER.b - SKY_TOP.b) * t),
+                255,
+            };
+        };
+        SDL_Vertex triangle[3]{
+            {{center.x, center.y}, middle, {0, 0}},
+            {{a.x, a.y}, edgeColor(a.y), {0, 0}},
+            {{b.x, b.y}, edgeColor(b.y), {0, 0}},
+        };
+        SDL_RenderGeometry(sdlRenderer_, nullptr, triangle, 3, nullptr, 0);
     }
 }
-
-// ════════════════════════════════════════════════════════════════
-//  Outline — blue border, 2px thick
-// ════════════════════════════════════════════════════════════════
 
 void Renderer::drawOutline(const std::vector<Vec2>& verts) {
     if (verts.size() < 3) return;
-    SDL_SetRenderDrawColor(sdlRenderer_, COL_OUTLINE.r, COL_OUTLINE.g,
-                           COL_OUTLINE.b, COL_OUTLINE.a);
+    SDL_SetRenderDrawColor(sdlRenderer_, OUTLINE.r, OUTLINE.g, OUTLINE.b, OUTLINE.a);
     for (size_t i = 0; i < verts.size(); ++i) {
-        size_t next = (i + 1) % verts.size();
-        for (int off = -1; off <= 1; ++off) {
-            SDL_RenderDrawLineF(sdlRenderer_,
-                                verts[i].x, verts[i].y + off,
-                                verts[next].x, verts[next].y + off);
-        }
+        const auto& a = verts[i];
+        const auto& b = verts[(i + 1) % verts.size()];
+        SDL_RenderDrawLineF(sdlRenderer_, a.x, a.y, b.x, b.y);
+        SDL_RenderDrawLineF(sdlRenderer_, a.x, a.y + 1.0f, b.x, b.y + 1.0f);
     }
 }
 
-// ════════════════════════════════════════════════════════════════
-//  Inner "core" body — the darker blob visible inside Rimuru
-//  Much larger and more prominent than before
-// ════════════════════════════════════════════════════════════════
-
-void Renderer::drawInnerBody(float cx, float cy, float rx, float ry,
-                             float time) {
-    // The inner body is a blob shape sitting inside the dome.
-    // Head on the left, body extending right — matching reference.
-    float breathe = std::sin(time * 1.3f) * 2.0f;
-
-    // === Main body oval (centre-right of dome) ===
-    float bodyX  = cx + rx * 0.05f;
-    float bodyY  = cy + ry * 0.15f;
-    float bodyRX = rx * 0.42f;
-    float bodyRY = ry * 0.28f + breathe * 0.4f;
-    fillEllipse((int)bodyX, (int)bodyY, (int)bodyRX, (int)bodyRY, COL_INNER);
-
-    // === Head circle (left side, overlapping body) ===
-    float headX  = cx - rx * 0.20f;
-    float headY  = cy - ry * 0.05f;
-    float headR  = rx * 0.28f + breathe * 0.2f;
-    fillCircle((int)headX, (int)headY, (int)headR, COL_INNER);
-
-    // === Lighter highlight on the inner body for depth ===
-    fillEllipse((int)(headX + headR * 0.1f), (int)(headY - headR * 0.25f),
-                (int)(headR * 0.55f), (int)(headR * 0.4f), COL_INNER_LT);
+void Renderer::drawInnerBody(float cx, float cy, float rx, float ry, float time) {
+    const float breathe = std::sin(time * 1.8f) * 1.3f;
+    fillEllipse(int(cx), int(cy + ry * 0.33f), int(rx * 0.74f),
+                int(ry * 0.48f + breathe), {70, 175, 227, 35});
+    fillEllipse(int(cx - rx * 0.10f), int(cy - ry * 0.31f),
+                int(rx * 0.67f), int(ry * 0.34f), {225, 251, 255, 42});
 }
-
-// ════════════════════════════════════════════════════════════════
-//  Specular highlights — white glossy spots, upper-left
-// ════════════════════════════════════════════════════════════════
 
 void Renderer::drawHighlights(float cx, float cy, float rx, float ry) {
-    // Large oval highlight — upper left of dome
-    float h1x = cx - rx * 0.32f;
-    float h1y = cy - ry * 0.55f;
-    fillEllipse((int)h1x, (int)h1y,
-                (int)(rx * 0.20f), (int)(ry * 0.13f), COL_HIGHLIGHT);
-
-    // Medium circle highlight — below and left
-    float h2x = cx - rx * 0.50f;
-    float h2y = cy - ry * 0.32f;
-    fillCircle((int)h2x, (int)h2y, (int)(rx * 0.08f), COL_HIGHLIGHT);
-
-    // Small dot highlight
-    float h3x = cx - rx * 0.43f;
-    float h3y = cy - ry * 0.18f;
-    fillCircle((int)h3x, (int)h3y, (int)(rx * 0.04f),
-               {255, 255, 255, 130});
+    fillEllipse(int(cx - rx * 0.48f), int(cy - ry * 0.61f),
+                int(rx * 0.23f), int(ry * 0.105f), {255, 255, 255, 175});
+    fillEllipse(int(cx - rx * 0.65f), int(cy - ry * 0.42f),
+                int(rx * 0.065f), int(ry * 0.12f), {255, 255, 255, 105});
+    fillCircle(int(cx + rx * 0.58f), int(cy + ry * 0.34f),
+               std::max(2, int(rx * 0.035f)), {225, 250, 255, 100});
 }
 
-// ════════════════════════════════════════════════════════════════
-//  Face — BIG eye + prominent whisker-mouth
-// ════════════════════════════════════════════════════════════════
-
-void Renderer::drawFace(float cx, float cy, float rx, float ry, float time, BlobState state) {
-    if (state == BlobState::BLINDFOLDED) {
-        fillEllipse((int)cx, (int)(cy + ry * 0.02f), (int)(rx * 0.37f),
-                    (int)(ry * 0.15f), COL_EYE);
-        fillCircle((int)(cx - rx * 0.2f), (int)(cy - ry * 0.02f), 3,
-                   {173, 224, 249, 220});
-        return;
-    }
-    // ─── EYE ───
-    // Large dark oval on the inner body's "head"
-    float eyeX = cx - rx * 0.14f;
-    float eyeY = cy - ry * 0.02f;
-    float eyeRX = rx * 0.065f;
-    float eyeRY = ry * 0.07f;
-
-    // Subtle look-around
-    float lookX = std::sin(time * 0.5f) * 2.0f;
-    float lookY = state == BlobState::THINKING ? -3.0f : std::cos(time * 0.8f) * 1.5f;
-
-    fillEllipse((int)(eyeX + lookX), (int)(eyeY + lookY),
-                (int)eyeRX, (int)eyeRY, COL_EYE);
-
-    // Tiny white eye highlight
-    fillCircle((int)(eyeX + lookX - 1), (int)(eyeY + lookY - 2),
-               (int)(eyeRX * 0.4f), {255, 255, 255, 200});
-
-    // ─── WHISKER MOUTH ───
-    // Three prominent lines extending from the face to the right
-    SDL_SetRenderDrawColor(sdlRenderer_, COL_MOUTH.r, COL_MOUTH.g,
-                           COL_MOUTH.b, COL_MOUTH.a);
-
-    float mouthX = cx + rx * 0.02f;
-    float mouthY = cy + ry * 0.15f;
-    float lineLen = rx * 0.22f;
-    float spacing = ry * 0.07f;
-
-    for (int i = -1; i <= 1; ++i) {
-        float y = mouthY + (float)i * spacing;
-        float splay = (float)i * 0.15f;   // slight fan-out angle
-
-        // Draw 3 parallel lines for thickness
-        for (int t = -1; t <= 1; ++t) {
-            SDL_RenderDrawLineF(sdlRenderer_,
-                                mouthX, y + (float)t * 0.7f,
-                                mouthX + lineLen,
-                                y + splay * lineLen + (float)t * 0.7f);
+void Renderer::drawCurve(float x0, float y0, float x1, float y1,
+                         float bend, Color color, int thickness) {
+    SDL_SetRenderDrawColor(sdlRenderer_, color.r, color.g, color.b, color.a);
+    for (int stroke = 0; stroke < thickness; ++stroke) {
+        float px = x0, py = y0 + stroke;
+        for (int i = 1; i <= 20; ++i) {
+            const float t = i / 20.0f;
+            const float x = x0 + (x1 - x0) * t;
+            const float y = y0 + (y1 - y0) * t + bend * 4.0f * t * (1.0f - t) + stroke;
+            SDL_RenderDrawLineF(sdlRenderer_, px, py, x, y);
+            px = x; py = y;
         }
     }
 }
 
-// ════════════════════════════════════════════════════════════════
-//  Shape mask
-// ════════════════════════════════════════════════════════════════
+void Renderer::drawFace(float cx, float cy, float rx, float ry, float time,
+                        BlobState state, BlobExpression expression) {
+    const float left = cx - rx * 0.29f;
+    const float right = cx + rx * 0.29f;
+    const float eyeY = cy - ry * 0.10f;
+    const float eyeRX = std::max(4.0f, rx * 0.085f);
+    const float eyeRY = std::max(5.0f, ry * 0.14f);
+    const float mouthY = cy + ry * 0.36f;
 
-void Renderer::stampShape(const std::vector<Vec2>& verts, float cx, float cy) {
-    if (!shapeSurface_ || verts.empty()) return;
-
-    // Find bounding ellipse
-    float maxRX = 0, maxRYup = 0, maxRYdn = 0;
-    for (auto& v : verts) {
-        float dx = std::abs(v.x - cx);
-        if (dx > maxRX) maxRX = dx;
-        float dy = v.y - cy;
-        if (dy < 0 && std::abs(dy) > maxRYup) maxRYup = std::abs(dy);
-        if (dy > 0 && dy > maxRYdn) maxRYdn = dy;
+    if (state == BlobState::BLINDFOLDED) {
+        fillEllipse(int(cx), int(eyeY), int(rx * 0.58f), int(ry * 0.25f),
+                    {39, 105, 153, 220});
+        fillEllipse(int(cx), int(eyeY - 2), int(rx * 0.51f), int(ry * 0.20f),
+                    {80, 156, 195, 245});
+        fillEllipse(int(cx - rx * 0.20f), int(eyeY - ry * 0.08f),
+                    int(rx * 0.11f), std::max(2, int(ry * 0.035f)), {219, 242, 248, 135});
+        drawCurve(cx - rx * 0.13f, mouthY, cx + rx * 0.13f, mouthY, 3, INK, 2);
+        return;
     }
-    float maxRY = std::max(maxRYup, maxRYdn);
 
-    Uint32 opaque = SDL_MapRGBA(shapeSurface_->format, 255, 255, 255, 255);
-    fillEllipseOnSurface(shapeSurface_, (int)cx, (int)cy,
-                         (int)(maxRX + 10), (int)(maxRY + 10), opaque);
+    const bool blink = expression == BlobExpression::IDLE && std::fmod(time, 4.8f) < 0.12f;
+    const bool closed = expression == BlobExpression::HAPPY ||
+                        expression == BlobExpression::EXCITED ||
+                        expression == BlobExpression::CELEBRATE ||
+                        expression == BlobExpression::PLAYFUL ||
+                        expression == BlobExpression::SLEEPING ||
+                        expression == BlobExpression::TIRED || blink;
+    if (closed) {
+        const bool sleepy = expression == BlobExpression::SLEEPING ||
+                            expression == BlobExpression::TIRED || blink;
+        const float bend = sleepy ? 1.0f : -eyeRY * 0.75f;
+        drawCurve(left - eyeRX, eyeY, left + eyeRX, eyeY, bend, INK, 2);
+        drawCurve(right - eyeRX, eyeY, right + eyeRX, eyeY, bend, INK, 2);
+    } else {
+        float lookX = 0.0f, lookY = 0.0f;
+        if (expression == BlobExpression::THINKING) { lookX = eyeRX * 0.30f; lookY = -eyeRY * 0.24f; }
+        if (expression == BlobExpression::SHY) lookY = eyeRY * 0.30f;
+        fillEllipse(int(left + lookX), int(eyeY + lookY), int(eyeRX), int(eyeRY), INK);
+        fillEllipse(int(right + lookX), int(eyeY + lookY), int(eyeRX), int(eyeRY), INK);
+        fillCircle(int(left + lookX - eyeRX * 0.28f), int(eyeY + lookY - eyeRY * 0.30f),
+                   std::max(2, int(eyeRX * 0.29f)), {255, 255, 255, 225});
+        fillCircle(int(right + lookX - eyeRX * 0.28f), int(eyeY + lookY - eyeRY * 0.30f),
+                   std::max(2, int(eyeRX * 0.29f)), {255, 255, 255, 225});
+    }
+
+    if (expression == BlobExpression::WORRIED || expression == BlobExpression::SAD) {
+        drawCurve(left - eyeRX, eyeY - eyeRY * 1.55f, left + eyeRX, eyeY - eyeRY * 1.1f, -2, INK, 2);
+        drawCurve(right - eyeRX, eyeY - eyeRY * 1.1f, right + eyeRX, eyeY - eyeRY * 1.55f, -2, INK, 2);
+        drawCurve(cx - rx * 0.15f, mouthY + 3, cx + rx * 0.15f, mouthY + 3, -5, INK, 2);
+        if (expression == BlobExpression::SAD)
+            fillEllipse(int(left - eyeRX * 1.3f), int(eyeY + eyeRY * 1.5f), 3, 5, {225, 249, 255, 220});
+    } else if (expression == BlobExpression::ANGRY) {
+        drawCurve(left - eyeRX * 1.4f, eyeY - eyeRY * 1.5f,
+                  left + eyeRX, eyeY - eyeRY * 0.85f, 1, INK, 2);
+        drawCurve(right - eyeRX, eyeY - eyeRY * 0.85f,
+                  right + eyeRX * 1.4f, eyeY - eyeRY * 1.5f, 1, INK, 2);
+        drawCurve(cx - rx * 0.14f, mouthY + 1, cx + rx * 0.14f, mouthY + 1, -3, INK, 2);
+    } else if (expression == BlobExpression::CONFUSED) {
+        drawCurve(right - eyeRX, eyeY - eyeRY * 1.7f,
+                  right + eyeRX, eyeY - eyeRY * 1.95f, -2, INK, 2);
+        drawCurve(cx - rx * 0.13f, mouthY, cx + rx * 0.13f, mouthY - 2, 1, INK, 2);
+    } else if (expression == BlobExpression::THINKING) {
+        fillEllipse(int(cx), int(mouthY), std::max(3, int(rx * 0.045f)),
+                    std::max(3, int(ry * 0.065f)), INK);
+    } else if (expression == BlobExpression::EXCITED ||
+               expression == BlobExpression::CELEBRATE ||
+               expression == BlobExpression::EATING) {
+        fillEllipse(int(cx), int(mouthY), int(rx * 0.16f), int(ry * 0.14f), INK);
+        fillEllipse(int(cx), int(mouthY + ry * 0.06f), int(rx * 0.10f),
+                    int(ry * 0.045f), {249, 136, 162, 220});
+    } else if (expression == BlobExpression::SLEEPING || expression == BlobExpression::TIRED) {
+        drawCurve(cx - rx * 0.08f, mouthY, cx + rx * 0.08f, mouthY, 2, INK, 2);
+    } else if (expression == BlobExpression::PROUD) {
+        drawCurve(cx - rx * 0.12f, mouthY + 1, cx + rx * 0.16f, mouthY - 2, 4, INK, 2);
+    } else {
+        drawCurve(cx - rx * 0.19f, mouthY - 2, cx + rx * 0.19f, mouthY - 2,
+                  expression == BlobExpression::HAPPY || expression == BlobExpression::PLAYFUL ? 7 : 5,
+                  INK, 2);
+    }
+
+    if (expression == BlobExpression::HAPPY || expression == BlobExpression::EXCITED ||
+        expression == BlobExpression::SHY || expression == BlobExpression::PLAYFUL ||
+        expression == BlobExpression::CELEBRATE) {
+        fillEllipse(int(cx - rx * 0.57f), int(cy + ry * 0.22f),
+                    int(rx * 0.13f), int(ry * 0.09f), BLUSH);
+        fillEllipse(int(cx + rx * 0.57f), int(cy + ry * 0.22f),
+                    int(rx * 0.13f), int(ry * 0.09f), BLUSH);
+    }
+    if (expression == BlobExpression::EXCITED || expression == BlobExpression::CELEBRATE) {
+        fillCircle(int(cx - rx * 0.74f), int(cy - ry * 0.43f), 2, {255, 255, 255, 215});
+        fillCircle(int(cx + rx * 0.72f), int(cy - ry * 0.35f), 2, {255, 255, 255, 215});
+    }
 }
 
-// ════════════════════════════════════════════════════════════════
-//  Primitive helpers
-// ════════════════════════════════════════════════════════════════
-
-void Renderer::fillCircle(int cx, int cy, int r, Color c) {
-    if (r <= 0) return;
-    SDL_SetRenderDrawColor(sdlRenderer_, c.r, c.g, c.b, c.a);
-    for (int dy = -r; dy <= r; ++dy) {
-        int dx = (int)std::sqrt((float)(r * r - dy * dy));
-        SDL_RenderDrawLine(sdlRenderer_, cx - dx, cy + dy, cx + dx, cy + dy);
+void Renderer::stampShape(const std::vector<Vec2>& verts, float, float) {
+    if (!shapeSurface_ || verts.size() < 3) return;
+    SDL_LockSurface(shapeSurface_);
+    auto* pixels = static_cast<Uint32*>(shapeSurface_->pixels);
+    const int pitch = shapeSurface_->pitch / 4;
+    const Uint32 opaque = SDL_MapRGBA(shapeSurface_->format, 255, 255, 255, 255);
+    std::vector<float> intersections;
+    intersections.reserve(verts.size());
+    for (int y = 0; y < height_; ++y) {
+        intersections.clear();
+        const float sampleY = y + 0.5f;
+        for (size_t i = 0; i < verts.size(); ++i) {
+            const Vec2& a = verts[i];
+            const Vec2& b = verts[(i + 1) % verts.size()];
+            if ((a.y <= sampleY && b.y > sampleY) || (b.y <= sampleY && a.y > sampleY)) {
+                const float t = (sampleY - a.y) / (b.y - a.y);
+                intersections.push_back(a.x + t * (b.x - a.x));
+            }
+        }
+        std::sort(intersections.begin(), intersections.end());
+        for (size_t i = 0; i + 1 < intersections.size(); i += 2) {
+            const int start = std::max(0, int(std::ceil(intersections[i])));
+            const int end = std::min(width_ - 1, int(std::floor(intersections[i + 1])));
+            for (int x = start; x <= end; ++x) pixels[y * pitch + x] = opaque;
+        }
     }
+    SDL_UnlockSurface(shapeSurface_);
 }
 
-void Renderer::fillEllipse(int cx, int cy, int rx, int ry, Color c) {
+void Renderer::fillCircle(int cx, int cy, int r, Color color) {
+    fillEllipse(cx, cy, r, r, color);
+}
+
+void Renderer::fillEllipse(int cx, int cy, int rx, int ry, Color color) {
     if (rx <= 0 || ry <= 0) return;
-    SDL_SetRenderDrawColor(sdlRenderer_, c.r, c.g, c.b, c.a);
-    for (int dy = -ry; dy <= ry; ++dy) {
-        float t = (float)dy / (float)ry;
-        int dx = (int)(std::sqrt(1.0f - t * t) * (float)rx);
-        SDL_RenderDrawLine(sdlRenderer_, cx - dx, cy + dy, cx + dx, cy + dy);
+    SDL_SetRenderDrawColor(sdlRenderer_, color.r, color.g, color.b, color.a);
+    for (int y = -ry; y <= ry; ++y) {
+        const float t = float(y) / float(ry);
+        const int dx = int(std::sqrt(std::max(0.0f, 1.0f - t * t)) * rx);
+        SDL_RenderDrawLine(sdlRenderer_, cx - dx, cy + y, cx + dx, cy + y);
     }
-}
-
-void Renderer::fillCircleOnSurface(SDL_Surface* surf, int cx, int cy,
-                                   int r, Uint32 color) {
-    if (r <= 0) return;
-    SDL_LockSurface(surf);
-    Uint32* px = (Uint32*)surf->pixels;
-    int pitch = surf->pitch / 4;
-    for (int dy = -r; dy <= r; ++dy) {
-        int dx = (int)std::sqrt((float)(r * r - dy * dy));
-        int py = cy + dy;
-        if (py < 0 || py >= surf->h) continue;
-        int x0 = std::max(0, cx - dx);
-        int x1 = std::min(surf->w - 1, cx + dx);
-        for (int px_ = x0; px_ <= x1; ++px_)
-            px[py * pitch + px_] = color;
-    }
-    SDL_UnlockSurface(surf);
-}
-
-void Renderer::fillEllipseOnSurface(SDL_Surface* surf, int cx, int cy,
-                                    int rx, int ry, Uint32 color) {
-    if (rx <= 0 || ry <= 0) return;
-    SDL_LockSurface(surf);
-    Uint32* px = (Uint32*)surf->pixels;
-    int pitch = surf->pitch / 4;
-    for (int dy = -ry; dy <= ry; ++dy) {
-        float t = (float)dy / (float)ry;
-        int dx = (int)(std::sqrt(1.0f - t * t) * (float)rx);
-        int py = cy + dy;
-        if (py < 0 || py >= surf->h) continue;
-        int x0 = std::max(0, cx - dx);
-        int x1 = std::min(surf->w - 1, cx + dx);
-        for (int px_ = x0; px_ <= x1; ++px_)
-            px[py * pitch + px_] = color;
-    }
-    SDL_UnlockSurface(surf);
 }

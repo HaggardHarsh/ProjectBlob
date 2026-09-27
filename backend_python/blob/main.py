@@ -2,7 +2,7 @@ import asyncio
 import argparse
 import logging
 import signal
-import threading
+import sys
 from pathlib import Path
 from blob.config import BlobConfig
 from blob.ipc.server import start_grpc_server
@@ -21,29 +21,35 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 async def read_cli_line():
-    """Read from stdin without leaving a blocking default-executor task on shutdown."""
+    """Wait for terminal input without keeping a thread blocked in input()."""
     loop = asyncio.get_running_loop()
     future = loop.create_future()
+    fd = sys.stdin.fileno()
+    print("Blob> ", end="", flush=True)
 
-    def complete(value=None, error=None):
-        if not future.done():
-            if error is not None:
-                future.set_exception(error)
-            else:
-                future.set_result(value)
-
-    def read():
+    def on_ready():
+        loop.remove_reader(fd)
         try:
-            value = input("Blob> ")
-            loop.call_soon_threadsafe(complete, value, None)
+            line = sys.stdin.readline()
+            if not line:
+                future.set_exception(EOFError())
+            else:
+                future.set_result(line.rstrip("\r\n"))
         except Exception as exc:
-            try:
-                loop.call_soon_threadsafe(complete, None, exc)
-            except RuntimeError:
-                pass
+            future.set_exception(exc)
 
-    threading.Thread(target=read, name="blob-cli-input", daemon=True).start()
-    return await future
+    try:
+        loop.add_reader(fd, on_ready)
+    except PermissionError:
+        # epoll cannot watch regular files; reading a file is non-blocking.
+        line = sys.stdin.readline()
+        if not line:
+            raise EOFError
+        return line.rstrip("\r\n")
+    try:
+        return await future
+    finally:
+        loop.remove_reader(fd)
 
 async def main_async():
     config = BlobConfig.load()
@@ -98,7 +104,7 @@ async def main_async():
         screen_sampler=screen_sampler
     )
     
-    server = await start_grpc_server(config, orchestrator, event_dispatcher)
+    server, servicer = await start_grpc_server(config, orchestrator, event_dispatcher)
     
     # Simple CLI debug input loop
     async def cli_input_loop():
@@ -143,6 +149,7 @@ async def main_async():
         task.cancel()
     await asyncio.gather(*tasks, return_exceptions=True)
     
+    await servicer.close_streams()
     await server.stop(grace=5)
     logger.info("Shutdown complete")
 

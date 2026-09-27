@@ -2,10 +2,9 @@
 
 > Technical architecture documentation for Project Blob
 
-This document includes the intended architecture. The C++ chat, notification,
-X11 tray, and gRPC event stream are implemented. The backend loads declarative
-skill pills, while the agent sandbox and some advanced animations in the
-diagrams remain planned rather than implemented.
+The C++ overlay renders a small expressive slime and receives emotes over gRPC.
+Conversation stays in the Python backend terminal. The backend loads
+declarative skill pills; an OS-level agent sandbox remains planned.
 
 ---
 
@@ -22,12 +21,12 @@ Project Blob is a two-process desktop application:
 │  │  (Process 1)             │  TCP / socket  │  (Process 2)             ││
 │  │                          │  Bidirectional │                          ││
 │  │  • SDL2 Window Manager   │  Streaming     │  • NVIDIA Nemotron LLM   ││
-│  │  • OpenGL 3.3 Renderer   │               │  • NemoClaw Guardrails   ││
+│  │  • SDL2 Renderer         │               │  • Input Guardrails      ││
 │  │  • Blob State Machine    │  ◄─ Emotes    │  • Hermes Agent Tasks    ││
 │  │  • Spring-Mass Physics   │  ◄─ States    │  • ChromaDB Memory       ││
 │  │  • Drag-Drop Handler     │  Events ──►   │  • Privacy Shield        ││
 │  │  • System Tray           │               │  • Screen OCR Sampler    ││
-│  │  • Chat Window           │               │  • Restricted Skills     ││
+│  │  • Facial Expressions    │               │  • Restricted Skills     ││
 │  └──────────────────────────┘               │  • Skill Registry        ││
 │                                              │  • Nebius Burst (opt-in) ││
 │                                              └──────────────────────────┘│
@@ -42,7 +41,7 @@ Project Blob is a two-process desktop application:
 
 1. **Crash Isolation**: If the Python AI backend OOMs or crashes, the C++ overlay stays alive and shows Blob in a sleeping state. The user never sees a crash — just a sleepy blob that wakes up when the backend reconnects.
 
-2. **Performance Isolation**: The C++ frontend runs at 30 FPS with < 2% CPU. The Python backend can saturate the GPU with LLM inference without affecting the overlay's responsiveness.
+2. **Performance Isolation**: The C++ frontend targets 60 FPS. The Python backend can wait on cloud inference without blocking the overlay's event loop.
 
 3. **Security Boundary**: The frontend never touches the LLM, memory store, or screen captures directly. All sensitive operations are contained in the backend process.
 
@@ -54,7 +53,7 @@ Communication uses **gRPC bidirectional streaming** over `localhost:50051` by
 default. The address is configurable and can also be a Unix domain socket.
 
 - **Frontend → Backend**: User interactions, skill pill drops, heartbeats
-- **Backend → Frontend**: Emote commands, state changes, notifications, privacy shield events
+- **Backend → Frontend**: Emote commands, skill acknowledgments, privacy shield events
 
 See [`proto/blob_service.proto`](../proto/blob_service.proto) for the full protocol definition.
 
@@ -72,27 +71,25 @@ See [`proto/blob_service.proto`](../proto/blob_service.proto) for the full proto
 │ Window      │ StateMachine  │ GrpcClient    │
 │ • Transparent│ • FSM states │ • Bidir stream│
 │ • Always-top│ • Transitions│ • Reconnect   │
-│ • Click-thru│ • Timers     │ • Fallback    │
+│ • Shape mask│ • Timers     │ • Reconnect   │
 │             │               │               │
 │ Renderer    │ Physics       │ EventQueue    │
-│ • OpenGL    │ • Spring-mass│ • Thread-safe │
-│ • Sprites   │ • Verlet     │ • MPSC        │
-│ • Shaders   │ • Collision  │               │
+│ • SDL2      │ • Spring-mass│ • Thread-safe │
+│ • Gradient  │ • Verlet     │ • Queue       │
+│ • Faces     │ • Collision  │               │
 │             │               │               │
 │ Input       │ Animation     │               │
 │ • Mouse     │ • Interpolate│               │
 │ • Drag-drop │ • Eyes/mouth │               │
-│ • Gestures  │ • Particles  │               │
+│ • Gestures  │ • Timers     │               │
 │             │               │               │
-│             │ Emotes        │               │
-│             │ • Mapping    │               │
-│             │ • Effects    │               │
+│             │ Expressions   │               │
+│             │ • Face       │               │
+│             │ • Blink      │               │
 ├─────────────┴───────────────┴───────────────┤
 │                    ui/                       │
-│  Notification  │  SystemTray  │  ChatWindow  │
-│  • Bubbles     │  • Menu      │  • Text input│
-│  • Priority    │  • Status    │  • History   │
-│  • Animation   │  • Toggle    │  • Send/Recv │
+│               SystemTray                    │
+│             • Optional X11 icon            │
 └─────────────────────────────────────────────┘
 ```
 
@@ -107,11 +104,9 @@ while (running) {
     5. Update Animations (dt)
     6. Clear framebuffer (transparent)
     7. Render blob mesh (Physics → Renderer)
-    8. Render eyes/mouth (Animation → Renderer)
-    9. Render emote effects (Emotes → Renderer)
-    10. Render notifications (NotificationManager)
-    11. Present frame
-    12. Cap to 30 FPS (sleep remaining time)
+    8. Render the current facial expression
+    9. Present frame and update the shape mask
+    10. Cap to 60 FPS (sleep remaining time)
 }
 ```
 
@@ -231,29 +226,27 @@ async def main():
 ```
 User types message
     ↓
-ChatWindow (C++) → FrontendEvent.UserMessage
-    ↓
-gRPC EventStream → Backend
+Python backend terminal → BlobOrchestrator
     ↓
 GuardrailsEngine.sanitize_input()
     ↓
 SemanticMemory.recall(query)  →  relevant memories
     ↓
-PromptTemplates.build(personality + context + memory + message)
+PromptTemplates + skills + context + memory + message
     ↓
-LLMEngine.generate(prompt)
-    ↓  (local Nemotron or Nebius burst)
+NebiusEngine.generate_from_messages()
+    ↓
 GuardrailsEngine.sanitize_output()
     ↓
 EpisodicMemory.capture(interaction)
     ↓
-Orchestrator.classify_emote(response)
+Orchestrator extracts the emote tag
     ↓
-BackendEvent { notification + emote }
+Response prints in the terminal; BackendEvent.EmoteCommand is broadcast
     ↓
 gRPC EventStream → Frontend
     ↓
-NotificationBubble (speech bubble) + EmoteCommand (animation)
+Renderer draws Blob's facial expression
 ```
 
 ### Screen Context Flow
@@ -319,7 +312,7 @@ Frontend tints Blob with skill color (2 seconds)
 
 ### Optimization Strategies
 
-1. **30 FPS Cap**: Frontend sleeps between frames to minimize CPU
+1. **60 FPS Cap**: Frontend sleeps between frames to minimize CPU
 2. **Lazy Loading**: OCR models loaded only on first screen capture
 3. **Batched IPC**: Events are batched per frame, not sent individually
 4. **Memory Pooling**: Physics vertices reuse pre-allocated buffers

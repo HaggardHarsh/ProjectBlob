@@ -2,33 +2,26 @@
 #include <cstdlib>
 #include <algorithm>
 
-static constexpr int WIN_W = 280;
-static constexpr int WIN_H = 220;
-
-BlobPhysics::BlobPhysics()
-    : radiusX_(95.0f),
-      topRadiusY_(95.0f),        // tall dome — almost a semicircle
-      bottomRadiusY_(8.0f),      // very flat bottom base
-      centerX_(WIN_W / 2.0f),
-      centerY_(WIN_H / 2.0f + 30.0f),   // push down so dome sits low
-      windowW_(WIN_W),
-      windowH_(WIN_H)
+BlobPhysics::BlobPhysics(int windowWidth, int windowHeight)
+    : radiusX_(windowWidth * 0.39f),
+      topRadiusY_(windowHeight * 0.37f),
+      bottomRadiusY_(windowHeight * 0.34f),
+      centerX_(windowWidth * 0.5f),
+      centerY_(windowHeight * 0.53f),
+      windowW_(windowWidth),
+      windowH_(windowHeight)
 {
-    int numPoints = 28;   // more points = smoother dome curve
+    int numPoints = 48;
 
     // Centre mass point (index 0)
     points.push_back({{centerX_, centerY_}, {centerX_, centerY_}, {0, 0}, 4.0f});
 
-    // Perimeter points — dome shape
+    // A softly flattened oval leaves a clear face and keeps the slime compact.
     for (int i = 0; i < numPoints; ++i) {
         float angle = (float)i * 2.0f * (float)M_PI / (float)numPoints;
 
-        // Smooth interpolation: 0 at dome top, 1 at flat bottom
         float sinA = std::sin(angle);
-        float t = (sinA + 1.0f) / 2.0f;
-        // Use a sharper transition so the bottom is really flat
-        t = t * t;  // square it for sharper cutoff
-        float ry = topRadiusY_ + (bottomRadiusY_ - topRadiusY_) * t;
+        float ry = sinA < 0.0f ? topRadiusY_ : bottomRadiusY_;
 
         Vec2 p = {centerX_ + std::cos(angle) * radiusX_,
                   centerY_ + sinA * ry};
@@ -69,7 +62,7 @@ void BlobPhysics::update(float dt) {
         p.accel = {0, gravity_};
     }
 
-    // 6 iterations for a very stable dome
+    // Keep the outline elastic without letting the face wobble excessively.
     for (int iter = 0; iter < 6; ++iter) {
         for (const auto& s : springs) {
             Point& p1 = points[s.p1];

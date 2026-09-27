@@ -125,6 +125,8 @@ class EmoteCommand(_message.Message):
         PROUD: _ClassVar[EmoteCommand.Emote]
         WORRIED: _ClassVar[EmoteCommand.Emote]
         PLAYFUL: _ClassVar[EmoteCommand.Emote]
+        SAD: _ClassVar[EmoteCommand.Emote]
+        ANGRY: _ClassVar[EmoteCommand.Emote]
     IDLE: EmoteCommand.Emote
     HAPPY: EmoteCommand.Emote
     TIRED: EmoteCommand.Emote
@@ -139,6 +141,8 @@ class EmoteCommand(_message.Message):
     PROUD: EmoteCommand.Emote
     WORRIED: EmoteCommand.Emote
     PLAYFUL: EmoteCommand.Emote
+    SAD: EmoteCommand.Emote
+    ANGRY: EmoteCommand.Emote
     EMOTE_FIELD_NUMBER: _ClassVar[int]
     INTENSITY_FIELD_NUMBER: _ClassVar[int]
     DURATION_MS_FIELD_NUMBER: _ClassVar[int]

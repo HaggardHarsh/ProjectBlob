@@ -8,16 +8,34 @@ class BlobServiceServicer(blob_service_pb2_grpc.BlobServiceServicer):
     def __init__(self, dispatcher, orchestrator):
         self.dispatcher = dispatcher
         self.orchestrator = orchestrator
+        self._stopping = False
+        self._stream_queues = {}
+        self._streams_closed = asyncio.Event()
+        self._streams_closed.set()
+
+    async def close_streams(self):
+        """Finish event streams before stopping the gRPC server."""
+        self._stopping = True
+        for queue in tuple(self._stream_queues.values()):
+            queue.put_nowait(None)
+        try:
+            await asyncio.wait_for(self._streams_closed.wait(), timeout=4)
+        except asyncio.TimeoutError:
+            logger.warning("Timed out waiting for frontend event streams to close")
 
     async def EventStream(self, request_iterator, context):
+        if self._stopping:
+            return
         client_id = id(context)
         queue = asyncio.Queue()
+        self._stream_queues[client_id] = queue
+        self._streams_closed.clear()
         self.dispatcher.register_client(client_id, queue)
         shield = self.orchestrator.screen_sampler.privacy_shield if getattr(self.orchestrator, "screen_sampler", None) else None
         if shield:
             initial = blob_service_pb2.BackendEvent()
             initial.privacy.activated = shield.is_active
-            await queue.put(initial)
+            queue.put_nowait(initial)
         
         async def read_requests():
             try:
@@ -26,7 +44,7 @@ class BlobServiceServicer(blob_service_pb2_grpc.BlobServiceServicer):
             except Exception:
                 logger.exception("Frontend event stream ended with an error")
             finally:
-                await queue.put(None)
+                queue.put_nowait(None)
                 
         read_task = asyncio.create_task(read_requests())
         
@@ -42,6 +60,9 @@ class BlobServiceServicer(blob_service_pb2_grpc.BlobServiceServicer):
             read_task.cancel()
             await asyncio.gather(read_task, return_exceptions=True)
             self.dispatcher.unregister_client(client_id)
+            self._stream_queues.pop(client_id, None)
+            if not self._stream_queues:
+                self._streams_closed.set()
 
     async def handle_frontend_event(self, event):
         if event.HasField('user_message'):
@@ -60,6 +81,10 @@ class BlobServiceServicer(blob_service_pb2_grpc.BlobServiceServicer):
                 response.skill_ack.skill_name = request.skill_name or request.file_path
                 response.skill_ack.success = False
                 response.skill_ack.error_message = str(exc)
+            outcome = response.skill_ack.description if response.skill_ack.success else (
+                f"Skill install failed: {response.skill_ack.error_message}"
+            )
+            print(f"\nBlob: {outcome}\n")
             await self.dispatcher.broadcast(response)
         elif event.HasField('heartbeat'):
             response = blob_service_pb2.BackendEvent()
