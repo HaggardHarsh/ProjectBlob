@@ -25,10 +25,7 @@ public:
     /// Draw the outline around the body.
     void drawOutline(const std::vector<Vec2>& vertices);
 
-    /// Draw subtle depth inside the body.
-    void drawInnerBody(float cx, float cy, float rx, float ry, float time);
-
-    /// Draw white specular highlight spots.
+    /// Draw one small surface highlight.
     void drawHighlights(float cx, float cy, float rx, float ry);
 
     /// Draw the current expression.

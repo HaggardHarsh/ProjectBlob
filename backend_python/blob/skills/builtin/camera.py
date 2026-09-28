@@ -16,7 +16,7 @@ class CameraSkill(SkillInterface):
     @property
     def description(self):
         return ("On-demand local camera face and full-body detection, with optional named face recognition. "
-                "args: {'action':'scan'|'enroll'|'forget'|'list', 'name':'person name'}. "
+                "args: {'action':'status'|'scan'|'enroll'|'forget'|'list', 'name':'person name'}. "
                 "Only enroll a person who agreed to it. Camera can be disabled in settings.")
 
     @property
@@ -30,10 +30,13 @@ class CameraSkill(SkillInterface):
     def _execute(self, args: dict) -> SkillResult:
         action = args.get("action", "scan")
         try:
-            if action == "scan":
+            if action == "status":
+                output = self.vision.status()
+            elif action == "scan":
                 result = self.vision.scan()
                 names = ", ".join(result["recognized"]) or "none"
-                output = (f"Camera scan: {result['faces']} face(s), {result['full_bodies']} full body/person detection(s). "
+                output = (f"Camera opened successfully. Scan: {result['faces']} face(s), "
+                          f"{result['full_bodies']} full body/person detection(s). "
                           f"Recognized: {names}. Unknown faces: {result['unknown_faces']}.")
             elif action == "enroll":
                 name = args.get("name", "")
@@ -47,7 +50,7 @@ class CameraSkill(SkillInterface):
                 people = self.vision.list_people()
                 output = "Enrolled people: " + (", ".join(people) if people else "none")
             else:
-                return SkillResult("Unknown camera action. Use scan, enroll, forget, or list.", False, "CONFUSED")
+                return SkillResult("Unknown camera action. Use status, scan, enroll, forget, or list.", False, "CONFUSED")
             return SkillResult(output, True, "HAPPY")
         except (CameraError, OSError) as exc:
             return SkillResult(str(exc), False, "WORRIED")

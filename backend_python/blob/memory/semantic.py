@@ -17,10 +17,15 @@ class SemanticMemory:
             return True
         # The assistant's previous output is not evidence about the user.
         user_messages = []
+        seen_messages = set()
         for episode in episodes:
             text = episode["text"]
             if text.startswith("User: "):
-                user_messages.append(text.split("\nBlob: ", 1)[0][6:])
+                message = text.split("\nBlob: ", 1)[0][6:]
+                key = " ".join(message.casefold().split())
+                if key not in seen_messages:
+                    seen_messages.add(key)
+                    user_messages.append(message)
         if not user_messages:
             return True
         prompt = (
@@ -33,6 +38,7 @@ class SemanticMemory:
         try:
             msg = await self.llm.generate(prompt, "", "You extract factual user memories.")
             summary = (msg.content or "").strip()
+            seen = set()
             if summary.rstrip(" .!").upper() != "NONE":
                 for line in summary.splitlines():
                     fact = re.sub(r"^\s*(?:[-*]|\d+[.)])\s*", "", line).strip()
@@ -40,10 +46,13 @@ class SemanticMemory:
                         continue
                     normalized = " ".join(fact.casefold().split())
                     memory_id = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+                    if memory_id in seen:
+                        continue
+                    seen.add(memory_id)
                     self.vector_store.store(
                         fact,
                         {"type": "semantic", "timestamp": time.time(), "pinned": True},
-                        collection="semantic", memory_id=memory_id,
+                        collection="semantic", memory_id=memory_id, skip_existing=True,
                     )
             return True
         except Exception:

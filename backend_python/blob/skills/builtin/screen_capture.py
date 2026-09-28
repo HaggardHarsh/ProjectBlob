@@ -48,8 +48,7 @@ class ScreenCaptureSkill(SkillInterface):
             return SkillResult("Screen capture is blocked by the privacy shield.", False, "WORRIED")
         if not image:
             return SkillResult(
-                f"Active Window: {window_title}\n\nScreen capture failed — could not grab the screen. "
-                "This may be due to Wayland permissions. Try running: gnome-screenshot --interactive",
+                self.sampler.last_error or "Screen capture failed. Check the backend logs.",
                 False,
                 "WORRIED"
             )
@@ -59,13 +58,22 @@ class ScreenCaptureSkill(SkillInterface):
             if self.ocr:
                 text = self.ocr.extract_text(image)
             else:
-                text = "(OCR processor not configured)"
+                text = "OCR processor not configured"
         except Exception as e:
             logger.error(f"OCR failed: {e}")
             text = f"(OCR failed: {e})"
         finally:
             if hasattr(image, "close"):
                 image.close()
+
+        if text.startswith(("OCR is not available", "OCR processor not configured", "(OCR failed:", "Failed to extract text:")):
+            return SkillResult(
+                "Screen capture succeeded, but Blob cannot read text from it yet. "
+                "Install the OCR extra with pip install -e 'backend_python[ocr]' and restart Blob. "
+                f"Details: {text}",
+                False,
+                "WORRIED",
+            )
 
         output = f"Active Window: {window_title}\n\nExtracted Screen Text:\n{text}"
         return SkillResult(output, True, "THINKING")

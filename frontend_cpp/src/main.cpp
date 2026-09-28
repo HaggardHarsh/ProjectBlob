@@ -1,6 +1,5 @@
 #include <iostream>
 #include <cstdlib>
-#include <ctime>
 #include <string>
 #include <SDL2/SDL.h>
 #include "overlay/window.h"
@@ -35,10 +34,8 @@ static BlobExpression expressionFor(blob::EmoteCommand::Emote emote) {
 }
 
 int main(int argc, char* argv[]) {
-    std::srand((unsigned)std::time(nullptr));
-
-    int width  = 180;
-    int height = 150;
+    int width  = 132;
+    int height = 116;
     std::string ipc_address = "localhost:50051";
 
     for (int i = 1; i < argc; ++i) {
@@ -75,9 +72,6 @@ int main(int argc, char* argv[]) {
     const int FPS = 60;
     const int frameDelay = 1000 / FPS;
 
-    // Idle jiggle timer
-    float jiggleTimer = 0.0f;
-    float nextJiggle  = 3.0f + (std::rand() % 400) / 100.0f;
     bool privacyActive = false;
     BlobExpression expression = BlobExpression::IDLE;
     Uint32 expressionUntil = 0;
@@ -185,14 +179,6 @@ int main(int argc, char* argv[]) {
         state_machine.update(dt);
         animation.update(dt);
 
-        // Periodic idle jiggle
-        jiggleTimer += dt;
-        if (jiggleTimer >= nextJiggle) {
-            physics.jiggle();
-            jiggleTimer = 0.0f;
-            nextJiggle = 3.0f + (std::rand() % 400) / 100.0f;
-        }
-
         // ── Render (layered, back to front) ──
         renderer.clear();
 
@@ -208,13 +194,10 @@ int main(int argc, char* argv[]) {
         // 2) Thin blue outline
         renderer.drawOutline(vertices);
 
-        // 3) Soft interior depth
-        renderer.drawInnerBody(center.x, center.y, rx, ry, time);
-
-        // 4) White specular highlights
+        // 3) One soft highlight
         renderer.drawHighlights(center.x, center.y, rx, ry);
 
-        // 5) The expression sent by the backend
+        // 4) The expression sent by the backend
         renderer.drawFace(center.x, center.y, rx, ry, time,
                           state_machine.getCurrentState(), expression);
 

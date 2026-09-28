@@ -1,26 +1,37 @@
 import asyncio
 import logging
 import json
+import inspect
+import os
 import re
+import time
 from blob.ai.llm_engine import NebiusEngine
 from blob.ipc import blob_service_pb2
 from blob.ai.guardrails import GuardrailsEngine
 from blob.ai.prompt_templates import SYSTEM_PROMPT, CONTEXT_TEMPLATE
 from blob.memory.episodic import EpisodicMemory
 from blob.memory.semantic import SemanticMemory
+from blob.memory.context import build_memory_view
 
 logger = logging.getLogger(__name__)
 
 MAX_REACT_ITERATIONS = 3
+STYLE_CACHE_TTL_SECONDS = 30
+STYLE_QUERY = "How does the user want Blob to speak to them: friendly buddy, formal, professional, direct, or quiet?"
 EMOTE_NAMES = "IDLE|HAPPY|SAD|ANGRY|CONFUSED|THINKING|WORRIED|CELEBRATE|EXCITED|TIRED|OFFER_COFFEE|SHY|SLEEPING|EATING|PROUD|PLAYFUL"
 EMOTE_MARKER = re.compile(rf"<emote>\s*({EMOTE_NAMES})\s*</emote>|\(({EMOTE_NAMES})\)", re.IGNORECASE)
 CAMERA_REQUEST = re.compile(
-    r"\b(?:open|turn on|switch on|start|use|scan|check|look through|look at|see through)\b"
+    r"\b(?:open|turn on|switch on|start|use|scan|check|share|access|view|see|look through|look at|see through)\b"
     r".{0,35}\b(?:camera|webcam)\b|\bturn\b.{0,15}\b(?:camera|webcam)\b\s+on\b",
     re.IGNORECASE,
 )
+CAMERA_STATUS_REQUEST = re.compile(
+    r"\b(?:camera|webcam)\b.{0,40}\b(?:work(?:ing)?|available|availability|access|block(?:ed)?|permission(?:s)?|status)\b"
+    r"|\bwhy\b.{0,60}\b(?:access|open|use)\b.{0,20}\b(?:camera|webcam)\b",
+    re.IGNORECASE,
+)
 SCREEN_REQUEST = re.compile(
-    r"\b(?:what(?:'s| is) (?:happening|going on|on|visible)|show me|look at|check|read|describe|capture|see)\b"
+    r"\b(?:what(?:'s| is) (?:happening|going on|on|visible)|show me|look at|check|read|describe|capture|see|share|view)\b"
     r".{0,45}\b(?:my |the |this )?(?:screen|desktop|display)\b"
     r"|\b(?:screen|desktop|display)\b.{0,30}\b(?:what(?:'s| is) on|look|check|read|describe|capture|see)\b",
     re.IGNORECASE,
@@ -55,6 +66,11 @@ class BlobOrchestrator:
         
         self.episodic = EpisodicMemory(vector_store)
         self.semantic = SemanticMemory(vector_store, self.llm)
+        self._style_facts_cache = None
+        self._style_facts_revision = None
+        self._style_facts_cached_at = 0.0
+        self._profile_latency = os.environ.get("BLOB_PROFILE_LATENCY", "").lower() in {"1", "true", "yes", "on"}
+        self._streaming_disabled = False
         
         # Holds the latest screen context text (populated by ScreenCaptureSkill or sampler)
         self.last_screen_context = "No screen data captured yet."
@@ -73,21 +89,29 @@ class BlobOrchestrator:
         skills_text = self._build_skills_text()
         return SYSTEM_PROMPT.replace("{skills}", skills_text)
 
+    def _get_style_facts(self) -> list:
+        revision = getattr(self.vector_store, "semantic_revision", None)
+        now = time.monotonic()
+        if (self._style_facts_cache is None or revision != self._style_facts_revision or
+                now - self._style_facts_cached_at >= STYLE_CACHE_TTL_SECONDS):
+            self._style_facts_cache = self.semantic.recall_facts(STYLE_QUERY, top_k=2)
+            self._style_facts_revision = revision
+            self._style_facts_cached_at = now
+        return self._style_facts_cache
+
     def _build_context(self, clean_text: str) -> str:
         """Build the context block with memories, active window, and screen data."""
         episodes = self.episodic.recall_relevant(clean_text, top_k=5)
         facts = self.semantic.recall_facts(clean_text, top_k=3)
         # Tone preferences must remain in view even when the current question
         # is about an unrelated task.
-        style_facts = self.semantic.recall_facts(
-            "How does the user want Blob to speak to them: friendly buddy, formal, professional, direct, or quiet?",
-            top_k=2,
-        )
-        fact_texts = list(dict.fromkeys(item["text"] for item in style_facts + facts))
+        style_facts = self._get_style_facts()
+        fact_texts = [item["text"] for item in style_facts + facts]
         episode_texts = [item["text"] for item in episodes]
-        if MEMORY_TOPIC.search(clean_text):
-            # Old assistant replies may contain the exact false memory claim.
-            episode_texts = [text.split("\nBlob: ", 1)[0] for text in episode_texts]
+        # For questions about memory, only the user's old statements count as evidence.
+        fact_view, episode_view = build_memory_view(
+            fact_texts, episode_texts, clean_text, user_only=bool(MEMORY_TOPIC.search(clean_text))
+        )
         
         # Try to get active window title (lightweight, no screenshot)
         active_window = "Unknown"
@@ -105,8 +129,8 @@ class BlobOrchestrator:
         return CONTEXT_TEMPLATE.format(
             active_window=active_window,
             screen_context="Blocked by privacy shield" if shielded else self.last_screen_context,
-            semantic_memories="\n".join(fact_texts) or "None",
-            episodic_memories="\n".join(episode_texts) or "None"
+            semantic_memories=fact_view,
+            episodic_memories=episode_view,
         )
 
     def _parse_tool_call(self, response_text: str):
@@ -156,19 +180,62 @@ class BlobOrchestrator:
         emote = (matches[-1].group(1) or matches[-1].group(2)).upper() if matches else "IDLE"
         return emote, EMOTE_MARKER.sub("", text).strip()
 
+    async def _generate_with_preview(self, messages: list[dict], system_prompt: str) -> tuple[str, str]:
+        stream = getattr(self.llm, "generate_from_messages_stream", None)
+        if getattr(self, "_streaming_disabled", False) or not inspect.isasyncgenfunction(stream):
+            msg = await self.llm.generate_from_messages(messages, system_prompt)
+            return msg.content or "", ""
+
+        response = ""
+        displayed = 0
+        preview_started = False
+        try:
+            async for part in stream(messages, system_prompt):
+                response += part
+                head = response.lstrip()
+                # Tool calls are text blocks in this protocol. Keep them out of the terminal.
+                if not head or head.startswith(("```", "{")) or "```".startswith(head):
+                    continue
+                # Hold the last characters so a trailing <emote> tag never flashes.
+                safe = response[:-32]
+                marker = safe.find("<emote>")
+                if marker >= 0:
+                    safe = safe[:marker]
+                if len(safe) > displayed:
+                    if not preview_started:
+                        print("\r\033[K\033[96mBlob:\033[0m ", end="", flush=True)
+                        preview_started = True
+                    print(safe[displayed:], end="", flush=True)
+                    displayed = len(safe)
+        except Exception:
+            if response:
+                if preview_started:
+                    print("\r\033[K", end="", flush=True)
+                raise
+            self._streaming_disabled = True
+            logger.warning("Streaming unavailable; using normal model responses")
+            msg = await self.llm.generate_from_messages(messages, system_prompt)
+            return msg.content or "", ""
+        return response, response[:displayed]
+
     async def handle_user_message(self, user_msg):
         """Main entry point: handles a user message with a ReAct loop."""
+        started_at = time.perf_counter()
         clean_text = self.guardrails.sanitize_input(user_msg.text)
         stripped = clean_text.strip()
         if stripped and stripped.split(maxsplit=1)[0].lower() == "/camera":
             return await self._handle_camera_command(stripped)
+        if re.fullmatch(r"(?:camera|webcam)[.!?]*", stripped, re.IGNORECASE):
+            return await self._handle_camera_command("/camera scan")
+        if CAMERA_STATUS_REQUEST.search(stripped) and not re.search(r"\b(?:don't|do not|never)\b", stripped, re.IGNORECASE):
+            return await self._handle_camera_command("/camera status")
         if CAMERA_REQUEST.search(stripped) and not re.search(r"\b(?:don't|do not|never|how (?:do|can|to))\b", stripped, re.IGNORECASE):
             return await self._handle_camera_command("/camera scan")
         if REMEMBER_ME_REQUEST.fullmatch(stripped):
             return await self._handle_remember_me(clean_text)
 
         screen_result = None
-        if SCREEN_REQUEST.search(stripped) and not re.search(r"\b(?:don't|do not|never)\b", stripped, re.IGNORECASE):
+        if (SCREEN_REQUEST.search(stripped) or stripped.lower() in {"/screen", "/screenshot"}) and not re.search(r"\b(?:don't|do not|never)\b", stripped, re.IGNORECASE):
             skill = self.skill_registry.get_skill("screen_capture")
             if skill is None:
                 return await self._send_direct_response("Screen capture is unavailable.", "WORRIED")
@@ -182,12 +249,13 @@ class BlobOrchestrator:
             if self.screen_sampler and self.screen_sampler.privacy_shield.is_capture_blocked():
                 return await self._send_direct_response("Screen capture is blocked by the privacy shield.", "WORRIED")
             self.last_screen_context = screen_result.output
-        context = self._build_context(clean_text)
-        sys_prompt = self._build_system_prompt()
-        
-        # Immediately set thinking emote on frontend & print indicator in CLI
+        # Show the thinking state before local memory retrieval begins.
         await self.dispatch_emote("THINKING")
         print("\033[90m(Thinking...)\033[0m", end="", flush=True)
+        context = self._build_context(clean_text)
+        sys_prompt = self._build_system_prompt()
+        preparation_seconds = time.perf_counter() - started_at
+        model_seconds = 0.0
 
         # Build conversation messages for multi-turn reasoning
         messages = [
@@ -201,14 +269,16 @@ class BlobOrchestrator:
                 "Do not claim screen access is unavailable."})
         
         final_response = None
+        preview_text = ""
         
         # ── ReAct Loop ──────────────────────────────────────────────────
         for iteration in range(MAX_REACT_ITERATIONS):
             logger.info(f"ReAct iteration {iteration + 1}/{MAX_REACT_ITERATIONS}")
             
             # Generate LLM response
-            msg = await self.llm.generate_from_messages(messages, sys_prompt)
-            response_text = msg.content or ""
+            model_started_at = time.perf_counter()
+            response_text, preview_text = await self._generate_with_preview(messages, sys_prompt)
+            model_seconds += time.perf_counter() - model_started_at
             
             # Check for tool call
             tool_name, tool_args = self._parse_tool_call(response_text)
@@ -217,11 +287,17 @@ class BlobOrchestrator:
                 # No tool call → this is the final answer
                 final_response = response_text
                 break
+
+            # Clear any streamed preview before executing a tool.
+            print("\r\033[K\033[90m(Thinking...)\033[0m", end="", flush=True)
+
+            if tool_name == "camera":
+                return await self._send_direct_response(
+                    "To use the camera, say 'scan my camera' or enter /camera scan.", "CONFUSED"
+                )
             
             # ── Tool Execution ──────────────────────────────────────────
             skill = self.skill_registry.get_skill(tool_name)
-            if tool_name == "camera":
-                skill = None
             if not skill:
                 logger.warning(f"Tool '{tool_name}' not found in registry")
                 # Tell the LLM the tool wasn't found
@@ -260,8 +336,10 @@ class BlobOrchestrator:
             if messages and messages[-1]["role"] == "user":
                 # Force one more generate to get a final answer
                 messages.append({"role": "user", "content": "[System] You have used all available tool calls. Please provide your final response to the user now."})
-                msg = await self.llm.generate_from_messages(messages, sys_prompt)
-                final_response = msg.content or "Sorry, I got a bit lost there! 😅"
+                model_started_at = time.perf_counter()
+                final_response, preview_text = await self._generate_with_preview(messages, sys_prompt)
+                model_seconds += time.perf_counter() - model_started_at
+                final_response = final_response or "Sorry, I got a bit lost there! 😅"
             else:
                 final_response = "I tried my best but something went wrong! 😅"
         
@@ -290,8 +368,17 @@ class BlobOrchestrator:
         resp_event.notification.text = final_response
         await self.event_dispatcher.broadcast(resp_event)
         
-        # Clean CLI output (clears the thinking indicator line)
-        print(f"\r\033[K\033[96mBlob:\033[0m {final_response}\n")
+        if preview_text and final_response.startswith(preview_text):
+            # The preview may have wrapped across terminal rows; append instead of redrawing it.
+            print(final_response[len(preview_text):] + "\n")
+        elif preview_text:
+            # Output filtering changed the response after streaming began.
+            print(f"\n\033[96mBlob:\033[0m {final_response}\n")
+        else:
+            print(f"\r\033[K\033[96mBlob:\033[0m {final_response}\n")
+        if getattr(self, "_profile_latency", False):
+            logger.warning("Reply latency: %.2fs total (%.2fs local preparation, %.2fs model)",
+                           time.perf_counter() - started_at, preparation_seconds, model_seconds)
         return final_response
 
     async def _send_direct_response(self, text: str, emote: str):

@@ -1,5 +1,6 @@
 from typing import AsyncIterator
 import logging
+import os
 from openai import AsyncOpenAI
 import abc
 
@@ -23,6 +24,18 @@ class NebiusEngine(LLMEngine):
     def __init__(self, api_key: str, base_url: str, model_name: str):
         self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         self.model_name = model_name
+        self.chat_thinking_enabled = os.environ.get("BLOB_CHAT_THINKING", "").lower() in {"1", "true", "yes", "on"}
+
+    def _chat_kwargs(self) -> dict:
+        """Skip hidden reasoning for casual chat on Nemotron Lightning.
+
+        Memory consolidation uses generate() and keeps the model's normal mode.
+        Other model families do not necessarily accept this option.
+        """
+        if (self.model_name == "nvidia/Nemotron-3_5-Lightning"
+                and not getattr(self, "chat_thinking_enabled", False)):
+            return {"extra_body": {"chat_template_kwargs": {"enable_thinking": False}}}
+        return {}
 
     async def generate(self, prompt: str, context: str, system_prompt: str, tools: list = None) -> any:
         # returns full message object so we can read tool_calls
@@ -41,6 +54,20 @@ class NebiusEngine(LLMEngine):
         resp = await self.client.chat.completions.create(**kwargs)
         return resp.choices[0].message
 
+    async def generate_from_messages_stream(self, messages: list[dict], system_prompt: str) -> AsyncIterator[str]:
+        """Stream text from the same chat request used by the ReAct loop."""
+        if not messages or messages[0].get("role") != "system":
+            messages = [{"role": "system", "content": system_prompt}] + messages
+        stream = await self.client.chat.completions.create(
+            model=self.model_name,
+            messages=messages,
+            stream=True,
+            **self._chat_kwargs(),
+        )
+        async for chunk in stream:
+            if chunk.choices and chunk.choices[0].delta.content:
+                yield chunk.choices[0].delta.content
+
     async def generate_from_messages(self, messages: list[dict], system_prompt: str) -> any:
         """Generate a response from a full conversation message list.
         
@@ -54,7 +81,8 @@ class NebiusEngine(LLMEngine):
 
         resp = await self.client.chat.completions.create(
             model=self.model_name,
-            messages=messages
+            messages=messages,
+            **self._chat_kwargs(),
         )
         return resp.choices[0].message
 
@@ -66,10 +94,9 @@ class NebiusEngine(LLMEngine):
         stream = await self.client.chat.completions.create(
             model=self.model_name,
             messages=messages,
-            stream=True
+            stream=True,
+            **self._chat_kwargs(),
         )
         async for chunk in stream:
             if chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content
-
-

@@ -80,7 +80,7 @@ See [`proto/blob_service.proto`](../proto/blob_service.proto) for the full proto
 │             │               │               │
 │ Input       │ Animation     │               │
 │ • Mouse     │ • Interpolate│               │
-│ • Drag-drop │ • Eyes/mouth │               │
+│ • Drag-drop │ • Eye moods  │               │
 │ • Gestures  │ • Timers     │               │
 │             │               │               │
 │             │ Expressions   │               │

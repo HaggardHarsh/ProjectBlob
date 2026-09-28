@@ -17,6 +17,7 @@ class VectorStore:
         self.episodic = self.client.get_or_create_collection("episodic")
         self.semantic = self.client.get_or_create_collection("semantic")
         self.decay_algo = DecayAlgorithm()
+        self.semantic_revision = 0
 
     def _collection(self, name: str):
         if name == "episodic":
@@ -25,14 +26,20 @@ class VectorStore:
             return self.semantic
         raise ValueError(f"Unknown memory collection: {name}")
 
-    def store(self, text: str, metadata: dict, collection: str = "episodic", memory_id: str | None = None):
+    def store(self, text: str, metadata: dict, collection: str = "episodic", memory_id: str | None = None,
+              skip_existing: bool = False):
         doc_id = memory_id or str(uuid.uuid4())
+        col = self._collection(collection)
+        if skip_existing and col.get(ids=[doc_id], include=[])["ids"]:
+            return doc_id
         now = time.time()
         values = dict(metadata)
         values.setdefault("timestamp", now)
         values.setdefault("last_accessed", now)
         values.setdefault("access_count", 0)
-        self._collection(collection).upsert(documents=[text], metadatas=[values], ids=[doc_id])
+        col.upsert(documents=[text], metadatas=[values], ids=[doc_id])
+        if collection == "semantic":
+            self.semantic_revision = getattr(self, "semantic_revision", 0) + 1
         return doc_id
         
     def recall(self, query: str, top_k: int = 5, collection: str = "episodic") -> list:
@@ -51,12 +58,15 @@ class VectorStore:
             score = self.decay_algo.calculate_score(base_sim, days_since, meta.get("access_count", 0), pinned=meta.get("pinned", False))
             candidates.append({"id": id_, "text": doc, "metadata": meta, "score": score})
         recalled = sorted(candidates, key=lambda item: item["score"], reverse=True)[:top_k]
+        updated_metadatas = []
         for item in recalled:
             meta = dict(item["metadata"])
             meta["last_accessed"] = current_time
             meta["access_count"] = meta.get("access_count", 0) + 1
-            col.update(ids=[item["id"]], metadatas=[meta])
+            updated_metadatas.append(meta)
             item["metadata"] = meta
+        if recalled:
+            col.update(ids=[item["id"] for item in recalled], metadatas=updated_metadatas)
         return recalled
 
     def unconsolidated_episodes(self, limit: int = 20) -> list:
@@ -71,3 +81,5 @@ class VectorStore:
 
     def delete(self, memory_id: str, collection: str = "episodic"):
         self._collection(collection).delete(ids=[memory_id])
+        if collection == "semantic":
+            self.semantic_revision = getattr(self, "semantic_revision", 0) + 1

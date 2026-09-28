@@ -14,8 +14,10 @@ against `backend_python/data/blacklist.yaml` before capture and again before
 OCR. The privacy shield also suppresses screen context and new episodic memory
 while a blacklisted window is active. `gnome-screenshot` and `grim` can write a
 temporary PNG during capture; Blob loads and removes that file immediately.
-XDG portal screenshot support is not implemented yet; Blob uses the listed
-backends without issuing an unused portal request.
+On Wayland, Blob first asks the XDG screenshot portal for a capture. The desktop
+may show a permission dialog. If the portal is unavailable, Blob can try the
+listed command-line backends. If the user cancels or the desktop denies the
+request, Blob stops without trying another capture path.
 Window detection depends on platform support; the Linux implementation uses
 `xdotool`, so blacklist detection may be unavailable on some Wayland desktops.
 

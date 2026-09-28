@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import sys
 import time
 import uuid
 
@@ -35,8 +36,30 @@ class CameraVision:
         capture = cv2.VideoCapture(self.device_index)
         if not capture.isOpened():
             capture.release()
-            raise CameraError(f"Could not open camera device {self.device_index}.")
+            device = Path(f"/dev/video{self.device_index}")
+            if sys.platform == "linux" and not device.exists():
+                raise CameraError(
+                    f"Camera device {device} is not visible to Blob. Check that the camera is connected "
+                    "and Blob runs in your desktop session, or set BLOB_CAMERA_DEVICE_INDEX."
+                )
+            raise CameraError(
+                f"Could not open camera device {self.device_index}. It may be busy or blocked by device "
+                "permissions. Wayland screen sharing permission does not control the webcam."
+            )
         return capture
+
+    def status(self):
+        """Verify camera access without doing face recognition or storing a frame."""
+        self._require_enabled()
+        cv2 = self._cv2()
+        capture = self._open(cv2)
+        try:
+            ok, _ = capture.read()
+            if not ok:
+                raise CameraError("Camera opened, but it did not return a frame.")
+            return f"Camera device {self.device_index} opened and returned a frame."
+        finally:
+            capture.release()
 
     def _require_enabled(self):
         if not self.enabled:
