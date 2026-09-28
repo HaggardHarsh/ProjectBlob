@@ -17,7 +17,7 @@ class CameraSkill(SkillInterface):
     def description(self):
         return ("On-demand local camera face and full-body detection, with optional named face recognition. "
                 "args: {'action':'scan'|'enroll'|'forget'|'list', 'name':'person name'}. "
-                "Only enroll a person who agreed to it. Camera must be enabled in settings.")
+                "Only enroll a person who agreed to it. Camera can be disabled in settings.")
 
     @property
     def triggers(self):

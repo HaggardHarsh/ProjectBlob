@@ -12,6 +12,35 @@ from blob.memory.semantic import SemanticMemory
 logger = logging.getLogger(__name__)
 
 MAX_REACT_ITERATIONS = 3
+EMOTE_NAMES = "IDLE|HAPPY|SAD|ANGRY|CONFUSED|THINKING|WORRIED|CELEBRATE|EXCITED|TIRED|OFFER_COFFEE|SHY|SLEEPING|EATING|PROUD|PLAYFUL"
+EMOTE_MARKER = re.compile(rf"<emote>\s*({EMOTE_NAMES})\s*</emote>|\(({EMOTE_NAMES})\)", re.IGNORECASE)
+CAMERA_REQUEST = re.compile(
+    r"\b(?:open|turn on|switch on|start|use|scan|check|look through|look at|see through)\b"
+    r".{0,35}\b(?:camera|webcam)\b|\bturn\b.{0,15}\b(?:camera|webcam)\b\s+on\b",
+    re.IGNORECASE,
+)
+SCREEN_REQUEST = re.compile(
+    r"\b(?:what(?:'s| is) (?:happening|going on|on|visible)|show me|look at|check|read|describe|capture|see)\b"
+    r".{0,45}\b(?:my |the |this )?(?:screen|desktop|display)\b"
+    r"|\b(?:screen|desktop|display)\b.{0,30}\b(?:what(?:'s| is) on|look|check|read|describe|capture|see)\b",
+    re.IGNORECASE,
+)
+REMEMBER_ME_REQUEST = re.compile(
+    r"^(?:(?:can|will|could|would|do) you |please |i want you to )?remember me"
+    r"(?: (?:tomorrow|next time|after (?:a |the )?restart))?[.!?]*$",
+    re.IGNORECASE,
+)
+MEMORY_TOPIC = re.compile(r"\b(?:remember|memory|recall|retain)\b", re.IGNORECASE)
+FALSE_MEMORY_DENIAL = re.compile(
+    r"\b(?:i|blob)\s+(?:do(?: not|n't)|will(?: not|n't)|can(?: not|'t))\s+"
+    r"(?:have|retain|keep|store|remember).{0,65}\b(?:persistent memory|long.term memory|across sessions|after (?:a |the )?restart|tomorrow)\b"
+    r"|\b(?:no persistent memory|no long.term memory|memory (?:does(?: not|n't)|will(?: not|n't)) survive)\b",
+    re.IGNORECASE,
+)
+MEMORY_CAPABILITY_RESPONSE = (
+    "I have persistent local memory and can recall relevant details you share across restarts. "
+    "What would you like me to remember about you?"
+)
 
 
 class BlobOrchestrator:
@@ -55,6 +84,10 @@ class BlobOrchestrator:
             top_k=2,
         )
         fact_texts = list(dict.fromkeys(item["text"] for item in style_facts + facts))
+        episode_texts = [item["text"] for item in episodes]
+        if MEMORY_TOPIC.search(clean_text):
+            # Old assistant replies may contain the exact false memory claim.
+            episode_texts = [text.split("\nBlob: ", 1)[0] for text in episode_texts]
         
         # Try to get active window title (lightweight, no screenshot)
         active_window = "Unknown"
@@ -73,7 +106,7 @@ class BlobOrchestrator:
             active_window=active_window,
             screen_context="Blocked by privacy shield" if shielded else self.last_screen_context,
             semantic_memories="\n".join(fact_texts) or "None",
-            episodic_memories="\n".join([m['text'] for m in episodes]) or "None"
+            episodic_memories="\n".join(episode_texts) or "None"
         )
 
     def _parse_tool_call(self, response_text: str):
@@ -118,13 +151,10 @@ class BlobOrchestrator:
         return text.strip()
 
     def _extract_emote(self, text: str) -> tuple[str, str]:
-        """Extract <emote>...</emote> tag from text. Returns (emote_str, clean_text)."""
-        match = re.search(r'<emote>(.*?)</emote>', text, re.IGNORECASE)
-        if match:
-            emote_str = match.group(1).upper()
-            clean = text.replace(match.group(0), "").strip()
-            return emote_str, clean
-        return "IDLE", text
+        """Keep model mood markers for the slime, never for the chat text."""
+        matches = list(EMOTE_MARKER.finditer(text))
+        emote = (matches[-1].group(1) or matches[-1].group(2)).upper() if matches else "IDLE"
+        return emote, EMOTE_MARKER.sub("", text).strip()
 
     async def handle_user_message(self, user_msg):
         """Main entry point: handles a user message with a ReAct loop."""
@@ -132,6 +162,26 @@ class BlobOrchestrator:
         stripped = clean_text.strip()
         if stripped and stripped.split(maxsplit=1)[0].lower() == "/camera":
             return await self._handle_camera_command(stripped)
+        if CAMERA_REQUEST.search(stripped) and not re.search(r"\b(?:don't|do not|never|how (?:do|can|to))\b", stripped, re.IGNORECASE):
+            return await self._handle_camera_command("/camera scan")
+        if REMEMBER_ME_REQUEST.fullmatch(stripped):
+            return await self._handle_remember_me(clean_text)
+
+        screen_result = None
+        if SCREEN_REQUEST.search(stripped) and not re.search(r"\b(?:don't|do not|never)\b", stripped, re.IGNORECASE):
+            skill = self.skill_registry.get_skill("screen_capture")
+            if skill is None:
+                return await self._send_direct_response("Screen capture is unavailable.", "WORRIED")
+            try:
+                screen_result = await skill.async_execute({})
+            except Exception:
+                logger.exception("Screen capture failed")
+                return await self._send_direct_response("Screen capture failed. Check the backend logs.", "WORRIED")
+            if not screen_result.success:
+                return await self._send_direct_response(screen_result.output, screen_result.emote_suggestion)
+            if self.screen_sampler and self.screen_sampler.privacy_shield.is_capture_blocked():
+                return await self._send_direct_response("Screen capture is blocked by the privacy shield.", "WORRIED")
+            self.last_screen_context = screen_result.output
         context = self._build_context(clean_text)
         sys_prompt = self._build_system_prompt()
         
@@ -144,6 +194,11 @@ class BlobOrchestrator:
             {"role": "system", "content": sys_prompt},
             {"role": "user", "content": f"Context:\n{context}\n\nUser message:\n{clean_text}"}
         ]
+        if screen_result is not None:
+            messages.append({"role": "user", "content":
+                f"[Observation] A fresh screen capture succeeded. {screen_result.output}\n"
+                "Answer using this result. It contains OCR text and the active window title, not a full visual description. "
+                "Do not claim screen access is unavailable."})
         
         final_response = None
         
@@ -219,6 +274,9 @@ class BlobOrchestrator:
         
         # Apply output guardrails
         final_response = self.guardrails.filter_output(final_response)
+        if MEMORY_TOPIC.search(clean_text) and FALSE_MEMORY_DENIAL.search(final_response):
+            logger.warning("Corrected false model claim that Blob has no persistent memory")
+            final_response = MEMORY_CAPABILITY_RESPONSE
         
         # Save episodic memory
         if not (self.screen_sampler and self.screen_sampler.privacy_shield.is_capture_blocked()):
@@ -233,8 +291,31 @@ class BlobOrchestrator:
         await self.event_dispatcher.broadcast(resp_event)
         
         # Clean CLI output (clears the thinking indicator line)
-        print(f"\r\033[K\033[96mBlob ({emote_str}):\033[0m {final_response}\n")
+        print(f"\r\033[K\033[96mBlob:\033[0m {final_response}\n")
         return final_response
+
+    async def _send_direct_response(self, text: str, emote: str):
+        await self.dispatch_emote(emote)
+        event = blob_service_pb2.BackendEvent()
+        event.notification.text = text
+        await self.event_dispatcher.broadcast(event)
+        print(f"\nBlob: {text}\n")
+        return text
+
+    async def _handle_remember_me(self, user_text: str):
+        if self.screen_sampler and self.screen_sampler.privacy_shield.is_capture_blocked():
+            return await self._send_direct_response(
+                "My memory is paused while the privacy shield is active. Ask me again once it turns off.",
+                "WORRIED",
+            )
+        try:
+            self.episodic.add_episode(user_text, MEMORY_CAPABILITY_RESPONSE)
+        except Exception:
+            logger.exception("Could not save memory request")
+            return await self._send_direct_response(
+                "I couldn't save that to memory right now. Check the backend logs.", "WORRIED"
+            )
+        return await self._send_direct_response(MEMORY_CAPABILITY_RESPONSE, "HAPPY")
 
     async def _handle_camera_command(self, command: str):
         parts = command.split(maxsplit=2)
@@ -254,12 +335,7 @@ class BlobOrchestrator:
             except Exception:
                 logger.exception("Camera command failed")
                 result_text, success = "Camera command failed. Check the local logs.", False
-        await self.dispatch_emote("HAPPY" if success else "WORRIED")
-        event = blob_service_pb2.BackendEvent()
-        event.notification.text = result_text
-        await self.event_dispatcher.broadcast(event)
-        print(f"\nBlob: {result_text}\n")
-        return result_text
+        return await self._send_direct_response(result_text, "HAPPY" if success else "WORRIED")
 
     async def dispatch_emote(self, emote_str: str):
         """Map emote string to protobuf enum and broadcast to frontend."""

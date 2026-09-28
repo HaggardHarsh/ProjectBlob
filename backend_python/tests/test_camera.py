@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from blob.ai.orchestrator import BlobOrchestrator
+from blob.skills.base import SkillResult
 from blob.skills.builtin.camera import CameraSkill
 from blob.skills.registry import SkillRegistry
 from blob.vision.camera import CameraVision
@@ -73,11 +74,11 @@ def test_scan_reports_enrolled_name_and_releases_camera(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_explicit_camera_command_bypasses_llm():
-    vision = MagicMock()
-    vision.scan.return_value = {"faces": 1, "full_bodies": 0, "recognized": ["Asha"], "unknown_faces": 0}
+async def test_explicit_camera_request_bypasses_llm():
+    skill = SimpleNamespace(name="camera", async_execute=AsyncMock(return_value=SkillResult(
+        "Camera scan: 1 face(s). Recognized: Asha.", True, "HAPPY")))
     registry = SkillRegistry()
-    registry.register(CameraSkill(vision))
+    registry.register(skill)
     orchestrator = BlobOrchestrator.__new__(BlobOrchestrator)
     orchestrator.guardrails = SimpleNamespace(sanitize_input=lambda text: text)
     orchestrator.skill_registry = registry
@@ -85,8 +86,17 @@ async def test_explicit_camera_command_bypasses_llm():
     orchestrator.dispatch_emote = AsyncMock()
     orchestrator.llm = SimpleNamespace(generate_from_messages=AsyncMock())
 
-    await orchestrator.handle_user_message(SimpleNamespace(text="/camera scan"))
+    for message_text in ("/camera scan", "Please open my camera", "Can you turn my webcam on?"):
+        await orchestrator.handle_user_message(SimpleNamespace(text=message_text))
 
-    vision.scan.assert_called_once_with()
+    assert skill.async_execute.await_count == 3
+    skill.async_execute.assert_awaited_with({"action": "scan", "name": ""})
     orchestrator.llm.generate_from_messages.assert_not_awaited()
     assert "Asha" in orchestrator.event_dispatcher.broadcast.call_args.args[0].notification.text
+
+
+def test_camera_is_available_by_default_but_can_be_disabled():
+    from blob.config import BlobConfig
+
+    assert BlobConfig().camera_enabled is True
+    assert BlobConfig(camera_enabled=False).camera_enabled is False

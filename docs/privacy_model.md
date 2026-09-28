@@ -25,8 +25,9 @@ about a screen capture can enter episodic memory after the shield is inactive.
 
 ## Camera and face enrollment
 
-The camera is disabled until `BLOB_CAMERA_ENABLED=1` is set and the backend is
-restarted. It opens only for an explicit `/camera` command. `/camera scan`
+The camera is available by default and opens only for an explicit request to
+open or scan it, or an explicit `/camera` command. Set `BLOB_CAMERA_ENABLED=0`
+and restart the backend to disable camera access. `/camera scan`
 returns counts of faces and full-body detections and any matching enrolled
 names; it does not send pixels to Nebius or write frames to chat memory.
 

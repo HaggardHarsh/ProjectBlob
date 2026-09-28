@@ -17,7 +17,7 @@ class BlobConfig(BaseModel):
     memory_db_path: str = Field(default_factory=lambda: str(Path.home() / ".blob/memory/chromadb"))
     blacklist_path: str = Field(default_factory=lambda: str(Path(__file__).resolve().parents[1] / "data/blacklist.yaml"))
     personality_path: str = Field(default_factory=lambda: str(Path(__file__).resolve().parents[1] / "data/blob_personality.yaml"))
-    camera_enabled: bool = False
+    camera_enabled: bool = True
     camera_device_index: int = 0
     face_db_path: str = Field(default_factory=lambda: str(Path.home() / ".blob/faces"))
     skills_dir_path: str = Field(default_factory=lambda: str(Path.home() / ".blob/skills"))

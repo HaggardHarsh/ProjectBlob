@@ -113,14 +113,13 @@ To run the backend test suite, install `backend_python[dev]` and run `python -m 
 
 ### Camera and named recognition
 
-Install the optional local vision dependency and enable camera access in `.env`:
+Install the optional local vision dependency to use the camera. Camera access is enabled by default but opens only when requested; set `BLOB_CAMERA_ENABLED=0` in `.env` to disable it:
 
 ```bash
 pip install -e 'backend_python[vision]'
-BLOB_CAMERA_ENABLED=1
 ```
 
-Restart the backend, then use these commands at the `Blob>` prompt:
+Restart the backend, then ask Blob to open or scan your camera, or use these commands at the `Blob>` prompt:
 
 ```text
 /camera scan
@@ -129,7 +128,7 @@ Restart the backend, then use these commands at the `Blob>` prompt:
 /camera forget Asha
 ```
 
-Enrollment requires the person's consent and captures at least eight clear frames with one face visible. A scan reports face and full-body detections and matches enrolled faces by name. Recognition uses OpenCV's LBPH model; it can make mistakes, especially with poor light or a changed appearance, so it should not be used for authentication. The camera opens only for a command and is released afterward. Frames are not sent to the LLM or stored in chat memory. Enrollment stores cropped grayscale face samples under `~/.blob/faces/` (or `BLOB_FACE_DB_PATH`); `/camera forget <name>` deletes that person's samples. Camera access is off by default.
+Enrollment requires the person's consent and captures at least eight clear frames with one face visible. A scan reports face and full-body detections and matches enrolled faces by name. Recognition uses OpenCV's LBPH model; it can make mistakes, especially with poor light or a changed appearance, so it should not be used for authentication. The camera opens only for a request and is released afterward. Frames are not sent to the LLM or stored in chat memory. Enrollment stores cropped grayscale face samples under `~/.blob/faces/` (or `BLOB_FACE_DB_PATH`); `/camera forget <name>` deletes that person's samples.
 
 ### Persistent memory
 
