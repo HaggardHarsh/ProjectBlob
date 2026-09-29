@@ -7,8 +7,9 @@ from blob.skills.base import SkillResult
 from blob.skills.builtin.reminder import ReminderSkill
 from blob.skills.builtin.weather import WeatherSkill
 from blob.skills.builtin.screen_capture import ScreenCaptureSkill
+from blob.skills.builtin.file_search import FileSearchSkill
 from blob.skills.registry import SkillRegistry
-from blob.ai.orchestrator import BlobOrchestrator
+from blob.ai.orchestrator import BlobOrchestrator, SCREEN_REQUEST
 from blob.ai.llm_engine import NebiusEngine
 
 
@@ -90,6 +91,30 @@ async def test_screen_capture_explains_missing_ocr_after_successful_capture():
     assert not result.success
     assert "Screen capture succeeded" in result.output
     assert "backend_python[ocr]" in result.output
+
+
+@pytest.mark.asyncio
+async def test_screen_capture_does_not_guess_when_ocr_reads_nothing():
+    skill = ScreenCaptureSkill()
+    sampler = MagicMock()
+    sampler.privacy_shield.is_capture_blocked.return_value = False
+    sampler.capture = AsyncMock(return_value=MagicMock())
+    skill.set_sampler(sampler)
+    skill.set_ocr(SimpleNamespace(extract_text=lambda image: "(No readable text found)"))
+
+    result = await skill.async_execute({})
+
+    assert not result.success
+    assert "couldn't read any text" in result.output
+
+
+def test_file_search_reports_empty_query_and_no_match(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    skill = FileSearchSkill()
+    assert not skill.execute({"query": ""}).success
+    missing = skill.execute({"query": "notes.pdf"})
+    assert not missing.success
+    assert "No files matching" in missing.output
 
 
 @pytest.mark.asyncio
@@ -550,6 +575,95 @@ async def test_screen_question_captures_before_model_answer(capsys):
     assert orchestrator.event_dispatcher.broadcast.call_args.args[0].notification.text == answer
     orchestrator.dispatch_emote.assert_any_await("HAPPY")
     assert "(HAPPY)" not in capsys.readouterr().out
+
+
+@pytest.mark.asyncio
+async def test_study_screen_request_uses_ocr_and_rejects_unrequested_file_search():
+    request = "Please help me understand the lesson on my screen"
+    assert SCREEN_REQUEST.search(request)
+    screen = SimpleNamespace(name="screen_capture", description="Capture screen", async_execute=AsyncMock(
+        return_value=SkillResult("Active Window: Practice notes\n\nExtracted Screen Text:\nVoltage divider\nFind Vout for Vin=12 V, R1=2 kΩ, R2=2 kΩ", True, "THINKING")))
+    files = SimpleNamespace(name="file_search", description="Find files", async_execute=AsyncMock(
+        return_value=SkillResult("No files found", False)))
+    registry = SkillRegistry()
+    registry.register(screen)
+    registry.register(files)
+    orchestrator = BlobOrchestrator.__new__(BlobOrchestrator)
+    orchestrator.guardrails = SimpleNamespace(sanitize_input=lambda text: text, filter_output=lambda text: text)
+    orchestrator.skill_registry = registry
+    orchestrator.screen_sampler = SimpleNamespace(privacy_shield=SimpleNamespace(is_capture_blocked=lambda: False))
+    orchestrator.event_dispatcher = SimpleNamespace(broadcast=AsyncMock())
+    orchestrator.dispatch_emote = AsyncMock()
+    orchestrator.episodic = SimpleNamespace(add_episode=MagicMock())
+    orchestrator._build_context = lambda text: "Context"
+    orchestrator._build_system_prompt = lambda: "System"
+    orchestrator.llm = SimpleNamespace(generate_from_messages=AsyncMock(side_effect=[
+        SimpleNamespace(content='```tool_call\n{"tool":"file_search","args":{"query":"voltage divider"}}\n```'),
+        SimpleNamespace(content="Using Vout = Vin × R2/(R1 + R2), the result is 6 V. <emote>HAPPY</emote>"),
+    ]))
+
+    answer = await orchestrator.handle_user_message(SimpleNamespace(text=request))
+
+    screen.async_execute.assert_awaited_once_with({})
+    files.async_execute.assert_not_awaited()
+    assert "6 V" in answer
+    assert "file" not in answer.casefold()
+    assert orchestrator.llm.generate_from_messages.await_count == 2
+    observation = orchestrator.llm.generate_from_messages.call_args.args[0][-3]["content"]
+    assert "work through it" in observation
+    assert "Find Vout" in observation
+
+
+@pytest.mark.asyncio
+async def test_screen_answer_cannot_claim_a_file_search_that_did_not_happen():
+    screen = SimpleNamespace(name="screen_capture", description="Capture screen", async_execute=AsyncMock(
+        return_value=SkillResult("Active Window: Practice notes\n\nExtracted Screen Text:\nVoltage divider", True)))
+    registry = SkillRegistry()
+    registry.register(screen)
+    orchestrator = BlobOrchestrator.__new__(BlobOrchestrator)
+    orchestrator.guardrails = SimpleNamespace(sanitize_input=lambda text: text, filter_output=lambda text: text)
+    orchestrator.skill_registry = registry
+    orchestrator.screen_sampler = SimpleNamespace(privacy_shield=SimpleNamespace(is_capture_blocked=lambda: False))
+    orchestrator.event_dispatcher = SimpleNamespace(broadcast=AsyncMock())
+    orchestrator.dispatch_emote = AsyncMock()
+    orchestrator.episodic = SimpleNamespace(add_episode=MagicMock())
+    orchestrator._build_context = lambda text: "Context"
+    orchestrator._build_system_prompt = lambda: "System"
+    orchestrator.llm = SimpleNamespace(generate_from_messages=AsyncMock(side_effect=[
+        SimpleNamespace(content="The file isn't showing up in the search."),
+        SimpleNamespace(content="A voltage divider uses two resistors to take a fraction of the input voltage. Which step is confusing?"),
+    ]))
+
+    answer = await orchestrator.handle_user_message(SimpleNamespace(text="Help me with what's on my screen"))
+
+    assert "voltage divider" in answer
+    assert "file" not in answer.casefold()
+    assert orchestrator.llm.generate_from_messages.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_old_screen_text_is_not_reused_on_next_message():
+    screen = SimpleNamespace(name="screen_capture", description="Capture screen", async_execute=AsyncMock(
+        return_value=SkillResult("Active Window: Notes\n\nExtracted Screen Text:\nCircuit diagram", True)))
+    registry = SkillRegistry()
+    registry.register(screen)
+    orchestrator = BlobOrchestrator.__new__(BlobOrchestrator)
+    orchestrator.guardrails = SimpleNamespace(sanitize_input=lambda text: text, filter_output=lambda text: text)
+    orchestrator.skill_registry = registry
+    orchestrator.screen_sampler = SimpleNamespace(privacy_shield=SimpleNamespace(is_capture_blocked=lambda: False))
+    orchestrator.event_dispatcher = SimpleNamespace(broadcast=AsyncMock())
+    orchestrator.dispatch_emote = AsyncMock()
+    orchestrator.episodic = SimpleNamespace(add_episode=MagicMock())
+    orchestrator._build_context = lambda text: orchestrator.last_screen_context
+    orchestrator._build_system_prompt = lambda: "System"
+    orchestrator.llm = SimpleNamespace(generate_from_messages=AsyncMock(return_value=SimpleNamespace(content="Okay.")))
+
+    await orchestrator.handle_user_message(SimpleNamespace(text="Look at my screen"))
+    await orchestrator.handle_user_message(SimpleNamespace(text="Hi"))
+
+    second_context = orchestrator.llm.generate_from_messages.await_args.args[0][1]["content"]
+    assert "Circuit diagram" not in second_context
+    assert "No fresh screen capture" in second_context
 
 
 @pytest.mark.asyncio

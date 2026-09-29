@@ -14,7 +14,7 @@ class ScreenCaptureSkill(SkillInterface):
     def name(self): return "screen_capture"
 
     @property
-    def description(self): return "Capture the current screen and describe what's visible. Returns active window title and OCR text from the screen. args: {} (no arguments needed)"
+    def description(self): return "Read text from the current screen. Returns the active window title and OCR text, not a full image description. args: {} (no arguments needed)"
 
     @property
     def triggers(self): return ["screen", "see", "look", "what's on screen", "screenshot"]
@@ -73,6 +73,13 @@ class ScreenCaptureSkill(SkillInterface):
                 f"Details: {text}",
                 False,
                 "WORRIED",
+            )
+
+        if not text.strip() or text.strip() == "(No readable text found)":
+            return SkillResult(
+                "I captured your screen, but couldn't read any text. Try zooming in or opening the page you want help with.",
+                False,
+                "CONFUSED",
             )
 
         output = f"Active Window: {window_title}\n\nExtracted Screen Text:\n{text}"

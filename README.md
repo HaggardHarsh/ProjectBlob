@@ -141,7 +141,7 @@ Say "show me my screen" or use `/screen`. On Wayland, Blob asks the desktop scre
 pip install -e 'backend_python[ocr]'
 ```
 
-Restart Blob after installing OCR. Screen capture is on request only; Blob currently uses the active window title and extracted text to answer, rather than sending the full image to the cloud model. If capture fails, Blob reports whether the portal was unavailable, cancelled, or denied.
+Restart Blob after installing OCR. Screen capture is on request only, including requests for help with material on the screen. Blob uses the active window title and extracted text to answer, rather than sending the full image to the cloud model. If capture or OCR fails, Blob reports that directly. File search runs only for an explicit request to find a file; it does not search the visible screen.
 Blob also uses RapidOCR when it is installed locally; this can provide OCR without loading PyTorch.
 
 ### Persistent memory

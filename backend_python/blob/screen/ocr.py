@@ -12,7 +12,7 @@ class OCRProcessor:
         if self.reader is None:
             try:
                 from rapidocr import RapidOCR
-                self.reader = RapidOCR()
+                self.reader = RapidOCR(params={"Global.log_level": "warning"})
                 self.backend = "rapidocr"
             except ImportError:
                 try:
@@ -35,7 +35,7 @@ class OCRProcessor:
                 result = reader(image_source)
             else:
                 result = reader(np.asarray(image_source.convert("RGB")))
-            return " ".join(result.txts or ()) or "(No readable text found)"
+            return "\n".join(result.txts or ()) or "(No readable text found)"
 
         temp_path = None
         target_path = image_source
@@ -48,7 +48,7 @@ class OCRProcessor:
 
         try:
             result = reader.readtext(target_path)
-            return " ".join([text for _, text, _ in result])
+            return "\n".join(text for _, text, _ in result) or "(No readable text found)"
         except Exception as e:
             logger.warning("OCR failed: %s", e)
             return f"Failed to extract text: {e}"

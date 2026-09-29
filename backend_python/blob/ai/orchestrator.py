@@ -37,7 +37,23 @@ CAMERA_STATUS_REQUEST = re.compile(
 SCREEN_REQUEST = re.compile(
     r"\b(?:what(?:'s| is) (?:happening|going on|on|visible)|show me|look at|check|read|describe|capture|see|share|view)\b"
     r".{0,45}\b(?:my |the |this )?(?:screen|desktop|display)\b"
-    r"|\b(?:screen|desktop|display)\b.{0,30}\b(?:what(?:'s| is) on|look|check|read|describe|capture|see)\b",
+    r"|\b(?:screen|desktop|display)\b.{0,30}\b(?:what(?:'s| is) on|look|check|read|describe|capture|see)\b"
+    r"|\b(?:help(?: me)?(?: with)?|explain|teach|understand|studying|reading)\b"
+    r".{0,100}\b(?:on|from)\s+(?:my|the|this)\s+(?:screen|desktop|display)\b",
+    re.IGNORECASE,
+)
+STUDY_HELP_REQUEST = re.compile(
+    r"\b(?:study|studying|learn|learning|understand|explain|teach|help(?: me)?(?: with)?)\b",
+    re.IGNORECASE,
+)
+FILE_REQUEST = re.compile(
+    r"\b(?:find|search|locate)\b.{0,50}\b(?:file|pdf|document|notes)\b"
+    r"|\b(?:file|pdf|document|notes)\b.{0,50}\b(?:find|search|locate)\b",
+    re.IGNORECASE,
+)
+FILE_SEARCH_CLAIM = re.compile(
+    r"\b(?:file|document|pdf)\b.{0,100}\b(?:search|find|found|showing|saved)\b"
+    r"|\b(?:search|find|found)\b.{0,100}\b(?:file|document|pdf)\b",
     re.IGNORECASE,
 )
 REMINDER_INTENT = re.compile(
@@ -303,6 +319,9 @@ class BlobOrchestrator:
         started_at = time.perf_counter()
         clean_text = self.guardrails.sanitize_input(user_msg.text)
         stripped = clean_text.strip()
+        # Screen OCR is evidence from one capture, never a live view that can be
+        # reused for another user message.
+        self.last_screen_context = "No fresh screen capture for this request."
         if stripped and stripped.split(maxsplit=1)[0].lower() == "/camera":
             return await self._handle_camera_command(stripped)
         if re.fullmatch(r"(?:camera|webcam)[.!?]*", stripped, re.IGNORECASE):
@@ -325,7 +344,9 @@ class BlobOrchestrator:
                          "weather" if WEATHER_INTENT.search(stripped) else None)
 
         screen_result = None
-        if (SCREEN_REQUEST.search(stripped) or stripped.lower() in {"/screen", "/screenshot"}) and not re.search(r"\b(?:don't|do not|never)\b", stripped, re.IGNORECASE):
+        screen_requested = bool(SCREEN_REQUEST.search(stripped) or stripped.lower() in {"/screen", "/screenshot"})
+        capture_allowed = screen_requested and not re.search(r"\b(?:don't|do not|never)\b", stripped, re.IGNORECASE)
+        if capture_allowed:
             skill = self.skill_registry.get_skill("screen_capture")
             if skill is None:
                 return await self._send_direct_response("Screen capture is unavailable.", "WORRIED")
@@ -338,7 +359,7 @@ class BlobOrchestrator:
                 return await self._send_direct_response(screen_result.output, screen_result.emote_suggestion)
             if self.screen_sampler and self.screen_sampler.privacy_shield.is_capture_blocked():
                 return await self._send_direct_response("Screen capture is blocked by the privacy shield.", "WORRIED")
-            self.last_screen_context = screen_result.output
+            self.last_screen_context = "Fresh screen capture is supplied as a separate observation."
         # Show the thinking state before local memory retrieval begins.
         await self.dispatch_emote("THINKING")
         print("\033[90m(Thinking...)\033[0m", end="", flush=True)
@@ -355,14 +376,23 @@ class BlobOrchestrator:
             {"role": "user", "content": clean_text},
         ]
         if screen_result is not None:
+            study_guidance = (
+                "The user asked for study help. Start helping from the readable text: "
+                "if it contains a complete question or exercise, work through it; otherwise explain one relevant concept. "
+                "Ask a short follow-up only after giving useful help. Do not invent missing values, diagrams, or text. "
+                if STUDY_HELP_REQUEST.search(stripped) else ""
+            )
             messages.append({"role": "user", "content":
                 f"[Observation] A fresh screen capture succeeded. {screen_result.output}\n"
-                "Answer using this result. It contains OCR text and the active window title, not a full visual description. "
-                "Do not claim screen access is unavailable."})
+                "Use the OCR text and window title as the only visual evidence. Name a study topic only if its words appear there. "
+                f"{study_guidance}"
+                "If the text is unclear, ask the user which part they mean. Do not search for files unless the user requested a file search. "
+                "The capture contains text, not a full visual description."})
         
         final_response = None
         preview_text = ""
         direct_tool_emote = None
+        file_search_ran = False
         
         # ── ReAct Loop ──────────────────────────────────────────────────
         for iteration in range(MAX_REACT_ITERATIONS):
@@ -371,13 +401,22 @@ class BlobOrchestrator:
             # Generate LLM response
             model_started_at = time.perf_counter()
             response_text, preview_text = await self._generate_with_preview(
-                messages, sys_prompt, allow_preview=required_tool is None)
+                messages, sys_prompt, allow_preview=required_tool is None and screen_result is None)
             model_seconds += time.perf_counter() - model_started_at
             
             # Check for tool call
             tool_name, tool_args = self._parse_tool_call(response_text)
             
             if tool_name is None:
+                if screen_result is not None and not file_search_ran and FILE_SEARCH_CLAIM.search(response_text):
+                    if iteration < MAX_REACT_ITERATIONS - 1:
+                        messages.append({"role": "assistant", "content": response_text})
+                        messages.append({"role": "user", "content":
+                            "[Observation] No file search happened. Answer from the captured OCR text only. "
+                            "Do not claim a file was missing, unsaved, or searched."})
+                        continue
+                    final_response = "I captured your screen, but couldn't identify the material confidently. Which line or term would you like help with?"
+                    break
                 # No tool call → this is the final answer
                 final_response = response_text
                 break
@@ -389,6 +428,24 @@ class BlobOrchestrator:
                 return await self._send_direct_response(
                     "To use the camera, say 'scan my camera' or enter /camera scan.", "CONFUSED"
                 )
+            if tool_name == "file_search" and not FILE_REQUEST.search(stripped):
+                messages.append({"role": "assistant", "content": response_text})
+                messages.append({"role": "user", "content":
+                    "[Observation] The user did not ask for a file search. Answer the user's request without claiming files were searched."})
+                continue
+            if screen_result is not None and tool_name != required_tool and not (
+                    tool_name == "file_search" and FILE_REQUEST.search(stripped)):
+                messages.append({"role": "assistant", "content": response_text})
+                messages.append({"role": "user", "content":
+                    "[Observation] The screen was already captured. That extra tool was not requested. "
+                    "Answer the user's question from the captured OCR text; do not claim a file search happened."})
+                continue
+            if tool_name == "screen_capture" and not capture_allowed:
+                messages.append({"role": "assistant", "content": response_text})
+                messages.append({"role": "user", "content":
+                    "[Observation] Screen capture requires an explicit request to look at the screen. "
+                    "Answer without claiming you saw it."})
+                continue
             
             # ── Tool Execution ──────────────────────────────────────────
             skill = self.skill_registry.get_skill(tool_name)
@@ -411,13 +468,21 @@ class BlobOrchestrator:
             
             try:
                 result = await skill.async_execute(tool_args)
+                if tool_name == "file_search":
+                    file_search_ran = True
                 outcome = "executed successfully" if result.success else "failed"
                 observation = f"[Observation] Tool '{tool_name}' {outcome}.\nResult: {result.output}"
                 logger.info(f"Skill result: {result.output[:200]}")
                 
                 # If it's a screen capture, update the stored context
-                if tool_name == "screen_capture" and result.success:
-                    self.last_screen_context = result.output
+                if tool_name == "screen_capture":
+                    if result.success:
+                        self.last_screen_context = "Fresh screen capture is supplied as a separate observation."
+                        screen_result = result
+                    else:
+                        final_response = result.output
+                        direct_tool_emote = result.emote_suggestion
+                        break
                 
                 # Dispatch skill emote if non-idle
                 if result.emote_suggestion != "IDLE":
@@ -449,7 +514,7 @@ class BlobOrchestrator:
                 messages.append({"role": "user", "content": "[System] You have used all available tool calls. Please provide your final response to the user now."})
                 model_started_at = time.perf_counter()
                 final_response, preview_text = await self._generate_with_preview(
-                    messages, sys_prompt, allow_preview=required_tool is None)
+                    messages, sys_prompt, allow_preview=required_tool is None and screen_result is None)
                 model_seconds += time.perf_counter() - model_started_at
                 final_response = final_response or "Sorry, I got a bit lost there! 😅"
             else:
@@ -466,6 +531,9 @@ class BlobOrchestrator:
         
         # Apply output guardrails
         final_response = self.guardrails.filter_output(final_response)
+        if screen_result is not None and not file_search_ran and FILE_SEARCH_CLAIM.search(final_response):
+            final_response = "I captured your screen, but couldn't identify the material confidently. Which line or term would you like help with?"
+            emote_str = "CONFUSED"
         if required_tool and direct_tool_emote is None:
             if required_tool == "reminder":
                 final_response = "I haven't set a reminder. Tell me what to remind you about and when."

@@ -26,6 +26,9 @@ blocked by Wayland without a fresh failure result from its own capture tool.
 If a fresh screen capture result appears in the
 conversation, use its active window title and OCR text to answer; do not say
 you lack screen permission when capture succeeded.
+The OCR text is the only verified visual evidence. Say when it is too limited to
+identify a topic. Do not report a file search unless the user asked for one and
+a file_search observation actually appears in the conversation.
 
 ### How to Call a Tool
 
