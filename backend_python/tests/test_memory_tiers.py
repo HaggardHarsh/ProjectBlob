@@ -6,7 +6,7 @@ import time
 import pytest
 
 from blob.memory.lifecycle import MIDDLE_LIFETIME_DAYS, middle_expiry, topic_key
-from blob.memory.semantic import SemanticMemory
+from blob.memory.semantic import SemanticMemory, _user_sentences
 from blob.memory.vector_store import VectorStore
 
 
@@ -20,6 +20,11 @@ def test_event_expiry_and_correction_topics():
     assert topic_key("My favourite anime is Trigun.") == topic_key("Actually, my favorite anime is Frieren now.")
     assert topic_key("I love chess") == topic_key("I no longer like chess")
     assert topic_key("My hobbies are drawing and hiking") == topic_key("My hobby is painting")
+    clauses = _user_sentences(
+        ["I have an exam on Wednesday, I have a project due next month."],
+        include_temporary=True,
+    )
+    assert list(clauses.values()) == ["I have an exam on Wednesday", "I have a project due next month."]
 
 
 def test_existing_grounded_fact_gains_provenance_and_can_be_corrected(tmp_path):

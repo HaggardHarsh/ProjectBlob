@@ -29,7 +29,7 @@ def _user_sentences(messages: list[str], include_temporary: bool = False) -> dic
     """Return exact user sentences; temporary ones are eligible only for middle term."""
     sentences = {}
     for message in messages:
-        for sentence in re.split(r"(?<=[.!?])\s+|\n+", message):
+        for sentence in re.split(r"(?<=[.!?])\s+|\n+|,\s+(?=I\s+(?:have|am|will|need|want)\b)", message):
             sentence = sentence.strip()
             key = _sentence_key(sentence)
             trivial_clock = re.fullmatch(
@@ -62,7 +62,7 @@ class SemanticMemory:
         if not source_sentences:
             return True
         prompt = (
-            "Each numbered line is an exact user sentence. Select only factual user statements worth remembering. "
+            "Each numbered line is an exact user statement. Select only factual user statements worth remembering. "
             "Use L for lasting facts (name, hobbies, favorites, stable preferences). "
             "Use M for active projects or future events (exams, appointments, deadlines) that should expire. "
             "Never use L for a dated or relative-time statement. Ignore simple date/time/weather claims, "
