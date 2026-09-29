@@ -24,6 +24,8 @@ bin/
 # Database / Local Data
 data/chroma_db/
 backend_python/data/chroma_db/
+backend_python/data/memory_backups/
+:memory:.ses
 *.db
 *.sqlite3
 
