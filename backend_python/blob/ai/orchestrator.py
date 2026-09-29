@@ -219,6 +219,10 @@ class BlobOrchestrator:
             user_only=not bool(ASSISTANT_HISTORY_REQUEST.search(clean_text)),
             recall_mode=historical,
         )
+        self._has_grounded_personal_context = bool(
+            middle_facts or episodes or
+            any((item.get("metadata") or {}).get("grounded") for item in facts)
+        )
         
         # Try to get active window title (lightweight, no screenshot)
         active_window = "Unknown"
@@ -363,6 +367,7 @@ class BlobOrchestrator:
         # Show the thinking state before local memory retrieval begins.
         await self.dispatch_emote("THINKING")
         print("\033[90m(Thinking...)\033[0m", end="", flush=True)
+        self._has_grounded_personal_context = False
         context = self._build_context(clean_text)
         sys_prompt = self._build_system_prompt()
         preparation_seconds = time.perf_counter() - started_at
@@ -375,6 +380,14 @@ class BlobOrchestrator:
             *list(getattr(self, "_recent_turns", ())),
             {"role": "user", "content": clean_text},
         ]
+        if (self._has_grounded_personal_context and required_tool is None and
+                not screen_requested and not FILE_REQUEST.search(stripped)):
+            messages.append({"role": "user", "content":
+                "[App reply guidance] If the latest request is a short question about a personal fact in the context, "
+                "answer only that question in one casual sentence. State a grounded fact directly, without describing "
+                "where you learned it. For a plan tomorrow, say yep and use 'tomorrow'. Do not add related details, "
+                "such as its grade weight, unless asked. If the fact is uncertain, say so plainly. "
+                "For requests needing a fuller answer, respond at the requested length."})
         if screen_result is not None:
             study_guidance = (
                 "The user asked for study help. Start helping from the readable text: "

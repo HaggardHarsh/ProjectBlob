@@ -331,6 +331,37 @@ def test_middle_term_context_and_explicit_archive_recall():
 
 
 @pytest.mark.asyncio
+async def test_grounded_plan_question_gets_direct_reply_guidance():
+    orchestrator = BlobOrchestrator.__new__(BlobOrchestrator)
+    orchestrator.guardrails = SimpleNamespace(sanitize_input=lambda text: text, filter_output=lambda text: text)
+    orchestrator.skill_registry = SkillRegistry()
+    orchestrator.screen_sampler = None
+    orchestrator.event_dispatcher = SimpleNamespace(broadcast=AsyncMock())
+    orchestrator.dispatch_emote = AsyncMock()
+    orchestrator.episodic = SimpleNamespace(recall_relevant=MagicMock(return_value=[]), add_episode=MagicMock())
+    said_at = datetime.now(timezone.utc).timestamp()
+    orchestrator.semantic = SimpleNamespace(
+        recall_facts=MagicMock(return_value=[]),
+        recall_middle=MagicMock(return_value=[{
+            "text": "I booked a bike service for next week.",
+            "metadata": {"source_timestamp": said_at, "expires_at": said_at + 7 * 86400},
+        }]),
+    )
+    orchestrator._get_style_facts = lambda: []
+    orchestrator._build_system_prompt = lambda: "System"
+    orchestrator.llm = SimpleNamespace(generate_from_messages=AsyncMock(
+        return_value=SimpleNamespace(content="Yep, your bike service is next week.")))
+
+    answer = await orchestrator.handle_user_message(SimpleNamespace(text="Do I have any plans next week?"))
+
+    messages = orchestrator.llm.generate_from_messages.call_args.args[0]
+    assert "bike service" in messages[1]["content"]
+    assert messages[-2]["content"] == "Do I have any plans next week?"
+    assert "answer only that question in one casual sentence" in messages[-1]["content"]
+    assert answer == "Yep, your bike service is next week."
+
+
+@pytest.mark.asyncio
 async def test_day_only_request_uses_local_clock_without_memory_or_model(monkeypatch):
     class FixedClock:
         @staticmethod
