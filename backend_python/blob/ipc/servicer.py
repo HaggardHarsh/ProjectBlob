@@ -96,6 +96,10 @@ class BlobServiceServicer(blob_service_pb2_grpc.BlobServiceServicer):
             await self.orchestrator.handle_user_message(message)
         except Exception:
             logger.exception("Could not process frontend message")
+            emote = blob_service_pb2.BackendEvent()
+            emote.emote.emote = blob_service_pb2.EmoteCommand.ERROR
+            emote.emote.intensity = 0.75
+            await self.dispatcher.broadcast(emote)
             response = blob_service_pb2.BackendEvent()
             response.notification.text = "Blob could not process that message. Check the backend logs."
             await self.dispatcher.broadcast(response)

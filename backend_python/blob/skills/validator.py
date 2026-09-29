@@ -10,7 +10,7 @@ import yaml
 
 ALLOWED_PERMISSIONS = frozenset({"filesystem.read", "shell.execute", "network.http"})
 SHELL_OPERATORS = frozenset({"|", "||", "&", "&&", ";", ">", ">>", "<", "2>", "2>>"})
-VALID_EMOTES = frozenset({"IDLE", "HAPPY", "TIRED", "EXCITED", "THINKING", "OFFER_COFFEE", "CELEBRATE", "SHY", "SLEEPING", "EATING", "CONFUSED", "PROUD", "WORRIED", "PLAYFUL"})
+VALID_EMOTES = frozenset({"IDLE", "HAPPY", "TIRED", "EXCITED", "THINKING", "OFFER_COFFEE", "CELEBRATE", "SHY", "SLEEPING", "EATING", "CONFUSED", "PROUD", "WORRIED", "PLAYFUL", "SAD", "ANGRY", "WORKING", "DEEP_THINKING", "LISTENING", "SHOCKED", "MELTING", "ERROR", "SUCCESS", "WAITING"})
 
 
 @dataclass(frozen=True)

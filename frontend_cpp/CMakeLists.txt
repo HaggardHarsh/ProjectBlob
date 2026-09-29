@@ -77,6 +77,7 @@ target_link_libraries(blob_ipc_smoke gRPC::grpc++ gRPC::grpc protobuf::libprotob
 enable_testing()
 add_executable(blob_render_smoke
     tests/render_smoke.cpp
+    src/blob/animation.cpp
     src/blob/physics.cpp
     src/overlay/renderer.cpp
 )

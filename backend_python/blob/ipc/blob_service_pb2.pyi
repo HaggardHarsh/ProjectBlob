@@ -108,7 +108,7 @@ class BackendEvent(_message.Message):
     def __init__(self, timestamp_ms: _Optional[int] = ..., emote: _Optional[_Union[EmoteCommand, _Mapping]] = ..., state: _Optional[_Union[StateCommand, _Mapping]] = ..., notification: _Optional[_Union[NotificationBubble, _Mapping]] = ..., skill_ack: _Optional[_Union[SkillAcknowledgment, _Mapping]] = ..., privacy: _Optional[_Union[PrivacyShieldEvent, _Mapping]] = ..., color_shift: _Optional[_Union[ColorShiftEvent, _Mapping]] = ..., heartbeat: _Optional[_Union[HeartbeatPong, _Mapping]] = ..., position_hint: _Optional[_Union[BlobPositionHint, _Mapping]] = ...) -> None: ...
 
 class EmoteCommand(_message.Message):
-    __slots__ = ("emote", "intensity", "duration_ms", "trigger_reason")
+    __slots__ = ("emote", "intensity", "duration_ms", "trigger_reason", "secondary_emote", "blend")
     class Emote(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
         __slots__ = ()
         IDLE: _ClassVar[EmoteCommand.Emote]
@@ -127,6 +127,14 @@ class EmoteCommand(_message.Message):
         PLAYFUL: _ClassVar[EmoteCommand.Emote]
         SAD: _ClassVar[EmoteCommand.Emote]
         ANGRY: _ClassVar[EmoteCommand.Emote]
+        WORKING: _ClassVar[EmoteCommand.Emote]
+        DEEP_THINKING: _ClassVar[EmoteCommand.Emote]
+        LISTENING: _ClassVar[EmoteCommand.Emote]
+        SHOCKED: _ClassVar[EmoteCommand.Emote]
+        MELTING: _ClassVar[EmoteCommand.Emote]
+        ERROR: _ClassVar[EmoteCommand.Emote]
+        SUCCESS: _ClassVar[EmoteCommand.Emote]
+        WAITING: _ClassVar[EmoteCommand.Emote]
     IDLE: EmoteCommand.Emote
     HAPPY: EmoteCommand.Emote
     TIRED: EmoteCommand.Emote
@@ -143,15 +151,27 @@ class EmoteCommand(_message.Message):
     PLAYFUL: EmoteCommand.Emote
     SAD: EmoteCommand.Emote
     ANGRY: EmoteCommand.Emote
+    WORKING: EmoteCommand.Emote
+    DEEP_THINKING: EmoteCommand.Emote
+    LISTENING: EmoteCommand.Emote
+    SHOCKED: EmoteCommand.Emote
+    MELTING: EmoteCommand.Emote
+    ERROR: EmoteCommand.Emote
+    SUCCESS: EmoteCommand.Emote
+    WAITING: EmoteCommand.Emote
     EMOTE_FIELD_NUMBER: _ClassVar[int]
     INTENSITY_FIELD_NUMBER: _ClassVar[int]
     DURATION_MS_FIELD_NUMBER: _ClassVar[int]
     TRIGGER_REASON_FIELD_NUMBER: _ClassVar[int]
+    SECONDARY_EMOTE_FIELD_NUMBER: _ClassVar[int]
+    BLEND_FIELD_NUMBER: _ClassVar[int]
     emote: EmoteCommand.Emote
     intensity: float
     duration_ms: int
     trigger_reason: str
-    def __init__(self, emote: _Optional[_Union[EmoteCommand.Emote, str]] = ..., intensity: _Optional[float] = ..., duration_ms: _Optional[int] = ..., trigger_reason: _Optional[str] = ...) -> None: ...
+    secondary_emote: EmoteCommand.Emote
+    blend: float
+    def __init__(self, emote: _Optional[_Union[EmoteCommand.Emote, str]] = ..., intensity: _Optional[float] = ..., duration_ms: _Optional[int] = ..., trigger_reason: _Optional[str] = ..., secondary_emote: _Optional[_Union[EmoteCommand.Emote, str]] = ..., blend: _Optional[float] = ...) -> None: ...
 
 class StateCommand(_message.Message):
     __slots__ = ("state", "params")

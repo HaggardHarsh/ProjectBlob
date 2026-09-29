@@ -4,11 +4,7 @@
 #include <SDL2/SDL.h>
 #include "common/types.h"
 #include "blob/state_machine.h"
-
-enum class BlobExpression {
-    IDLE, HAPPY, EXCITED, CELEBRATE, THINKING, WORRIED, SAD, ANGRY,
-    CONFUSED, SHY, SLEEPING, TIRED, EATING, PROUD, PLAYFUL
-};
+#include "blob/visual_state.h"
 
 /** Draws the compact blue slime and its facial expressions. */
 class Renderer {
@@ -30,7 +26,9 @@ public:
 
     /// Draw the current expression.
     void drawFace(float cx, float cy, float rx, float ry, float time,
-                  BlobState state, BlobExpression expression);
+                  BlobState state, const BlobPose& pose);
+    void drawDetails(float cx, float cy, float rx, float ry, float time,
+                     const BlobPose& pose);
 
     /// Build shape mask for the current frame.
     void stampShape(const std::vector<Vec2>& vertices, float cx, float cy);

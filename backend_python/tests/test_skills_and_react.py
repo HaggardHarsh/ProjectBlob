@@ -11,6 +11,22 @@ from blob.skills.builtin.file_search import FileSearchSkill
 from blob.skills.registry import SkillRegistry
 from blob.ai.orchestrator import BlobOrchestrator, SCREEN_REQUEST
 from blob.ai.llm_engine import NebiusEngine
+from blob.ipc import blob_service_pb2
+
+
+@pytest.mark.asyncio
+async def test_slow_operation_changes_to_waiting_without_canceling_work():
+    orchestrator = BlobOrchestrator.__new__(BlobOrchestrator)
+    orchestrator.dispatch_emote = AsyncMock()
+
+    async def slow_operation():
+        await asyncio.sleep(0.02)
+        return "finished"
+
+    result = await orchestrator._await_with_progress(slow_operation(), 0.001, "WAITING")
+
+    assert result == "finished"
+    orchestrator.dispatch_emote.assert_awaited_once_with("WAITING")
 
 
 @pytest.mark.asyncio
@@ -159,6 +175,11 @@ async def test_orchestrator_react_loop_tool_execution():
     # The confirmed skill result is shown without a second model paraphrase.
     assert orchestrator.llm.generate_from_messages.call_count == 1
     assert "Reminder set" in answer
+    assert any(
+        call.args[0].HasField("emote") and
+        call.args[0].emote.emote == blob_service_pb2.EmoteCommand.WORKING
+        for call in event_dispatcher.broadcast.await_args_list
+    )
 
     # Verify reminder was registered
     assert len(reminder_skill.reminders) == 1

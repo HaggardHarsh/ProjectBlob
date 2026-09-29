@@ -1,5 +1,7 @@
 #include <iostream>
 #include <cstdlib>
+#include <algorithm>
+#include <cmath>
 #include <string>
 #include <SDL2/SDL.h>
 #include "overlay/window.h"
@@ -29,6 +31,14 @@ static BlobExpression expressionFor(blob::EmoteCommand::Emote emote) {
         case blob::EmoteCommand::EATING: return BlobExpression::EATING;
         case blob::EmoteCommand::PROUD: return BlobExpression::PROUD;
         case blob::EmoteCommand::PLAYFUL: return BlobExpression::PLAYFUL;
+        case blob::EmoteCommand::WORKING: return BlobExpression::WORKING;
+        case blob::EmoteCommand::DEEP_THINKING: return BlobExpression::DEEP_THINKING;
+        case blob::EmoteCommand::LISTENING: return BlobExpression::LISTENING;
+        case blob::EmoteCommand::SHOCKED: return BlobExpression::SHOCKED;
+        case blob::EmoteCommand::MELTING: return BlobExpression::MELTING;
+        case blob::EmoteCommand::ERROR: return BlobExpression::ERROR;
+        case blob::EmoteCommand::SUCCESS: return BlobExpression::SUCCESS;
+        case blob::EmoteCommand::WAITING: return BlobExpression::WAITING;
         default: return BlobExpression::IDLE;
     }
 }
@@ -75,6 +85,7 @@ int main(int argc, char* argv[]) {
     bool privacyActive = false;
     BlobExpression expression = BlobExpression::IDLE;
     Uint32 expressionUntil = 0;
+    Uint32 speakingUntil = 0;
 
     while (running) {
         Uint32 frameStart = SDL_GetTicks();
@@ -151,11 +162,22 @@ int main(int argc, char* argv[]) {
         while (auto event = grpc_client.pollEvent()) {
             if (event->has_skill_ack()) {
                 const auto& ack = event->skill_ack();
+                expression = ack.success() ? BlobExpression::SUCCESS : BlobExpression::ERROR;
+                expressionUntil = SDL_GetTicks() + 1800;
+                animation.setExpression(expression, ack.success() ? 0.5f : 0.7f);
+                animation.setBlend(BlobExpression::IDLE, 0.0f);
                 if (ack.success()) physics.jiggle();
             } else if (event->has_emote()) {
                 const auto emote = event->emote().emote();
                 expression = expressionFor(emote);
-                expressionUntil = expression == BlobExpression::THINKING ? 0 :
+                animation.setExpression(expression,
+                    event->emote().intensity() > 0.0f ? event->emote().intensity() : 0.55f);
+                animation.setBlend(expressionFor(event->emote().secondary_emote()),
+                                   event->emote().blend());
+                expressionUntil = (expression == BlobExpression::THINKING ||
+                                   expression == BlobExpression::DEEP_THINKING ||
+                                   expression == BlobExpression::WORKING ||
+                                   expression == BlobExpression::WAITING) ? 0 :
                     SDL_GetTicks() + (event->emote().duration_ms() ? event->emote().duration_ms() : 3500);
                 if (privacyActive) state_machine.changeState(BlobState::BLINDFOLDED);
                 else if (emote == blob::EmoteCommand::THINKING) state_machine.changeState(BlobState::THINKING);
@@ -163,21 +185,39 @@ int main(int argc, char* argv[]) {
                 else state_machine.changeState(BlobState::IDLE);
                 if (emote == blob::EmoteCommand::HAPPY || emote == blob::EmoteCommand::EXCITED ||
                     emote == blob::EmoteCommand::CELEBRATE) physics.jiggle();
+            } else if (event->has_notification()) {
+                const size_t length = event->notification().text().size();
+                speakingUntil = SDL_GetTicks() + Uint32(std::clamp<size_t>(length * 33, 650, 2400));
             } else if (event->has_privacy()) {
                 privacyActive = event->privacy().activated();
                 state_machine.changeState(privacyActive ? BlobState::BLINDFOLDED : BlobState::IDLE);
             }
         }
         if (expressionUntil && SDL_TICKS_PASSED(SDL_GetTicks(), expressionUntil)) {
-            expression = BlobExpression::IDLE;
-            expressionUntil = 0;
-            if (!privacyActive) state_machine.changeState(BlobState::IDLE);
+            if (expression == BlobExpression::MELTING || expression == BlobExpression::MELTED) {
+                expression = BlobExpression::RECOVERING;
+                animation.setExpression(expression, 0.65f);
+                expressionUntil = SDL_GetTicks() + 1000;
+            } else {
+                expression = BlobExpression::IDLE;
+                animation.setExpression(expression);
+                animation.setBlend(BlobExpression::IDLE, 0.0f);
+                expressionUntil = 0;
+                if (!privacyActive) state_machine.changeState(BlobState::IDLE);
+            }
         }
 
         // ── Physics & animation ──
-        physics.update(dt);
         state_machine.update(dt);
         animation.update(dt);
+        BlobPose pose = animation.pose();
+        if (speakingUntil && SDL_TICKS_PASSED(SDL_GetTicks(), speakingUntil)) speakingUntil = 0;
+        if (speakingUntil) {
+            pose.mouthOpen = std::max(pose.mouthOpen,
+                0.22f + 0.42f * (0.5f + 0.5f * std::sin(SDL_GetTicks() * 0.015f)));
+        }
+        physics.setPose(pose);
+        physics.update(dt);
 
         // ── Render (layered, back to front) ──
         renderer.clear();
@@ -197,9 +237,11 @@ int main(int argc, char* argv[]) {
         // 3) One soft highlight
         renderer.drawHighlights(center.x, center.y, rx, ry);
 
+        renderer.drawDetails(center.x, center.y, rx, ry, time, pose);
+
         // 4) The expression sent by the backend
         renderer.drawFace(center.x, center.y, rx, ry, time,
-                          state_machine.getCurrentState(), expression);
+                          state_machine.getCurrentState(), pose);
 
         renderer.present();
 

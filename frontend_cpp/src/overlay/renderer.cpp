@@ -5,10 +5,11 @@
 #include <stdexcept>
 
 namespace {
-constexpr Color SKY_TOP{192, 241, 250, 255};
-constexpr Color SKY_LOWER{91, 192, 221, 255};
-constexpr Color OUTLINE{51, 145, 177, 170};
-constexpr Color INK{36, 75, 101, 255};
+constexpr Color TOP{198, 244, 251, 255};
+constexpr Color BASE{75, 181, 216, 255};
+constexpr Color OUTLINE{48, 139, 175, 180};
+constexpr Color INK{28, 69, 98, 255};
+float unit(float value) { return std::clamp(value, 0.0f, 1.0f); }
 }
 
 Renderer::Renderer(SDL_Window* window, int w, int h) : width_(w), height_(h) {
@@ -43,26 +44,28 @@ void Renderer::drawOuterBody(const std::vector<Vec2>& verts) {
     }
     std::vector<float> intersections;
     intersections.reserve(verts.size());
-    for (int y = int(std::floor(minY)); y <= int(std::ceil(maxY)); ++y) {
+    for (int y = std::max(0, int(std::floor(minY)));
+         y <= std::min(height_ - 1, int(std::ceil(maxY))); ++y) {
         intersections.clear();
         const float sampleY = y + 0.5f;
         for (size_t i = 0; i < verts.size(); ++i) {
             const auto& a = verts[i];
             const auto& b = verts[(i + 1) % verts.size()];
             if ((a.y <= sampleY && b.y > sampleY) || (b.y <= sampleY && a.y > sampleY)) {
-                const float ratio = (sampleY - a.y) / (b.y - a.y);
-                intersections.push_back(a.x + ratio * (b.x - a.x));
+                intersections.push_back(a.x + (sampleY - a.y) * (b.x - a.x) / (b.y - a.y));
             }
         }
         std::sort(intersections.begin(), intersections.end());
-        const float t = std::clamp((y - minY) / std::max(1.0f, maxY - minY), 0.0f, 1.0f);
+        const float t = unit((y - minY) / std::max(1.0f, maxY - minY));
+        const float light = 0.04f * std::sin(t * 3.14159f);
         SDL_SetRenderDrawColor(sdlRenderer_,
-                               Uint8(SKY_TOP.r + (SKY_LOWER.r - SKY_TOP.r) * t),
-                               Uint8(SKY_TOP.g + (SKY_LOWER.g - SKY_TOP.g) * t),
-                               Uint8(SKY_TOP.b + (SKY_LOWER.b - SKY_TOP.b) * t), 255);
+                               Uint8(TOP.r + (BASE.r - TOP.r) * t + light * 255),
+                               Uint8(TOP.g + (BASE.g - TOP.g) * t + light * 110),
+                               Uint8(TOP.b + (BASE.b - TOP.b) * t), 246);
         for (size_t i = 0; i + 1 < intersections.size(); i += 2) {
-            SDL_RenderDrawLine(sdlRenderer_, int(std::ceil(intersections[i])), y,
-                               int(std::floor(intersections[i + 1])), y);
+            const int left = std::max(0, int(std::ceil(intersections[i])));
+            const int right = std::min(width_ - 1, int(std::floor(intersections[i + 1])));
+            if (right >= left) SDL_RenderDrawLine(sdlRenderer_, left, y, right, y);
         }
     }
 }
@@ -78,9 +81,51 @@ void Renderer::drawOutline(const std::vector<Vec2>& verts) {
 }
 
 void Renderer::drawHighlights(float cx, float cy, float rx, float ry) {
-    fillEllipse(int(cx - rx * 0.42f), int(cy - ry * 0.55f),
-                std::max(3, int(rx * 0.12f)), std::max(2, int(ry * 0.055f)),
-                {255, 255, 255, 125});
+    fillEllipse(int(cx - rx * 0.48f), int(cy - ry * 0.52f),
+                std::max(3, int(rx * 0.12f)), std::max(2, int(ry * 0.065f)),
+                {255, 255, 255, 115});
+    fillEllipse(int(cx + rx * 0.36f), int(cy - ry * 0.61f),
+                std::max(2, int(rx * 0.055f)), std::max(2, int(ry * 0.042f)),
+                {240, 255, 255, 70});
+}
+
+void Renderer::drawDetails(float cx, float cy, float rx, float ry, float time,
+                           const BlobPose& pose) {
+    if (pose.bubbles > 0.05f) {
+        for (int i = 0; i < 3; ++i) {
+            const float phase = std::fmod(time * (0.28f + i * 0.06f) + i * 0.35f, 1.0f);
+            const int x = pose.workFlow > 0.5f
+                ? int(cx + rx * (-0.52f + phase * 1.0f))
+                : int(cx + (i - 1) * rx * 0.30f + std::sin(time + i) * 2.0f);
+            const int y = pose.workFlow > 0.5f
+                ? int(cy + ry * (-0.38f + i * 0.24f))
+                : int(cy + ry * (0.36f - phase * 1.05f));
+            const int r = i == 1 ? 4 : 3;
+            fillCircle(x, y, r, {221, 255, 255, Uint8(105 * pose.bubbles)});
+            fillCircle(x - 1, y - 1, 1, {255, 255, 255, Uint8(155 * pose.bubbles)});
+        }
+    }
+    if (pose.arms < -0.1f) {
+        drawCurve(cx + rx * 0.82f, cy + ry * 0.26f,
+                  cx + rx * 0.39f, cy + ry * 0.33f, -3.0f,
+                  {58, 157, 194, Uint8(150 * -pose.arms)}, 2);
+        fillCircle(int(cx + rx * 0.39f), int(cy + ry * 0.33f), 3,
+                   {159, 229, 242, Uint8(180 * -pose.arms)});
+    }
+    if (pose.sparkles > 0.05f) {
+        for (int side : {-1, 1}) {
+            const float x = cx + side * rx * 0.69f;
+            const float y = cy - ry * (side < 0 ? 0.29f : 0.57f);
+            SDL_SetRenderDrawColor(sdlRenderer_, 245, 255, 255, Uint8(180 * pose.sparkles));
+            SDL_RenderDrawLineF(sdlRenderer_, x - 3, y, x + 3, y);
+            SDL_RenderDrawLineF(sdlRenderer_, x, y - 3, x, y + 3);
+        }
+    }
+    if (pose.glitch > 0.05f) {
+        SDL_SetRenderDrawColor(sdlRenderer_, 232, 255, 255, Uint8(150 * pose.glitch));
+        SDL_RenderDrawLineF(sdlRenderer_, cx - rx * 0.65f, cy - ry * 0.2f,
+                           cx + rx * 0.58f, cy - ry * 0.2f);
+    }
 }
 
 void Renderer::drawCurve(float x0, float y0, float x1, float y1,
@@ -98,96 +143,56 @@ void Renderer::drawCurve(float x0, float y0, float x1, float y1,
     }
 }
 
-void Renderer::drawFace(float cx, float cy, float rx, float ry, float time,
-                        BlobState state, BlobExpression expression) {
-    const float left = cx - rx * 0.26f;
-    const float right = cx + rx * 0.26f;
-    const float eyeY = cy - ry * 0.08f;
-    const int eyeRX = std::max(2, int(rx * 0.055f));
-    const int eyeRY = std::max(3, int(ry * 0.078f));
-    const bool blink = expression == BlobExpression::IDLE && std::fmod(time, 5.8f) < 0.10f;
-
-    auto dot = [&](float x, float y, int width = 0, int height = 0) {
-        const int dotRX = width ? width : eyeRX;
-        const int dotRY = height ? height : eyeRY;
-        fillEllipse(int(x), int(y), dotRX, dotRY, INK);
-        if (dotRX >= 2 && dotRY >= 3) {
-            fillCircle(int(x - 1), int(y - 1), 1, {235, 252, 255, 215});
+void Renderer::drawFace(float cx, float cy, float rx, float ry, float,
+                        BlobState state, const BlobPose& pose) {
+    const float eyeY = cy - ry * (pose.melt > 0.5f ? 0.04f : 0.16f) + pose.gazeY * 2.0f;
+    const float eyeOffset = rx * 0.28f;
+    const int eyeRX = std::max(2, int(rx * 0.10f * pose.eyeSize));
+    const int eyeRY = std::max(1, int(ry * 0.19f * pose.eyeSize * pose.eyeOpen));
+    const bool hidden = state == BlobState::BLINDFOLDED;
+    for (int side : {-1, 1}) {
+        const float x = cx + side * eyeOffset + pose.gazeX * 2.0f;
+        const float y = eyeY + (side > 0 ? pose.eyeAsymmetry * 3.0f : 0.0f);
+        const int thisRY = std::max(1, int(eyeRY * (side > 0 ? 1.0f - pose.eyeAsymmetry * 0.45f : 1.0f)));
+        if (hidden || thisRY <= 2) {
+            drawCurve(x - eyeRX, y, x + eyeRX, y,
+                      pose.mouthSmile > 1.0f ? -2.1f : 0.8f, INK, 2);
+        } else {
+            fillEllipse(int(x), int(y), eyeRX, thisRY, INK);
+            fillCircle(int(x - eyeRX * 0.3f), int(y - thisRY * 0.36f),
+                       std::max(1, eyeRX / 3), {239, 253, 255, 235});
         }
-    };
-    auto lid = [&](float x, float y, float bend, int thickness = 1) {
-        drawCurve(x - eyeRX - 2, y, x + eyeRX + 2, y, bend, INK, thickness);
-    };
-
-    if (state == BlobState::BLINDFOLDED || expression == BlobExpression::SLEEPING || blink) {
-        lid(left, eyeY, 0.5f);
-        lid(right, eyeY, 0.5f);
-        return;
+        if (!hidden && std::abs(pose.eyeTilt) > 0.12f) {
+            const float tilt = pose.eyeTilt * (side < 0 ? 1.0f : -1.0f);
+            SDL_SetRenderDrawColor(sdlRenderer_, INK.r, INK.g, INK.b, 230);
+            SDL_RenderDrawLineF(sdlRenderer_, x - eyeRX - 1, y - thisRY - tilt * 3,
+                               x + eyeRX + 1, y - thisRY + tilt * 3);
+        }
     }
-
-    switch (expression) {
-        case BlobExpression::HAPPY:
-        case BlobExpression::EATING:
-            lid(left, eyeY + 1, -2.7f, 2);
-            lid(right, eyeY + 1, -2.7f, 2);
-            break;
-        case BlobExpression::EXCITED:
-        case BlobExpression::CELEBRATE:
-            lid(left, eyeY + 2, -3.8f, 2);
-            lid(right, eyeY + 2, -3.8f, 2);
-            break;
-        case BlobExpression::PLAYFUL:
-            lid(left, eyeY + 1, -2.5f, 2);
-            dot(right, eyeY);
-            break;
-        case BlobExpression::TIRED:
-            lid(left, eyeY + 1, 1.0f, 2);
-            lid(right, eyeY + 1, 1.0f, 2);
-            break;
-        case BlobExpression::SAD:
-            lid(left, eyeY + 1, 2.7f, 2);
-            lid(right, eyeY + 1, 2.7f, 2);
-            break;
-        case BlobExpression::WORRIED:
-            dot(left, eyeY + 1, eyeRX, eyeRY + 1);
-            dot(right, eyeY + 1, eyeRX, eyeRY + 1);
-            drawCurve(left - 4, eyeY - eyeRY - 4, left + 3, eyeY - eyeRY - 5,
-                      -1.0f, INK, 1);
-            drawCurve(right - 3, eyeY - eyeRY - 5, right + 4, eyeY - eyeRY - 4,
-                      -1.0f, INK, 1);
-            break;
-        case BlobExpression::ANGRY:
-            dot(left, eyeY + 1, eyeRX, eyeRY - 1);
-            dot(right, eyeY + 1, eyeRX, eyeRY - 1);
-            drawCurve(left - 5, eyeY - eyeRY - 5, left + 4, eyeY - eyeRY - 2,
-                      0.0f, INK, 2);
-            drawCurve(right - 4, eyeY - eyeRY - 2, right + 5, eyeY - eyeRY - 5,
-                      0.0f, INK, 2);
-            break;
-        case BlobExpression::CONFUSED:
-            dot(left, eyeY);
-            lid(right, eyeY + 1, 0.5f);
-            drawCurve(right - 4, eyeY - eyeRY - 6, right + 4, eyeY - eyeRY - 7,
-                      -1.0f, INK, 1);
-            break;
-        case BlobExpression::THINKING:
-            dot(left + 1, eyeY - 1);
-            dot(right + 1, eyeY - 1);
-            break;
-        case BlobExpression::SHY:
-            dot(left, eyeY + 2, eyeRX, eyeRY - 1);
-            dot(right, eyeY + 2, eyeRX, eyeRY - 1);
-            break;
-        case BlobExpression::PROUD:
-            dot(left, eyeY + 1, eyeRX + 1, eyeRY - 1);
-            dot(right, eyeY + 1, eyeRX + 1, eyeRY - 1);
-            lid(left, eyeY - 2, 0.2f);
-            lid(right, eyeY - 2, 0.2f);
-            break;
-        default:
-            dot(left, eyeY);
-            dot(right, eyeY);
-            break;
+    const float mouthY = cy + ry * (pose.melt > 0.5f ? 0.49f : 0.29f);
+    const float mouthHalf = std::max(3.0f, rx * 0.17f * pose.mouthWidth);
+    if (pose.mouthRound > 0.55f) {
+        fillEllipse(int(cx), int(mouthY), std::max(3, int(mouthHalf * 0.58f)),
+                    std::max(3, int(ry * 0.13f * pose.mouthOpen)), INK);
+    } else if (pose.mouthOpen > 0.16f) {
+        fillEllipse(int(cx), int(mouthY + 1), std::max(4, int(mouthHalf * 0.85f)),
+                    std::max(2, int(ry * 0.12f * pose.mouthOpen)), INK);
+        drawCurve(cx - mouthHalf, mouthY - 1, cx + mouthHalf, mouthY - 1,
+                  pose.mouthSmile * 2.0f, INK, 1);
+    } else {
+        drawCurve(cx - mouthHalf, mouthY, cx + mouthHalf,
+                  mouthY + pose.mouthSkew * 2.0f, pose.mouthSmile * 2.6f, INK, 2);
+    }
+    if (pose.blush > 0.05f) {
+        const Color blush{236, 135, 173, Uint8(110 * pose.blush)};
+        fillEllipse(int(cx - rx * 0.53f), int(cy + ry * 0.12f),
+                    std::max(2, int(rx * 0.11f)), std::max(1, int(ry * 0.06f)), blush);
+        fillEllipse(int(cx + rx * 0.53f), int(cy + ry * 0.12f),
+                    std::max(2, int(rx * 0.11f)), std::max(1, int(ry * 0.06f)), blush);
+    }
+    if (pose.sweat > 0.05f) {
+        fillEllipse(int(cx + rx * 0.55f), int(eyeY + ry * 0.22f), 2,
+                    std::max(2, int(ry * 0.08f)), {237, 255, 255, Uint8(180 * pose.sweat)});
     }
 }
 
@@ -206,8 +211,7 @@ void Renderer::stampShape(const std::vector<Vec2>& verts, float, float) {
             const Vec2& a = verts[i];
             const Vec2& b = verts[(i + 1) % verts.size()];
             if ((a.y <= sampleY && b.y > sampleY) || (b.y <= sampleY && a.y > sampleY)) {
-                const float t = (sampleY - a.y) / (b.y - a.y);
-                intersections.push_back(a.x + t * (b.x - a.x));
+                intersections.push_back(a.x + (sampleY - a.y) * (b.x - a.x) / (b.y - a.y));
             }
         }
         std::sort(intersections.begin(), intersections.end());

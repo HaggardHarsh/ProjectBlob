@@ -105,11 +105,21 @@ message EmoteCommand {
     PLAYFUL = 13;
     SAD = 14;
     ANGRY = 15;
+    WORKING = 16;
+    DEEP_THINKING = 17;
+    LISTENING = 18;
+    SHOCKED = 19;
+    MELTING = 20;
+    ERROR = 21;
+    SUCCESS = 22;
+    WAITING = 23;
   }
   Emote emote = 1;
   float intensity = 2;     // 0.0 - 1.0
   uint32 duration_ms = 3;  // 0 = until next emote
   string trigger_reason = 4;  // debug: why this emote was chosen
+  Emote secondary_emote = 5;  // optional expression blend
+  float blend = 6;            // 0.0 = primary only, 1.0 = secondary only
 }
 
 message StateCommand {

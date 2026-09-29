@@ -22,7 +22,7 @@ MAX_REACT_ITERATIONS = 3
 STYLE_CACHE_TTL_SECONDS = 30
 MAX_MEMORY_DISTANCE = 1.35  # Calibrated for Chroma's default normalized MiniLM embeddings.
 STYLE_QUERY = "How does the user want Blob to speak to them: friendly buddy, formal, professional, direct, or quiet?"
-EMOTE_NAMES = "IDLE|HAPPY|SAD|ANGRY|CONFUSED|THINKING|WORRIED|CELEBRATE|EXCITED|TIRED|OFFER_COFFEE|SHY|SLEEPING|EATING|PROUD|PLAYFUL"
+EMOTE_NAMES = "IDLE|HAPPY|SAD|ANGRY|CONFUSED|THINKING|WORRIED|CELEBRATE|EXCITED|TIRED|OFFER_COFFEE|SHY|SLEEPING|EATING|PROUD|PLAYFUL|WORKING|DEEP_THINKING|LISTENING|SHOCKED|MELTING|ERROR|SUCCESS|WAITING"
 EMOTE_MARKER = re.compile(rf"<emote>\s*({EMOTE_NAMES})\s*</emote>|\(({EMOTE_NAMES})\)", re.IGNORECASE)
 CAMERA_REQUEST = re.compile(
     r"\b(?:open|turn on|switch on|start|use|scan|check|share|access|view|see|look through|look at|see through)\b"
@@ -318,6 +318,19 @@ class BlobOrchestrator:
             return msg.content or "", ""
         return response, preview
 
+    async def _await_with_progress(self, operation, delay: float, emote: str):
+        """Show a calmer state if model or tool work takes longer than expected."""
+        task = asyncio.create_task(operation)
+        try:
+            try:
+                return await asyncio.wait_for(asyncio.shield(task), delay)
+            except asyncio.TimeoutError:
+                await self.dispatch_emote(emote)
+                return await task
+        finally:
+            if not task.done():
+                task.cancel()
+
     async def handle_user_message(self, user_msg):
         """Main entry point: handles a user message with a ReAct loop."""
         started_at = time.perf_counter()
@@ -355,7 +368,9 @@ class BlobOrchestrator:
             if skill is None:
                 return await self._send_direct_response("Screen capture is unavailable.", "WORRIED")
             try:
-                screen_result = await skill.async_execute({})
+                await self.dispatch_emote("WORKING")
+                screen_result = await self._await_with_progress(
+                    skill.async_execute({}), 3.0, "WAITING")
             except Exception:
                 logger.exception("Screen capture failed")
                 return await self._send_direct_response("Screen capture failed. Check the backend logs.", "WORRIED")
@@ -413,8 +428,10 @@ class BlobOrchestrator:
             
             # Generate LLM response
             model_started_at = time.perf_counter()
-            response_text, preview_text = await self._generate_with_preview(
-                messages, sys_prompt, allow_preview=required_tool is None and screen_result is None)
+            response_text, preview_text = await self._await_with_progress(
+                self._generate_with_preview(
+                    messages, sys_prompt, allow_preview=required_tool is None and screen_result is None),
+                4.0, "DEEP_THINKING")
             model_seconds += time.perf_counter() - model_started_at
             
             # Check for tool call
@@ -478,9 +495,11 @@ class BlobOrchestrator:
                     tool_args = {**tool_args, "location": location_match.group(1).strip(" ,.!?")}
             
             logger.info(f"Executing skill: {tool_name} with args: {tool_args}")
+            await self.dispatch_emote("WORKING")
             
             try:
-                result = await skill.async_execute(tool_args)
+                result = await self._await_with_progress(
+                    skill.async_execute(tool_args), 3.0, "WAITING")
                 if tool_name == "file_search":
                     file_search_ran = True
                 outcome = "executed successfully" if result.success else "failed"
@@ -526,8 +545,10 @@ class BlobOrchestrator:
                 # Force one more generate to get a final answer
                 messages.append({"role": "user", "content": "[System] You have used all available tool calls. Please provide your final response to the user now."})
                 model_started_at = time.perf_counter()
-                final_response, preview_text = await self._generate_with_preview(
-                    messages, sys_prompt, allow_preview=required_tool is None and screen_result is None)
+                final_response, preview_text = await self._await_with_progress(
+                    self._generate_with_preview(
+                        messages, sys_prompt, allow_preview=required_tool is None and screen_result is None),
+                    4.0, "DEEP_THINKING")
                 model_seconds += time.perf_counter() - model_started_at
                 final_response = final_response or "Sorry, I got a bit lost there! 😅"
             else:
@@ -646,9 +667,18 @@ class BlobOrchestrator:
             "EATING": blob_service_pb2.EmoteCommand.EATING,
             "PROUD": blob_service_pb2.EmoteCommand.PROUD,
             "PLAYFUL": blob_service_pb2.EmoteCommand.PLAYFUL,
+            "WORKING": blob_service_pb2.EmoteCommand.WORKING,
+            "DEEP_THINKING": blob_service_pb2.EmoteCommand.DEEP_THINKING,
+            "LISTENING": blob_service_pb2.EmoteCommand.LISTENING,
+            "SHOCKED": blob_service_pb2.EmoteCommand.SHOCKED,
+            "MELTING": blob_service_pb2.EmoteCommand.MELTING,
+            "ERROR": blob_service_pb2.EmoteCommand.ERROR,
+            "SUCCESS": blob_service_pb2.EmoteCommand.SUCCESS,
+            "WAITING": blob_service_pb2.EmoteCommand.WAITING,
         }
         emote_val = emote_map.get(emote_str, blob_service_pb2.EmoteCommand.IDLE)
         
         evt = blob_service_pb2.BackendEvent()
         evt.emote.emote = emote_val
+        evt.emote.intensity = 0.85 if emote_str in {"CELEBRATE", "SHOCKED", "MELTING"} else 0.55
         await self.event_dispatcher.broadcast(evt)
