@@ -51,9 +51,12 @@ def _episode_view(text: str, limit: int, query: str, user_only: bool) -> str:
     return user_view + separator + _excerpt(reply, reply_limit, query)
 
 
-def build_memory_view(facts: list[str], episodes: list[str], query: str, user_only: bool = False) -> tuple[str, str]:
+def build_memory_view(facts: list[str], episodes: list[str], query: str, user_only: bool = False,
+                      recall_mode: bool | None = None) -> tuple[str, str]:
     """Keep the most relevant records within a bounded prompt budget."""
-    budget = RECALL_CONTEXT_CHARS if user_only else MEMORY_CONTEXT_CHARS
+    if recall_mode is None:
+        recall_mode = user_only
+    budget = RECALL_CONTEXT_CHARS if recall_mode else MEMORY_CONTEXT_CHARS
     seen = set()
     fact_views = []
     fact_budget = min(2000, budget)
@@ -74,7 +77,7 @@ def build_memory_view(facts: list[str], episodes: list[str], query: str, user_on
     seen.clear()
     episode_views = []
     episode_budget = budget - len(fact_text)
-    per_episode = RECALL_EPISODE_CHARS if user_only else EPISODE_CHARS
+    per_episode = RECALL_EPISODE_CHARS if recall_mode else EPISODE_CHARS
     episode_used = 0
     for episode in episodes:
         key = " ".join(episode.casefold().split())

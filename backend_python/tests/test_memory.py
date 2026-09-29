@@ -126,6 +126,18 @@ async def test_consolidation_stores_duplicate_fact_once():
     assert store.store.call_args.kwargs["skip_existing"] is True
 
 
+@pytest.mark.asyncio
+async def test_temporary_weekday_claim_is_not_saved_as_durable_memory():
+    store = SimpleNamespace(store=MagicMock())
+    llm = SimpleNamespace(generate=AsyncMock(return_value=SimpleNamespace(
+        content="The user says today is Tuesday.\nThe user prefers concise answers.")))
+    memory = SemanticMemory(store, llm)
+
+    assert await memory.summarize_and_store([{"text": "User: Today is Tuesday. Keep it short.\nBlob: Got it."}])
+    store.store.assert_called_once()
+    assert store.store.call_args.args[0] == "The user prefers concise answers."
+
+
 def test_existing_fact_is_not_reindexed_or_metadata_reset():
     class Collection:
         def __init__(self):

@@ -148,13 +148,13 @@ Blob also uses RapidOCR when it is installed locally; this can provide OCR witho
 
 New installations store ChromaDB data under `~/.blob/memory/chromadb/`, independent of the launch directory. Existing `backend_python/data/chroma_db/` data remains in use automatically when present. Set `BLOB_MEMORY_DB_PATH` to choose another location. Conversations are saved as episodes; consolidation processes each episode once and stores deduplicated, pinned facts drawn from user messages. When the privacy shield is active, Blob omits screen context and pauses episode storage. The Nebius chat API still receives the current user message and recalled memory context during normal chat; avoid sharing sensitive information with the cloud model.
 
-Memory search runs locally and sends only a bounded view of the top matching records to Nebius. Long records are excerpted around terms in the current question, with more space for the user's words; the full records remain in ChromaDB for future searches. Questions about memory use only the user's side of past exchanges as evidence.
+Memory search runs locally and sends only a bounded view of the top matching records to Nebius. Long records are excerpted around terms in the current question, with more space for the user's words; the full records remain in ChromaDB for future searches. Ordinary replies use the user's side of retrieved episodes; Blob's old replies appear only when asked what Blob said. Recent turns are also sent in their original user and assistant roles during the current backend session. Blob uses the computer's local clock for current day and date questions.
 
 Set `BLOB_PROFILE_LATENCY=1` when launching the backend to log how long local preparation and the model call take for each reply. Blob caches the fixed tone preference search between memory changes, so repeat messages avoid that extra lookup.
 
 Blob uses Nemotron Lightning's faster non-reasoning chat mode by default. Memory consolidation keeps the model's normal mode. Set `BLOB_CHAT_THINKING=1` in `.env` and restart if you prefer its slower reasoning mode for chat.
 
-Normal replies begin appearing in the `Blob>` terminal as Nebius streams them. Tool calls stay hidden until parsed. If the provider does not support streaming, Blob falls back to a complete response.
+Normal replies begin appearing in the `Blob>` terminal as Nebius streams them. Tool calls, reasoning tags, and emote tags stay hidden. If the provider does not support streaming, Blob falls back to a complete response.
 
 ---
 

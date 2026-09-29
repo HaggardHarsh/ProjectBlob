@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 import pytest
 from unittest.mock import AsyncMock, MagicMock
@@ -159,6 +160,121 @@ def test_memory_question_does_not_repeat_old_assistant_denial():
 
     assert "User: Remember me" in context
     assert "I don't have persistent memory" not in context
+
+
+def test_old_assistant_reply_is_excluded_unless_user_asks_for_it():
+    config = MagicMock(nebius_api_key="test", nebius_base_url="http://test", model_name="test")
+    orchestrator = BlobOrchestrator(config, MagicMock(), SkillRegistry(), AsyncMock())
+    orchestrator.episodic.recall_relevant = MagicMock(return_value=[{
+        "text": "User: What day is it?\nBlob: Sunday."
+    }])
+    orchestrator.semantic.recall_facts = MagicMock(return_value=[])
+
+    assert "Blob: Sunday" not in orchestrator._build_context("It's Tuesday.")
+    assert "User: What day is it?" in orchestrator._build_context("It's Tuesday.")
+    assert "Blob: Sunday" in orchestrator._build_context("What did you say earlier?")
+
+
+def test_stale_weekday_fact_is_excluded_from_prompt():
+    config = MagicMock(nebius_api_key="test", nebius_base_url="http://test", model_name="test")
+    orchestrator = BlobOrchestrator(config, MagicMock(), SkillRegistry(), AsyncMock())
+    orchestrator.episodic.recall_relevant = MagicMock(return_value=[])
+    orchestrator.semantic.recall_facts = MagicMock(return_value=[
+        {"text": "The user says today is Sunday."},
+        {"text": "The user prefers concise replies."},
+    ])
+
+    context = orchestrator._build_context("How are you?")
+
+    assert "today is Sunday" not in context
+    assert "prefers concise replies" in context
+
+
+@pytest.mark.asyncio
+async def test_day_only_request_uses_local_clock_without_memory_or_model(monkeypatch):
+    class FixedClock:
+        @staticmethod
+        def now():
+            return datetime(2026, 9, 29, 10, 25, tzinfo=timezone(timedelta(hours=5, minutes=30)))
+
+    monkeypatch.setattr("blob.ai.orchestrator.datetime", FixedClock)
+    orchestrator = BlobOrchestrator.__new__(BlobOrchestrator)
+    orchestrator.guardrails = SimpleNamespace(sanitize_input=lambda text: text)
+    orchestrator.screen_sampler = None
+    orchestrator.episodic = SimpleNamespace(add_episode=MagicMock())
+    orchestrator.event_dispatcher = SimpleNamespace(broadcast=AsyncMock())
+    orchestrator.dispatch_emote = AsyncMock()
+    orchestrator.llm = SimpleNamespace(generate_from_messages=AsyncMock())
+    orchestrator.skill_registry = SkillRegistry()
+
+    answer = await orchestrator.handle_user_message(SimpleNamespace(text="Man just the day"))
+
+    assert answer == "Tuesday."
+    assert "Tuesday, 2026-09-29" in orchestrator._build_system_prompt()
+    orchestrator.llm.generate_from_messages.assert_not_awaited()
+    orchestrator.episodic.add_episode.assert_called_once_with("Man just the day", "Tuesday.")
+
+
+@pytest.mark.asyncio
+async def test_correction_sees_recent_turns_after_historical_memory():
+    orchestrator = BlobOrchestrator.__new__(BlobOrchestrator)
+    orchestrator.guardrails = SimpleNamespace(sanitize_input=lambda text: text, filter_output=lambda text: text)
+    orchestrator.skill_registry = SkillRegistry()
+    orchestrator.screen_sampler = None
+    orchestrator.event_dispatcher = SimpleNamespace(broadcast=AsyncMock())
+    orchestrator.dispatch_emote = AsyncMock()
+    orchestrator.episodic = SimpleNamespace(add_episode=MagicMock())
+    orchestrator._build_context = lambda text: "User: What day is it?\nBlob: Sunday."
+    orchestrator._build_system_prompt = lambda: "System"
+    orchestrator.llm = SimpleNamespace(generate_from_messages=AsyncMock(side_effect=[
+        SimpleNamespace(content="Sunday. <emote>IDLE</emote>"),
+        SimpleNamespace(content="You're right, it's Tuesday. <emote>CONFUSED</emote>"),
+    ]))
+
+    await orchestrator.handle_user_message(SimpleNamespace(text="How's it going?"))
+    answer = await orchestrator.handle_user_message(SimpleNamespace(text="It's not. It's Tuesday."))
+
+    messages = orchestrator.llm.generate_from_messages.call_args.args[0]
+    assert "Historical background" in messages[1]["content"]
+    assert messages[-3:] == [
+        {"role": "user", "content": "How's it going?"},
+        {"role": "assistant", "content": "Sunday."},
+        {"role": "user", "content": "It's not. It's Tuesday."},
+    ]
+    assert answer == "You're right, it's Tuesday."
+
+
+@pytest.mark.asyncio
+async def test_streamed_reasoning_and_partial_control_tags_stay_hidden(capsys):
+    async def reply_stream(messages, system_prompt):
+        for part in (
+            "<thinking>Old memory says Sunday. ",
+            "The user corrected it.</thinking>",
+            "You're right. It's Tuesday. Thanks for catching that. ",
+            "<emot", "e>CONFUSED</emote>",
+        ):
+            yield part
+
+    orchestrator = BlobOrchestrator.__new__(BlobOrchestrator)
+    orchestrator.guardrails = SimpleNamespace(sanitize_input=lambda text: text, filter_output=lambda text: text)
+    orchestrator.skill_registry = SkillRegistry()
+    orchestrator.screen_sampler = None
+    orchestrator.event_dispatcher = SimpleNamespace(broadcast=AsyncMock())
+    orchestrator.dispatch_emote = AsyncMock()
+    orchestrator.episodic = SimpleNamespace(add_episode=MagicMock())
+    orchestrator._build_context = lambda text: "Old memory"
+    orchestrator._build_system_prompt = lambda: "System"
+    orchestrator.llm = SimpleNamespace(generate_from_messages_stream=reply_stream)
+
+    answer = await orchestrator.handle_user_message(SimpleNamespace(text="It's Tuesday."))
+
+    output = capsys.readouterr().out
+    assert answer == "You're right. It's Tuesday. Thanks for catching that."
+    assert "Old memory says Sunday" not in output
+    assert "<thinking>" not in output
+    assert "<emot" not in output
+    assert output.count("You're right.") == 1
+    orchestrator.episodic.add_episode.assert_called_once_with("It's Tuesday.", answer)
 
 
 def test_emote_markers_are_removed_from_chat_text():

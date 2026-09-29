@@ -1,4 +1,6 @@
 import asyncio
+from collections import deque
+from datetime import datetime
 import logging
 import json
 import inspect
@@ -10,7 +12,7 @@ from blob.ipc import blob_service_pb2
 from blob.ai.guardrails import GuardrailsEngine
 from blob.ai.prompt_templates import SYSTEM_PROMPT, CONTEXT_TEMPLATE
 from blob.memory.episodic import EpisodicMemory
-from blob.memory.semantic import SemanticMemory
+from blob.memory.semantic import SemanticMemory, is_temporary_fact
 from blob.memory.context import build_memory_view
 
 logger = logging.getLogger(__name__)
@@ -42,6 +44,10 @@ REMEMBER_ME_REQUEST = re.compile(
     re.IGNORECASE,
 )
 MEMORY_TOPIC = re.compile(r"\b(?:remember|memory|recall|retain)\b", re.IGNORECASE)
+ASSISTANT_HISTORY_REQUEST = re.compile(
+    r"\b(?:what did you (?:say|tell me)|what was your (?:reply|answer)|your (?:earlier|previous|last) (?:reply|answer|message))\b",
+    re.IGNORECASE,
+)
 FALSE_MEMORY_DENIAL = re.compile(
     r"\b(?:i|blob)\s+(?:do(?: not|n't)|will(?: not|n't)|can(?: not|'t))\s+"
     r"(?:have|retain|keep|store|remember).{0,65}\b(?:persistent memory|long.term memory|across sessions|after (?:a |the )?restart|tomorrow)\b"
@@ -52,6 +58,28 @@ MEMORY_CAPABILITY_RESPONSE = (
     "I have persistent local memory and can recall relevant details you share across restarts. "
     "What would you like me to remember about you?"
 )
+DAY_ONLY_REQUEST = re.compile(
+    r"^(?:(?:man|hey|please)[, ]+)?(?:just\s+)?(?:tell me\s+)?"
+    r"(?:(?:what(?:'s| is)\s+)?(?:the\s+)?day(?: of the week)?(?:\s+(?:is it|today))?"
+    r"|what day is it(?: today)?|what day is today)\s*[.!?]*$",
+    re.IGNORECASE,
+)
+REASONING_BLOCK = re.compile(r"<(think|thinking|analysis)>.*?</\1>", re.IGNORECASE | re.DOTALL)
+REASONING_OPEN = re.compile(r"<(?:think|thinking|analysis)>.*$", re.IGNORECASE | re.DOTALL)
+REASONING_CLOSE = re.compile(r"</(?:think|thinking|analysis)>", re.IGNORECASE)
+
+
+def _strip_reasoning(text: str) -> str:
+    text = REASONING_BLOCK.sub("", text)
+    text = REASONING_OPEN.sub("", text)
+    return REASONING_CLOSE.sub("", text).strip()
+
+
+def _visible_preview(text: str) -> str:
+    text = _strip_reasoning(text)
+    text = EMOTE_MARKER.sub("", text)
+    # A stream chunk may stop in the middle of a control tag.
+    return re.sub(r"<[^>]*$", "", text).rstrip()
 
 
 class BlobOrchestrator:
@@ -71,6 +99,7 @@ class BlobOrchestrator:
         self._style_facts_cached_at = 0.0
         self._profile_latency = os.environ.get("BLOB_PROFILE_LATENCY", "").lower() in {"1", "true", "yes", "on"}
         self._streaming_disabled = False
+        self._recent_turns = deque(maxlen=12)
         
         # Holds the latest screen context text (populated by ScreenCaptureSkill or sampler)
         self.last_screen_context = "No screen data captured yet."
@@ -87,7 +116,20 @@ class BlobOrchestrator:
     def _build_system_prompt(self) -> str:
         """Build the full system prompt with skills injected."""
         skills_text = self._build_skills_text()
-        return SYSTEM_PROMPT.replace("{skills}", skills_text)
+        now = datetime.now().astimezone()
+        clock = now.strftime("%A, %Y-%m-%d %H:%M %Z (%z)")
+        return SYSTEM_PROMPT.replace("{skills}", skills_text) + f"\n## Current local date and time\n{clock}\n"
+
+    def _remember_turn(self, user_text: str, reply: str) -> None:
+        if self.screen_sampler and self.screen_sampler.privacy_shield.is_capture_blocked():
+            return
+        self.episodic.add_episode(user_text, reply)
+        if not hasattr(self, "_recent_turns"):
+            self._recent_turns = deque(maxlen=12)
+        self._recent_turns.extend((
+            {"role": "user", "content": user_text},
+            {"role": "assistant", "content": reply},
+        ))
 
     def _get_style_facts(self) -> list:
         revision = getattr(self.vector_store, "semantic_revision", None)
@@ -106,11 +148,14 @@ class BlobOrchestrator:
         # Tone preferences must remain in view even when the current question
         # is about an unrelated task.
         style_facts = self._get_style_facts()
-        fact_texts = [item["text"] for item in style_facts + facts]
+        fact_texts = [item["text"] for item in style_facts + facts if not is_temporary_fact(item["text"])]
         episode_texts = [item["text"] for item in episodes]
-        # For questions about memory, only the user's old statements count as evidence.
+        # Old assistant replies are not evidence for ordinary questions. Include
+        # them only when the user explicitly asks what Blob said before.
         fact_view, episode_view = build_memory_view(
-            fact_texts, episode_texts, clean_text, user_only=bool(MEMORY_TOPIC.search(clean_text))
+            fact_texts, episode_texts, clean_text,
+            user_only=not bool(ASSISTANT_HISTORY_REQUEST.search(clean_text)),
+            recall_mode=bool(MEMORY_TOPIC.search(clean_text) or ASSISTANT_HISTORY_REQUEST.search(clean_text)),
         )
         
         # Try to get active window title (lightweight, no screenshot)
@@ -187,26 +232,23 @@ class BlobOrchestrator:
             return msg.content or "", ""
 
         response = ""
-        displayed = 0
+        preview = ""
         preview_started = False
         try:
             async for part in stream(messages, system_prompt):
                 response += part
-                head = response.lstrip()
+                head = _visible_preview(response).lstrip()
                 # Tool calls are text blocks in this protocol. Keep them out of the terminal.
                 if not head or head.startswith(("```", "{")) or "```".startswith(head):
                     continue
-                # Hold the last characters so a trailing <emote> tag never flashes.
-                safe = response[:-32]
-                marker = safe.find("<emote>")
-                if marker >= 0:
-                    safe = safe[:marker]
-                if len(safe) > displayed:
+                # Hold the tail so incomplete control tags cannot reach the terminal.
+                safe = _visible_preview(response[:-32])
+                if len(safe) > len(preview):
                     if not preview_started:
                         print("\r\033[K\033[96mBlob:\033[0m ", end="", flush=True)
                         preview_started = True
-                    print(safe[displayed:], end="", flush=True)
-                    displayed = len(safe)
+                    print(safe[len(preview):], end="", flush=True)
+                    preview = safe
         except Exception:
             if response:
                 if preview_started:
@@ -216,7 +258,7 @@ class BlobOrchestrator:
             logger.warning("Streaming unavailable; using normal model responses")
             msg = await self.llm.generate_from_messages(messages, system_prompt)
             return msg.content or "", ""
-        return response, response[:displayed]
+        return response, preview
 
     async def handle_user_message(self, user_msg):
         """Main entry point: handles a user message with a ReAct loop."""
@@ -233,6 +275,10 @@ class BlobOrchestrator:
             return await self._handle_camera_command("/camera scan")
         if REMEMBER_ME_REQUEST.fullmatch(stripped):
             return await self._handle_remember_me(clean_text)
+        if DAY_ONLY_REQUEST.fullmatch(stripped):
+            answer = datetime.now().astimezone().strftime("%A.")
+            self._remember_turn(clean_text, answer)
+            return await self._send_direct_response(answer, "IDLE")
 
         screen_result = None
         if (SCREEN_REQUEST.search(stripped) or stripped.lower() in {"/screen", "/screenshot"}) and not re.search(r"\b(?:don't|do not|never)\b", stripped, re.IGNORECASE):
@@ -257,10 +303,12 @@ class BlobOrchestrator:
         preparation_seconds = time.perf_counter() - started_at
         model_seconds = 0.0
 
-        # Build conversation messages for multi-turn reasoning
+        # Retrieved memories are historical background; recent turns retain real roles.
         messages = [
             {"role": "system", "content": sys_prompt},
-            {"role": "user", "content": f"Context:\n{context}\n\nUser message:\n{clean_text}"}
+            {"role": "user", "content": f"Historical background (may contain old or mistaken replies):\n{context}"},
+            *list(getattr(self, "_recent_turns", ())),
+            {"role": "user", "content": clean_text},
         ]
         if screen_result is not None:
             messages.append({"role": "user", "content":
@@ -345,7 +393,7 @@ class BlobOrchestrator:
         
         # ── Post-process and dispatch ────────────────────────────────
         # Strip any leftover tool_call blocks
-        final_response = self._strip_tool_call_block(final_response)
+        final_response = self._strip_tool_call_block(_strip_reasoning(final_response))
         
         # Extract emote
         emote_str, final_response = self._extract_emote(final_response)
@@ -357,8 +405,7 @@ class BlobOrchestrator:
             final_response = MEMORY_CAPABILITY_RESPONSE
         
         # Save episodic memory
-        if not (self.screen_sampler and self.screen_sampler.privacy_shield.is_capture_blocked()):
-            self.episodic.add_episode(clean_text, final_response)
+        self._remember_turn(clean_text, final_response)
         
         # Dispatch emote to frontend
         await self.dispatch_emote(emote_str)
@@ -396,7 +443,7 @@ class BlobOrchestrator:
                 "WORRIED",
             )
         try:
-            self.episodic.add_episode(user_text, MEMORY_CAPABILITY_RESPONSE)
+            self._remember_turn(user_text, MEMORY_CAPABILITY_RESPONSE)
         except Exception:
             logger.exception("Could not save memory request")
             return await self._send_direct_response(
