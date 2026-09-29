@@ -22,7 +22,8 @@ class EpisodicMemory:
         self.vector_store.store(text, metadata, collection="episodic")
         
     def recall_relevant(self, query: str, top_k: int = 5,
-                        max_distance: float | None = None) -> List[Dict]:
+                        max_distance: float | None = None,
+                        min_timestamp: float | None = None) -> List[Dict]:
         """Recalls most relevant recent episodes using vector search and decay."""
         return self.vector_store.recall(query, top_k=top_k, collection="episodic",
-                                        max_distance=max_distance)
+                                        max_distance=max_distance, min_timestamp=min_timestamp)

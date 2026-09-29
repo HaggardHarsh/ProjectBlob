@@ -113,7 +113,7 @@ class BlobServiceServicer(blob_service_pb2_grpc.BlobServiceServicer):
         return blob_service_pb2.BlobState(
             loaded_skills=sorted(self.orchestrator.skill_registry.skills),
             privacy_shield_active=bool(shield and shield.is_active),
-            memories_stored=store.episodic.count() + store.semantic.count(),
+            memories_stored=store.episodic.count() + store.semantic.count() + store.middle.count(),
         )
 
     async def SendUserMessage(self, request, context):

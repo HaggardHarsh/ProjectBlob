@@ -132,14 +132,13 @@ while (running) {
 │                 │  • Proactive   │ • Privacy │
 ├──────────────────────────────────────────────┤
 │                 memory/                      │
-│  VectorStore    │  Episodic  │  Semantic     │
-│  • ChromaDB     │  • Buffer  │  • Summarize │
-│  • Collections  │  • Capture │  • Merge     │
+│  VectorStore    │  Episodic  │ Middle / Long │
+│  • ChromaDB     │  • Archive │ • Exact quotes│
+│  • Collections  │  • 7d chat │ • Expiry      │
 │                 │            │              │
 │                 Decay Algorithm              │
-│  • Exponential decay with access refresh    │
-│  • λ=0.05 (14-day half-life)               │
-│  • Pinned memories (λ=0)                   │
+│  • Relevance gate and age decay             │
+│  • Long-term facts are pinned               │
 ├──────────────────────────────────────────────┤
 │  privacy/       │  screen/     │  skills/    │
 │  Shield         │  Sampler     │  Registry   │

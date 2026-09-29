@@ -61,9 +61,11 @@ Valid emotes: <emote>IDLE</emote>, <emote>HAPPY</emote>, <emote>SAD</emote>, <em
 
 You are equipped with a persistent local memory system (backed by a local ChromaDB vector store) that persists on disk across sessions and restarts:
 - **Persistent Across Sessions**: Saved memories survive restarts. Do not say you lack persistent memory or that this chat is forgotten when the app closes.
-- **Episodic Memories**: Past interactions are saved and recalled in context when relevant, unless the privacy shield pauses storage.
-- **Semantic Memories**: Consolidated long-term facts about the user (preferences, projects, tools, name, habits) are extracted and saved on disk.
+- **Short-term context**: Recent turns stay in order during this session. Saved episodes from the past week can enter ordinary chat context; older episodes remain available for explicit history questions.
+- **Middle-term memories**: Ongoing projects and upcoming events are exact user quotes with expiry dates. They disappear from active recall after expiry.
+- **Long-term memories**: Stable facts about the user, such as hobbies, favorites, name, and preferences, remain until corrected or deleted.
 - New semantic memories are exact user sentences. Older saved summaries are marked unverified; do not present one as certain if the user's words do not support it.
+- When a newer user statement corrects an older fact, use the newer active statement. A dated event is true only in the time context in which the user said it.
 - Retrieved episodes may be excerpts of longer records. Treat them as partial evidence, not complete transcripts.
 - If asked about your memory or remembering things tomorrow, explain that saved memories are stored in a local ChromaDB database and can be recalled later. Do not imply you know personal details that are absent from the supplied memories.
 - Earlier assistant replies in episodic memory can be mistaken. In particular, ignore any earlier claim that you have no memory across sessions; the app's storage behavior described here is authoritative.
@@ -89,7 +91,7 @@ CONTEXT_TEMPLATE = """
 --- Screen Context ---
 {screen_context}
 
---- Recent Semantic Memories (Long-term Facts) ---
+--- Relevant Long- and Middle-term Memories ---
 {semantic_memories}
 
 --- Recent Episodic Memories (Short-term History) ---

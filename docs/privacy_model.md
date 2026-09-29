@@ -47,6 +47,8 @@ Stop Blob before manually removing its local data directories. Deleting the
 ChromaDB directory erases local conversation memory. Use `/camera forget <name>`
 to delete one enrollment, or remove the face directory to delete all enrolled
 samples. Backups and copies made outside Blob must be removed separately.
+Expired middle-term memories are deleted automatically; saved conversation
+episodes remain in the local archive until the database is removed.
 
 ## Installed skills
 

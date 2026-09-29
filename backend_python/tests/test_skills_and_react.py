@@ -286,6 +286,25 @@ def test_stale_weekday_fact_is_excluded_from_prompt():
     assert "prefers concise replies" in context
 
 
+def test_middle_term_context_and_explicit_archive_recall():
+    config = MagicMock(nebius_api_key="test", nebius_base_url="http://test", model_name="test")
+    orchestrator = BlobOrchestrator(config, MagicMock(), SkillRegistry(), AsyncMock())
+    orchestrator.episodic.recall_relevant = MagicMock(return_value=[])
+    orchestrator.semantic.recall_facts = MagicMock(return_value=[])
+    orchestrator.semantic.recall_middle = MagicMock(return_value=[{
+        "text": "I have an exam tomorrow.",
+        "metadata": {"source_timestamp": 1790700000.0, "expires_at": 1790800000.0},
+    }])
+
+    context = orchestrator._build_context("What exam do I have?")
+    assert "Active middle-term user quote" in context
+    assert "I have an exam tomorrow." in context
+    assert orchestrator.episodic.recall_relevant.call_args.kwargs["min_timestamp"] is not None
+
+    orchestrator._build_context("What did we discuss last month?")
+    assert orchestrator.episodic.recall_relevant.call_args.kwargs["min_timestamp"] is None
+
+
 @pytest.mark.asyncio
 async def test_day_only_request_uses_local_clock_without_memory_or_model(monkeypatch):
     class FixedClock:

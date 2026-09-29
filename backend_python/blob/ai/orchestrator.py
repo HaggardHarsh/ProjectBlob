@@ -14,6 +14,7 @@ from blob.ai.prompt_templates import SYSTEM_PROMPT, CONTEXT_TEMPLATE
 from blob.memory.episodic import EpisodicMemory
 from blob.memory.semantic import SemanticMemory, is_temporary_fact
 from blob.memory.context import build_memory_view
+from blob.memory.lifecycle import SHORT_RECALL_DAYS
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,10 @@ REMEMBER_ME_REQUEST = re.compile(
     re.IGNORECASE,
 )
 MEMORY_TOPIC = re.compile(r"\b(?:remember|memory|recall|retain)\b", re.IGNORECASE)
+HISTORICAL_RECALL = re.compile(
+    r"\b(?:yesterday|last (?:week|month|year)|previous (?:chat|conversation)|"
+    r"earlier (?:chat|conversation)|what did we (?:talk|discuss))\b", re.IGNORECASE,
+)
 ASSISTANT_HISTORY_REQUEST = re.compile(
     r"\b(?:what did you (?:say|tell me)|what was your (?:reply|answer)|your (?:earlier|previous|last) (?:reply|answer|message))\b",
     re.IGNORECASE,
@@ -104,6 +109,7 @@ class BlobOrchestrator:
     def __init__(self, config, vector_store, skill_registry, event_dispatcher, screen_sampler=None):
         self.config = config
         self.vector_store = vector_store
+        vector_store.backfill_grounded_provenance()
         self.skill_registry = skill_registry
         self.event_dispatcher = event_dispatcher
         self.screen_sampler = screen_sampler
@@ -162,25 +168,40 @@ class BlobOrchestrator:
 
     def _build_context(self, clean_text: str) -> str:
         """Build the context block with memories, active window, and screen data."""
+        historical = bool(MEMORY_TOPIC.search(clean_text) or
+                          HISTORICAL_RECALL.search(clean_text) or
+                          ASSISTANT_HISTORY_REQUEST.search(clean_text))
         episodes = self.episodic.recall_relevant(
-            clean_text, top_k=5, max_distance=MAX_MEMORY_DISTANCE)
+            clean_text, top_k=5, max_distance=MAX_MEMORY_DISTANCE,
+            min_timestamp=None if historical else time.time() - SHORT_RECALL_DAYS * 86400)
         facts = self.semantic.recall_facts(
+            clean_text, top_k=3, max_distance=MAX_MEMORY_DISTANCE)
+        middle_facts = self.semantic.recall_middle(
             clean_text, top_k=3, max_distance=MAX_MEMORY_DISTANCE)
         # Tone preferences must remain in view even when the current question
         # is about an unrelated task.
         style_facts = self._get_style_facts()
-        fact_texts = [
-            ("User quote: " if (item.get("metadata") or {}).get("grounded") else
-             "Older saved summary (unverified): ") + item["text"]
-            for item in style_facts + facts if not is_temporary_fact(item["text"])
-        ]
+        fact_texts = []
+        for item in style_facts + facts:
+            if is_temporary_fact(item["text"]):
+                continue
+            meta = item.get("metadata") or {}
+            prefix = "Long-term user quote" if meta.get("grounded") else "Older saved summary (unverified)"
+            said = meta.get("source_timestamp")
+            date = datetime.fromtimestamp(said).astimezone().date().isoformat() if said else "date unknown"
+            fact_texts.append(f"{prefix} (said {date}): {item['text']}")
+        for item in middle_facts:
+            meta = item.get("metadata") or {}
+            said = datetime.fromtimestamp(meta.get("source_timestamp", meta.get("timestamp", time.time()))).astimezone().date().isoformat()
+            expires = datetime.fromtimestamp(meta["expires_at"]).astimezone().date().isoformat() if meta.get("expires_at") else "unknown"
+            fact_texts.append(f"Active middle-term user quote (said {said}, expires {expires}): {item['text']}")
         episode_texts = [item["text"] for item in episodes]
         # Old assistant replies are not evidence for ordinary questions. Include
         # them only when the user explicitly asks what Blob said before.
         fact_view, episode_view = build_memory_view(
             fact_texts, episode_texts, clean_text,
             user_only=not bool(ASSISTANT_HISTORY_REQUEST.search(clean_text)),
-            recall_mode=bool(MEMORY_TOPIC.search(clean_text) or ASSISTANT_HISTORY_REQUEST.search(clean_text)),
+            recall_mode=historical,
         )
         
         # Try to get active window title (lightweight, no screenshot)

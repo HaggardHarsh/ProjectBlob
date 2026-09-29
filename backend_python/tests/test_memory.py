@@ -32,7 +32,7 @@ async def test_semantic_consolidates_once_and_uses_only_user_statement():
     store = VectorStore.__new__(VectorStore)
     store.episodic = FakeEpisodes()
     stored = []
-    store.store = lambda *args, **kwargs: stored.append((args, kwargs))
+    store.store_grounded = lambda *args, **kwargs: stored.append((args, kwargs))
     llm = SimpleNamespace(generate=AsyncMock(return_value=SimpleNamespace(content="1")))
     memory = SemanticMemory(store, llm)
 
@@ -42,14 +42,14 @@ async def test_semantic_consolidates_once_and_uses_only_user_statement():
     prompt = llm.generate.call_args.args[0]
     assert "I prefer Python" in prompt
     assert "I prefer Java" not in prompt
-    assert stored[0][1]["collection"] == "semantic"
+    assert stored[0][0][2] == "semantic"
 
 
 @pytest.mark.asyncio
 async def test_failed_consolidation_is_retried():
     store = VectorStore.__new__(VectorStore)
     store.episodic = FakeEpisodes()
-    store.store = lambda *args, **kwargs: None
+    store.store_grounded = lambda *args, **kwargs: None
     llm = SimpleNamespace(generate=AsyncMock(side_effect=[RuntimeError("offline"), SimpleNamespace(content="NONE")]))
     memory = SemanticMemory(store, llm)
 
@@ -145,49 +145,48 @@ def test_memory_prompt_view_is_bounded_and_keeps_query_match_without_changing_so
 async def test_consolidation_stores_duplicate_fact_once():
     store = VectorStore.__new__(VectorStore)
     store.episodic = FakeEpisodes()
-    store.store = MagicMock()
+    store.store_grounded = MagicMock()
     llm = SimpleNamespace(generate=AsyncMock(return_value=SimpleNamespace(content="1,1")))
     memory = SemanticMemory(store, llm)
 
     assert await memory.consolidate_once() == 1
-    store.store.assert_called_once()
-    assert store.store.call_args.kwargs["skip_existing"] is True
+    store.store_grounded.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_temporary_weekday_claim_is_not_saved_as_durable_memory():
-    store = SimpleNamespace(store=MagicMock())
+    store = SimpleNamespace(store_grounded=MagicMock())
     llm = SimpleNamespace(generate=AsyncMock(return_value=SimpleNamespace(content="1")))
     memory = SemanticMemory(store, llm)
 
     assert await memory.summarize_and_store([{"text": "User: Today is Tuesday. Keep it short.\nBlob: Got it."}])
-    store.store.assert_called_once()
-    assert store.store.call_args.args[0] == "Keep it short."
+    store.store_grounded.assert_called_once()
+    assert store.store_grounded.call_args.args[0] == "Keep it short."
     assert is_temporary_fact("My exam is next Wednesday.")
     assert not is_temporary_fact("I work every Wednesday.")
 
 
 @pytest.mark.asyncio
 async def test_memory_extraction_rejects_invented_or_distorted_fact():
-    store = SimpleNamespace(store=MagicMock())
+    store = SimpleNamespace(store_grounded=MagicMock())
     llm = SimpleNamespace(generate=AsyncMock(return_value=SimpleNamespace(content="1,999")))
     memory = SemanticMemory(store, llm)
 
     assert await memory.summarize_and_store([{"text": "User: I used to like Python.\nBlob: Nice."}])
-    store.store.assert_called_once()
-    assert store.store.call_args.args[0] == "I used to like Python."
-    assert store.store.call_args.args[1]["grounded"] is True
+    store.store_grounded.assert_called_once()
+    assert store.store_grounded.call_args.args[0] == "I used to like Python."
+    assert store.store_grounded.call_args.args[1]["grounded"] is True
 
 
 @pytest.mark.asyncio
 async def test_malformed_memory_selection_cannot_create_a_fact():
-    store = SimpleNamespace(store=MagicMock())
+    store = SimpleNamespace(store_grounded=MagicMock())
     llm = SimpleNamespace(generate=AsyncMock(return_value=SimpleNamespace(
         content="1. The user likes Rust.")))
     memory = SemanticMemory(store, llm)
 
-    assert await memory.summarize_and_store([{"text": "User: I like Python.\nBlob: Nice."}])
-    store.store.assert_not_called()
+    assert not await memory.summarize_and_store([{"text": "User: I like Python.\nBlob: Nice."}])
+    store.store_grounded.assert_not_called()
 
 
 def test_existing_fact_is_not_reindexed_or_metadata_reset():

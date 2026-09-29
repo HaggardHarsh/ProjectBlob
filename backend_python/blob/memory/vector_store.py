@@ -6,6 +6,7 @@ from pathlib import Path
 import uuid
 import time
 from blob.memory.decay import DecayAlgorithm
+from blob.memory.lifecycle import is_active, topic_key
 
 logger = logging.getLogger(__name__)
 
@@ -17,14 +18,48 @@ class VectorStore:
         self.client = chromadb.PersistentClient(path=str(path))
         self.episodic = self.client.get_or_create_collection("episodic")
         self.semantic = self.client.get_or_create_collection("semantic")
+        self.middle = self.client.get_or_create_collection("middle")
         self.decay_algo = DecayAlgorithm()
         self.semantic_revision = 0
+
+    def backfill_grounded_provenance(self) -> int:
+        """Attach source and correction topics to older verbatim long-term facts."""
+        facts = self.semantic.get(include=["documents", "metadatas"])
+        missing = [(item_id, text, dict(meta or {})) for item_id, text, meta in
+                   zip(facts["ids"], facts["documents"], facts["metadatas"])
+                   if (meta or {}).get("grounded") is True and not (meta or {}).get("source_episode_id")]
+        if not missing:
+            return 0
+        episodes = self.episodic.get(include=["documents", "metadatas"])
+        sources = []
+        for item_id, document, meta in zip(episodes["ids"], episodes["documents"], episodes["metadatas"]):
+            if document.startswith("User: "):
+                sources.append((item_id, document.split("\nBlob: ", 1)[0][6:],
+                                (meta or {}).get("timestamp", 0)))
+        updated = 0
+        for item_id, text, meta in missing:
+            matches = [(source_id, timestamp) for source_id, user, timestamp in sources if text in user]
+            if not matches:
+                continue
+            source_id, timestamp = max(matches, key=lambda item: item[1])
+            meta.update({"source_episode_id": source_id, "source_timestamp": timestamp,
+                         "tier": "long"})
+            key = topic_key(text)
+            if key:
+                meta["topic_key"] = key
+            self.semantic.update(ids=[item_id], metadatas=[meta])
+            updated += 1
+        if updated:
+            self.semantic_revision += 1
+        return updated
 
     def _collection(self, name: str):
         if name == "episodic":
             return self.episodic
         if name == "semantic":
             return self.semantic
+        if name == "middle":
+            return self.middle
         raise ValueError(f"Unknown memory collection: {name}")
 
     def store(self, text: str, metadata: dict, collection: str = "episodic", memory_id: str | None = None,
@@ -39,24 +74,73 @@ class VectorStore:
         values.setdefault("last_accessed", now)
         values.setdefault("access_count", 0)
         col.upsert(documents=[text], metadatas=[values], ids=[doc_id])
-        if collection == "semantic":
+        if collection in {"semantic", "middle"}:
             self.semantic_revision = getattr(self, "semantic_revision", 0) + 1
         return doc_id
+
+    def store_grounded(self, text: str, metadata: dict, collection: str, memory_id: str):
+        """Store an exact user quote and supersede older facts on the same clear topic."""
+        if collection not in {"semantic", "middle"}:
+            raise ValueError("Grounded memories must be long or middle term")
+        values = dict(metadata)
+        # Chroma upsert can retain old metadata keys, so clear a previous
+        # supersession when the same sentence is newly reasserted.
+        values["superseded_by"] = ""
+        topic = values.get("topic_key")
+        source_time = values["source_timestamp"]
+        existing = []
+        if topic:
+            for name in ("semantic", "middle"):
+                data = self._collection(name).get(where={"topic_key": topic}, include=["metadatas"])
+                existing.extend((name, item_id, dict(meta or {})) for item_id, meta in
+                                zip(data["ids"], data["metadatas"]))
+        current = self._collection(collection).get(ids=[memory_id], include=["metadatas"])
+        if current["ids"]:
+            old_meta = current["metadatas"][0] or {}
+            if old_meta.get("source_timestamp", 0) > source_time:
+                return memory_id
+        newer = [(item_id, meta) for name, item_id, meta in existing
+                 if (name, item_id) != (collection, memory_id)
+                 and is_active(meta) and meta.get("source_timestamp", meta.get("timestamp", 0)) > source_time]
+        if newer:
+            values["superseded_by"] = max(newer, key=lambda item: item[1].get("source_timestamp", 0))[0]
+        self.store(text, values, collection=collection, memory_id=memory_id)
+        if topic and not newer:
+            for name, item_id, meta in existing:
+                if (name, item_id) == (collection, memory_id) or not is_active(meta):
+                    continue
+                if meta.get("source_timestamp", meta.get("timestamp", 0)) <= source_time:
+                    meta["superseded_by"] = memory_id
+                    self._collection(name).update(ids=[item_id], metadatas=[meta])
+                    self.semantic_revision += 1
+        return memory_id
         
     def recall(self, query: str, top_k: int = 5, collection: str = "episodic",
-               max_distance: float | None = None) -> list:
+               max_distance: float | None = None, min_timestamp: float | None = None) -> list:
         col = self._collection(collection)
         if not query.strip() or top_k <= 0 or col.count() == 0:
             return []
-        results = col.query(query_texts=[query], n_results=min(top_k * 3, col.count()))
-        candidates = []
         current_time = time.time()
+        where = None
+        if collection == "middle":
+            where = {"expires_at": {"$gt": current_time}}
+        elif collection == "episodic" and min_timestamp is not None:
+            where = {"timestamp": {"$gte": min_timestamp}}
+        query_args = {"query_texts": [query], "n_results": min(top_k * 10, col.count())}
+        if where is not None:
+            query_args["where"] = where
+        results = col.query(**query_args)
+        candidates = []
         for doc, meta, id_, dist in zip(results['documents'][0], results['metadatas'][0], results['ids'][0], results['distances'][0]):
             # A nearest neighbour is not necessarily a relevant memory. Gate on
             # the raw embedding distance before recency or access can affect rank.
             if not math.isfinite(dist) or (max_distance is not None and dist > max_distance):
                 continue
             meta = dict(meta or {})
+            if not is_active(meta, current_time):
+                continue
+            if min_timestamp is not None and meta.get("timestamp", 0) < min_timestamp:
+                continue
             # Chroma's default L2 distance is not bounded by one.
             base_sim = 1.0 / (1.0 + max(0.0, dist))
             created_at = meta.get("timestamp", current_time)
@@ -75,6 +159,14 @@ class VectorStore:
             col.update(ids=[item["id"] for item in recalled], metadatas=updated_metadatas)
         return recalled
 
+    def purge_expired_middle(self, now: float | None = None) -> int:
+        current = time.time() if now is None else now
+        expired = self.middle.get(where={"expires_at": {"$lte": current}}, include=[])["ids"]
+        if expired:
+            self.middle.delete(ids=expired)
+            self.semantic_revision += 1
+        return len(expired)
+
     def unconsolidated_episodes(self, limit: int = 20) -> list:
         data = self.episodic.get(where={"consolidated": {"$ne": True}}, limit=limit, include=["documents", "metadatas"])
         return [{"id": id_, "text": text, "metadata": metadata} for id_, text, metadata in zip(data["ids"], data["documents"], data["metadatas"])]
@@ -87,5 +179,5 @@ class VectorStore:
 
     def delete(self, memory_id: str, collection: str = "episodic"):
         self._collection(collection).delete(ids=[memory_id])
-        if collection == "semantic":
+        if collection in {"semantic", "middle"}:
             self.semantic_revision = getattr(self, "semantic_revision", 0) + 1
