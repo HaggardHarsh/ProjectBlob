@@ -20,7 +20,7 @@ Project Blob is a two-process desktop application:
 │  │  C++ Frontend Overlay    │◄─────────────►│  Python AI Backend       ││
 │  │  (Process 1)             │  TCP / socket  │  (Process 2)             ││
 │  │                          │  Bidirectional │                          ││
-│  │  • SDL2 Window Manager   │  Streaming     │  • NVIDIA Nemotron LLM   ││
+│  │  • SDL2 Window Manager   │  Streaming     │  • Nebius-hosted LLM     ││
 │  │  • SDL2 Renderer         │               │  • Input Guardrails      ││
 │  │  • Blob State Machine    │  ◄─ Emotes    │  • Hermes Agent Tasks    ││
 │  │  • Spring-Mass Physics   │  ◄─ States    │  • ChromaDB Memory       ││
@@ -178,7 +178,13 @@ async def main():
 
 ---
 
-## NVIDIA Toolchain Integration
+## Model serving
+
+The current backend calls the Nebius chat API with `Qwen/Qwen3-30B-A3B-Instruct-2507` by default. `BLOB_MODEL_NAME` can select another available model. Memory search and tool execution remain local to the backend.
+
+### Proposed NVIDIA integration
+
+The diagram below describes a possible local GPU and cloud routing design. It is not the current chat path.
 
 ```
 ┌─────────────────────────────────────────────┐

@@ -11,7 +11,7 @@ except ImportError:
 
 class BlobConfig(BaseModel):
     ipc_address: str = Field(default="localhost:50051")
-    model_name: str = Field(default="nvidia/Nemotron-3_5-Lightning") # NVIDIA Open Source Model
+    model_name: str = Field(default="Qwen/Qwen3-30B-A3B-Instruct-2507")
     nebius_api_key: str = Field(default=os.environ.get("NEBIUS_API_KEY", ""))
     nebius_base_url: str = Field(default="https://api.studio.nebius.ai/v1")
     memory_db_path: str = Field(default_factory=lambda: str(Path.home() / ".blob/memory/chromadb"))
@@ -39,6 +39,8 @@ class BlobConfig(BaseModel):
                 data["memory_db_path"] = str(legacy)
         if "BLOB_MEMORY_DB_PATH" in os.environ:
             data["memory_db_path"] = os.environ["BLOB_MEMORY_DB_PATH"]
+        if "BLOB_MODEL_NAME" in os.environ:
+            data["model_name"] = os.environ["BLOB_MODEL_NAME"]
         if "BLOB_CAMERA_ENABLED" in os.environ:
             data["camera_enabled"] = os.environ["BLOB_CAMERA_ENABLED"].lower() in {"1", "true", "yes", "on"}
         if "BLOB_CAMERA_DEVICE_INDEX" in os.environ:

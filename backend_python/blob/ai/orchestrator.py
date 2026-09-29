@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 MAX_REACT_ITERATIONS = 3
 STYLE_CACHE_TTL_SECONDS = 30
+MAX_MEMORY_DISTANCE = 1.35  # Calibrated for Chroma's default normalized MiniLM embeddings.
 STYLE_QUERY = "How does the user want Blob to speak to them: friendly buddy, formal, professional, direct, or quiet?"
 EMOTE_NAMES = "IDLE|HAPPY|SAD|ANGRY|CONFUSED|THINKING|WORRIED|CELEBRATE|EXCITED|TIRED|OFFER_COFFEE|SHY|SLEEPING|EATING|PROUD|PLAYFUL"
 EMOTE_MARKER = re.compile(rf"<emote>\s*({EMOTE_NAMES})\s*</emote>|\(({EMOTE_NAMES})\)", re.IGNORECASE)
@@ -38,6 +39,23 @@ SCREEN_REQUEST = re.compile(
     r"|\b(?:screen|desktop|display)\b.{0,30}\b(?:what(?:'s| is) on|look|check|read|describe|capture|see)\b",
     re.IGNORECASE,
 )
+REMINDER_INTENT = re.compile(
+    r"\b(?:remind me|(?:set|create|make|add)\s+(?:me\s+)?(?:a |an |the )?(?:reminder|timer|alarm)"
+    r"|start (?:a |the )?timer)\b",
+    re.IGNORECASE,
+)
+WEATHER_INTENT = re.compile(
+    r"\b(?:what(?:'s| is) the weather|(?:check|show|tell me|give me)\b.{0,40}\bweather"
+    r"|weather (?:in|now|today)|"
+    r"is it (?:raining|sunny|snowing))\b",
+    re.IGNORECASE,
+)
+WEATHER_LOCATION = re.compile(
+    r"\bweather\s+in\s+(.+?)(?:\s+(?:right now|today|now))?[?.!]*$",
+    re.IGNORECASE,
+)
+FUTURE_WEATHER_TIME = re.compile(r"\b(?:tomorrow|next week|this weekend|later today)\b", re.IGNORECASE)
+WEATHER_TOPIC = re.compile(r"\b(?:weather|forecast|rain|snow|temperature)\b", re.IGNORECASE)
 REMEMBER_ME_REQUEST = re.compile(
     r"^(?:(?:can|will|could|would|do) you |please |i want you to )?remember me"
     r"(?: (?:tomorrow|next time|after (?:a |the )?restart))?[.!?]*$",
@@ -136,19 +154,26 @@ class BlobOrchestrator:
         now = time.monotonic()
         if (self._style_facts_cache is None or revision != self._style_facts_revision or
                 now - self._style_facts_cached_at >= STYLE_CACHE_TTL_SECONDS):
-            self._style_facts_cache = self.semantic.recall_facts(STYLE_QUERY, top_k=2)
+            self._style_facts_cache = self.semantic.recall_facts(
+                STYLE_QUERY, top_k=2, max_distance=MAX_MEMORY_DISTANCE)
             self._style_facts_revision = revision
             self._style_facts_cached_at = now
         return self._style_facts_cache
 
     def _build_context(self, clean_text: str) -> str:
         """Build the context block with memories, active window, and screen data."""
-        episodes = self.episodic.recall_relevant(clean_text, top_k=5)
-        facts = self.semantic.recall_facts(clean_text, top_k=3)
+        episodes = self.episodic.recall_relevant(
+            clean_text, top_k=5, max_distance=MAX_MEMORY_DISTANCE)
+        facts = self.semantic.recall_facts(
+            clean_text, top_k=3, max_distance=MAX_MEMORY_DISTANCE)
         # Tone preferences must remain in view even when the current question
         # is about an unrelated task.
         style_facts = self._get_style_facts()
-        fact_texts = [item["text"] for item in style_facts + facts if not is_temporary_fact(item["text"])]
+        fact_texts = [
+            ("User quote: " if (item.get("metadata") or {}).get("grounded") else
+             "Older saved summary (unverified): ") + item["text"]
+            for item in style_facts + facts if not is_temporary_fact(item["text"])
+        ]
         episode_texts = [item["text"] for item in episodes]
         # Old assistant replies are not evidence for ordinary questions. Include
         # them only when the user explicitly asks what Blob said before.
@@ -179,43 +204,31 @@ class BlobOrchestrator:
         )
 
     def _parse_tool_call(self, response_text: str):
-        """Extract a tool_call JSON block from the LLM response.
-        
-        Supports:
-        - ```tool_call ... ```
-        - ```json ... ``` (with "tool")
-        - Raw JSON containing "tool" and "args"
-        - Automatically unescapes {{ ... }} if present
-        
-        Returns (tool_name, tool_args) or (None, None) if no valid tool call found.
-        """
-        patterns = [
-            r'```(?:tool_call|json)?\s*(\{.*?\})\s*```',
-            r'(\{\s*"tool"\s*:\s*".*?"\s*,\s*"args"\s*:\s*\{.*?\}\s*\})',
-            r'(\{\{\s*"tool"\s*:\s*".*?"\s*,\s*"args"\s*:\s*\{.*?\}\s*\}\})'
-        ]
-        
-        for pat in patterns:
-            match = re.search(pat, response_text, re.DOTALL)
+        """Accept a tool request only when it is the entire model message."""
+        visible = EMOTE_MARKER.sub("", _strip_reasoning(response_text)).strip()
+        for pattern in (r"```(?:tool_call|json)?\s*(.*?)\s*```",
+                        r"<tool_call>\s*(.*?)\s*</tool_call>"):
+            match = re.fullmatch(pattern, visible, flags=re.IGNORECASE | re.DOTALL)
             if match:
-                raw_json = match.group(1).strip()
-                if raw_json.startswith("{{") and raw_json.endswith("}}"):
-                    raw_json = raw_json[1:-1]
-                try:
-                    tool_data = json.loads(raw_json)
-                    tool_name = tool_data.get('tool')
-                    tool_args = tool_data.get('args', {})
-                    if tool_name:
-                        return tool_name, tool_args
-                except (json.JSONDecodeError, AttributeError) as e:
-                    logger.debug(f"Failed parsing matched tool JSON: {e}")
-                    continue
-        
+                visible = match.group(1).strip()
+                break
+        if visible.startswith("{{") and visible.endswith("}}"):
+            visible = visible[1:-1]
+        try:
+            tool_data = json.loads(visible)
+        except json.JSONDecodeError:
+            return None, None
+        if isinstance(tool_data, dict):
+            tool_name = tool_data.get("tool")
+            tool_args = tool_data.get("args", {})
+            if isinstance(tool_name, str) and tool_name and isinstance(tool_args, dict):
+                return tool_name, tool_args
         return None, None
 
     def _strip_tool_call_block(self, text: str) -> str:
         """Remove tool call blocks and raw tool JSON from text for display."""
         text = re.sub(r'```(?:tool_call|json)?\s*\{.*?\}\s*```', '', text, flags=re.DOTALL)
+        text = re.sub(r'<tool_call>.*?</tool_call>', '', text, flags=re.IGNORECASE | re.DOTALL)
         text = re.sub(r'\{\{?\s*"tool"\s*:.*?"args"\s*:.*?\}\}?', '', text, flags=re.DOTALL)
         return text.strip()
 
@@ -225,7 +238,8 @@ class BlobOrchestrator:
         emote = (matches[-1].group(1) or matches[-1].group(2)).upper() if matches else "IDLE"
         return emote, EMOTE_MARKER.sub("", text).strip()
 
-    async def _generate_with_preview(self, messages: list[dict], system_prompt: str) -> tuple[str, str]:
+    async def _generate_with_preview(self, messages: list[dict], system_prompt: str,
+                                     allow_preview: bool = True) -> tuple[str, str]:
         stream = getattr(self.llm, "generate_from_messages_stream", None)
         if getattr(self, "_streaming_disabled", False) or not inspect.isasyncgenfunction(stream):
             msg = await self.llm.generate_from_messages(messages, system_prompt)
@@ -237,9 +251,12 @@ class BlobOrchestrator:
         try:
             async for part in stream(messages, system_prompt):
                 response += part
+                if not allow_preview:
+                    continue
                 head = _visible_preview(response).lstrip()
                 # Tool calls are text blocks in this protocol. Keep them out of the terminal.
-                if not head or head.startswith(("```", "{")) or "```".startswith(head):
+                if (not head or head.startswith(("```", "{", "<tool_call>"))
+                        or "```".startswith(head) or "<tool_call>".startswith(head)):
                     continue
                 # Hold the tail so incomplete control tags cannot reach the terminal.
                 safe = _visible_preview(response[:-32])
@@ -279,6 +296,12 @@ class BlobOrchestrator:
             answer = datetime.now().astimezone().strftime("%A.")
             self._remember_turn(clean_text, answer)
             return await self._send_direct_response(answer, "IDLE")
+        if FUTURE_WEATHER_TIME.search(stripped) and WEATHER_TOPIC.search(stripped):
+            answer = "I can check current weather, but I don't have a forecast tool yet."
+            self._remember_turn(clean_text, answer)
+            return await self._send_direct_response(answer, "CONFUSED")
+        required_tool = ("reminder" if REMINDER_INTENT.search(stripped) else
+                         "weather" if WEATHER_INTENT.search(stripped) else None)
 
         screen_result = None
         if (SCREEN_REQUEST.search(stripped) or stripped.lower() in {"/screen", "/screenshot"}) and not re.search(r"\b(?:don't|do not|never)\b", stripped, re.IGNORECASE):
@@ -318,6 +341,7 @@ class BlobOrchestrator:
         
         final_response = None
         preview_text = ""
+        direct_tool_emote = None
         
         # ── ReAct Loop ──────────────────────────────────────────────────
         for iteration in range(MAX_REACT_ITERATIONS):
@@ -325,7 +349,8 @@ class BlobOrchestrator:
             
             # Generate LLM response
             model_started_at = time.perf_counter()
-            response_text, preview_text = await self._generate_with_preview(messages, sys_prompt)
+            response_text, preview_text = await self._generate_with_preview(
+                messages, sys_prompt, allow_preview=required_tool is None)
             model_seconds += time.perf_counter() - model_started_at
             
             # Check for tool call
@@ -353,6 +378,13 @@ class BlobOrchestrator:
                 available = ", ".join(name for name in self.skill_registry.skills if name != "camera")
                 messages.append({"role": "user", "content": f"[Observation] Tool '{tool_name}' not found. Available tools: {available}. Please try again or respond without a tool."})
                 continue
+
+            if tool_name == "weather":
+                location_match = WEATHER_LOCATION.search(stripped)
+                if location_match:
+                    # An explicit city in the user's request takes priority over
+                    # the model's parsed arguments.
+                    tool_args = {**tool_args, "location": location_match.group(1).strip(" ,.!?")}
             
             logger.info(f"Executing skill: {tool_name} with args: {tool_args}")
             
@@ -369,10 +401,20 @@ class BlobOrchestrator:
                 # Dispatch skill emote if non-idle
                 if result.emote_suggestion != "IDLE":
                     await self.dispatch_emote(result.emote_suggestion)
+                if tool_name == required_tool:
+                    # The tool's own result is authoritative. Avoid a second model
+                    # pass that could turn a failure into a claimed success.
+                    final_response = result.output
+                    direct_tool_emote = result.emote_suggestion
+                    break
                     
             except Exception as e:
                 logger.error(f"Skill execution failed: {e}", exc_info=True)
                 observation = f"[Observation] Tool '{tool_name}' failed with error: {str(e)}"
+                if tool_name == required_tool:
+                    final_response = f"I couldn't run {tool_name}: {e}"
+                    direct_tool_emote = "WORRIED"
+                    break
             
             # Append the assistant's tool-call message and the observation
             messages.append({"role": "assistant", "content": response_text})
@@ -385,7 +427,8 @@ class BlobOrchestrator:
                 # Force one more generate to get a final answer
                 messages.append({"role": "user", "content": "[System] You have used all available tool calls. Please provide your final response to the user now."})
                 model_started_at = time.perf_counter()
-                final_response, preview_text = await self._generate_with_preview(messages, sys_prompt)
+                final_response, preview_text = await self._generate_with_preview(
+                    messages, sys_prompt, allow_preview=required_tool is None)
                 model_seconds += time.perf_counter() - model_started_at
                 final_response = final_response or "Sorry, I got a bit lost there! 😅"
             else:
@@ -397,9 +440,20 @@ class BlobOrchestrator:
         
         # Extract emote
         emote_str, final_response = self._extract_emote(final_response)
+        if direct_tool_emote is not None:
+            emote_str = direct_tool_emote
         
         # Apply output guardrails
         final_response = self.guardrails.filter_output(final_response)
+        if required_tool and direct_tool_emote is None:
+            if required_tool == "reminder":
+                final_response = "I haven't set a reminder. Tell me what to remind you about and when."
+            else:
+                final_response = "I couldn't get a current weather result. Please try again."
+            emote_str = "WORRIED"
+        if not final_response.strip():
+            final_response = "I couldn't complete that request. Please try again."
+            emote_str = "WORRIED"
         if MEMORY_TOPIC.search(clean_text) and FALSE_MEMORY_DENIAL.search(final_response):
             logger.warning("Corrected false model claim that Blob has no persistent memory")
             final_response = MEMORY_CAPABILITY_RESPONSE

@@ -99,17 +99,14 @@ async def test_orchestrator_react_loop_tool_execution():
     msg1 = MagicMock()
     msg1.content = '```tool_call\n{"tool": "reminder", "args": {"message": "Water break", "minutes": 0.001}}\n```'
 
-    msg2 = MagicMock()
-    msg2.content = "I have set a reminder for your water break! <emote>HAPPY</emote>"
-
-    orchestrator.llm.generate_from_messages.side_effect = [msg1, msg2]
+    orchestrator.llm.generate_from_messages.return_value = msg1
 
     user_msg = MagicMock()
     user_msg.text = "Remind me to drink water in 0.001 minutes"
 
     await orchestrator.handle_user_message(user_msg)
 
-    assert orchestrator.llm.generate_from_messages.call_count == 2, f"Expected 2 LLM calls, got {orchestrator.llm.generate_from_messages.call_count}"
+    assert orchestrator.llm.generate_from_messages.call_count == 1, f"Expected 1 LLM call, got {orchestrator.llm.generate_from_messages.call_count}"
     assert len(reminder_skill.reminders) == 1, f"Expected 1 reminder registered, got {len(reminder_skill.reminders)}"
     assert reminder_skill.reminders[0]["message"] == "Water break"
     print("  PASSED ✅")

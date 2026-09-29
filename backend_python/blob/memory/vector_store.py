@@ -1,5 +1,6 @@
 import chromadb
 import logging
+import math
 import os
 from pathlib import Path
 import uuid
@@ -42,7 +43,8 @@ class VectorStore:
             self.semantic_revision = getattr(self, "semantic_revision", 0) + 1
         return doc_id
         
-    def recall(self, query: str, top_k: int = 5, collection: str = "episodic") -> list:
+    def recall(self, query: str, top_k: int = 5, collection: str = "episodic",
+               max_distance: float | None = None) -> list:
         col = self._collection(collection)
         if not query.strip() or top_k <= 0 or col.count() == 0:
             return []
@@ -50,12 +52,16 @@ class VectorStore:
         candidates = []
         current_time = time.time()
         for doc, meta, id_, dist in zip(results['documents'][0], results['metadatas'][0], results['ids'][0], results['distances'][0]):
+            # A nearest neighbour is not necessarily a relevant memory. Gate on
+            # the raw embedding distance before recency or access can affect rank.
+            if not math.isfinite(dist) or (max_distance is not None and dist > max_distance):
+                continue
             meta = dict(meta or {})
             # Chroma's default L2 distance is not bounded by one.
             base_sim = 1.0 / (1.0 + max(0.0, dist))
-            last_accessed = meta.get("last_accessed", current_time)
-            days_since = max(0, current_time - last_accessed) / 86400
-            score = self.decay_algo.calculate_score(base_sim, days_since, meta.get("access_count", 0), pinned=meta.get("pinned", False))
+            created_at = meta.get("timestamp", current_time)
+            days_since = max(0, current_time - created_at) / 86400
+            score = self.decay_algo.calculate_score(base_sim, days_since, 0, pinned=meta.get("pinned", False))
             candidates.append({"id": id_, "text": doc, "metadata": meta, "score": score})
         recalled = sorted(candidates, key=lambda item: item["score"], reverse=True)[:top_k]
         updated_metadatas = []

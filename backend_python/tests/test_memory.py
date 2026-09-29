@@ -5,7 +5,7 @@ import pytest
 
 from blob.memory.decay import DecayAlgorithm
 from blob.memory.context import build_memory_view, MEMORY_CONTEXT_CHARS, RECALL_CONTEXT_CHARS
-from blob.memory.semantic import SemanticMemory
+from blob.memory.semantic import SemanticMemory, is_temporary_fact
 from blob.memory.vector_store import VectorStore
 
 
@@ -33,7 +33,7 @@ async def test_semantic_consolidates_once_and_uses_only_user_statement():
     store.episodic = FakeEpisodes()
     stored = []
     store.store = lambda *args, **kwargs: stored.append((args, kwargs))
-    llm = SimpleNamespace(generate=AsyncMock(return_value=SimpleNamespace(content="I prefer Python")))
+    llm = SimpleNamespace(generate=AsyncMock(return_value=SimpleNamespace(content="1")))
     memory = SemanticMemory(store, llm)
 
     assert await memory.consolidate_once() == 1
@@ -85,6 +85,35 @@ def test_recall_refreshes_only_returned_memories():
     assert store.episodic.updated == ["a"]
 
 
+def test_unrelated_nearest_neighbours_are_not_recalled_or_reinforced():
+    class Collection:
+        def __init__(self):
+            self.updated = []
+
+        def count(self):
+            return 3
+
+        def query(self, **kwargs):
+            return {
+                "documents": [["Python preference", "unrelated old chat", "concise replies"]],
+                "metadatas": [[{"access_count": 0}, {"access_count": 50}, {"access_count": 0}]],
+                "ids": [["a", "b", "c"]],
+                "distances": [[0.7, 1.8, 1.1]],
+            }
+
+        def update(self, **kwargs):
+            self.updated.extend(kwargs["ids"])
+
+    store = VectorStore.__new__(VectorStore)
+    store.episodic = Collection()
+    store.decay_algo = DecayAlgorithm()
+
+    recalled = store.recall("Python", top_k=3, max_distance=1.35)
+
+    assert [item["id"] for item in recalled] == ["a", "c"]
+    assert store.episodic.updated == ["a", "c"]
+
+
 def test_memory_prompt_view_is_bounded_and_keeps_query_match_without_changing_source():
     long_user_message = "opening " * 300 + "My favorite anime is Trigun. " + "closing " * 300
     episode = f"User: {long_user_message}\nBlob: " + "unrelated reply " * 300
@@ -117,8 +146,7 @@ async def test_consolidation_stores_duplicate_fact_once():
     store = VectorStore.__new__(VectorStore)
     store.episodic = FakeEpisodes()
     store.store = MagicMock()
-    llm = SimpleNamespace(generate=AsyncMock(return_value=SimpleNamespace(
-        content="I prefer Python\n- i  prefer   python")))
+    llm = SimpleNamespace(generate=AsyncMock(return_value=SimpleNamespace(content="1,1")))
     memory = SemanticMemory(store, llm)
 
     assert await memory.consolidate_once() == 1
@@ -129,13 +157,37 @@ async def test_consolidation_stores_duplicate_fact_once():
 @pytest.mark.asyncio
 async def test_temporary_weekday_claim_is_not_saved_as_durable_memory():
     store = SimpleNamespace(store=MagicMock())
-    llm = SimpleNamespace(generate=AsyncMock(return_value=SimpleNamespace(
-        content="The user says today is Tuesday.\nThe user prefers concise answers.")))
+    llm = SimpleNamespace(generate=AsyncMock(return_value=SimpleNamespace(content="1")))
     memory = SemanticMemory(store, llm)
 
     assert await memory.summarize_and_store([{"text": "User: Today is Tuesday. Keep it short.\nBlob: Got it."}])
     store.store.assert_called_once()
-    assert store.store.call_args.args[0] == "The user prefers concise answers."
+    assert store.store.call_args.args[0] == "Keep it short."
+    assert is_temporary_fact("My exam is next Wednesday.")
+    assert not is_temporary_fact("I work every Wednesday.")
+
+
+@pytest.mark.asyncio
+async def test_memory_extraction_rejects_invented_or_distorted_fact():
+    store = SimpleNamespace(store=MagicMock())
+    llm = SimpleNamespace(generate=AsyncMock(return_value=SimpleNamespace(content="1,999")))
+    memory = SemanticMemory(store, llm)
+
+    assert await memory.summarize_and_store([{"text": "User: I used to like Python.\nBlob: Nice."}])
+    store.store.assert_called_once()
+    assert store.store.call_args.args[0] == "I used to like Python."
+    assert store.store.call_args.args[1]["grounded"] is True
+
+
+@pytest.mark.asyncio
+async def test_malformed_memory_selection_cannot_create_a_fact():
+    store = SimpleNamespace(store=MagicMock())
+    llm = SimpleNamespace(generate=AsyncMock(return_value=SimpleNamespace(
+        content="1. The user likes Rust.")))
+    memory = SemanticMemory(store, llm)
+
+    assert await memory.summarize_and_store([{"text": "User: I like Python.\nBlob: Nice."}])
+    store.store.assert_not_called()
 
 
 def test_existing_fact_is_not_reindexed_or_metadata_reset():
@@ -168,7 +220,8 @@ async def test_consolidation_deduplicates_repeated_user_messages():
         {"text": "User: i  like  python\nBlob: Nice"},
     ])
     prompt = llm.generate.call_args.args[0]
-    assert prompt.count("User: ") == 1
+    assert prompt.count("1. I like Python") == 1
+    assert "2. " not in prompt
 
 
 def test_memory_survives_store_reopen(tmp_path, monkeypatch):

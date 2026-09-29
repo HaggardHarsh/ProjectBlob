@@ -5,6 +5,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 from blob.skills.base import SkillResult
 from blob.skills.builtin.reminder import ReminderSkill
+from blob.skills.builtin.weather import WeatherSkill
 from blob.skills.builtin.screen_capture import ScreenCaptureSkill
 from blob.skills.registry import SkillRegistry
 from blob.ai.orchestrator import BlobOrchestrator
@@ -28,6 +29,25 @@ async def test_reminder_skill_async_execute():
 
     # Verify dispatcher received broadcast calls (notification + emote)
     assert dispatcher.broadcast.call_count >= 2
+
+
+def test_weather_skill_uses_requested_city_and_reports_unknown_location(monkeypatch):
+    requested = []
+
+    def fake_urlopen(request, timeout):
+        requested.append((request.full_url, timeout))
+        return SimpleNamespace(read=lambda: b"New York: Clear, 20 C")
+
+    monkeypatch.setattr("blob.skills.builtin.weather.urllib.request.urlopen", fake_urlopen)
+    result = WeatherSkill().execute({"location": "New York"})
+
+    assert result.success
+    assert result.output.startswith("New York:")
+    assert requested == [("https://wttr.in/New+York?format=3", 10)]
+
+    monkeypatch.setattr("blob.skills.builtin.weather.urllib.request.urlopen",
+                        lambda request, timeout: SimpleNamespace(read=lambda: b"Unknown location"))
+    assert not WeatherSkill().execute({"location": "NotARealCity"}).success
 
 
 @pytest.mark.asyncio
@@ -104,23 +124,99 @@ async def test_orchestrator_react_loop_tool_execution():
     msg1 = MagicMock()
     msg1.content = '```tool_call\n{"tool": "reminder", "args": {"message": "Water break", "minutes": 0.001}}\n```'
 
-    # Step 2: LLM returns final response after seeing tool observation
-    msg2 = MagicMock()
-    msg2.content = "I have set a reminder for your water break! <emote>HAPPY</emote>"
-
-    orchestrator.llm.generate_from_messages.side_effect = [msg1, msg2]
+    orchestrator.llm.generate_from_messages.return_value = msg1
 
     user_msg = MagicMock()
     user_msg.text = "Remind me to drink water in 0.001 minutes"
 
-    await orchestrator.handle_user_message(user_msg)
+    answer = await orchestrator.handle_user_message(user_msg)
 
-    # Verify LLM was called twice (tool call iteration + final response iteration)
-    assert orchestrator.llm.generate_from_messages.call_count == 2
+    # The confirmed skill result is shown without a second model paraphrase.
+    assert orchestrator.llm.generate_from_messages.call_count == 1
+    assert "Reminder set" in answer
 
     # Verify reminder was registered
     assert len(reminder_skill.reminders) == 1
     assert reminder_skill.reminders[0]["message"] == "Water break"
+
+
+def test_tool_parser_accepts_xml_wrapper_and_reversed_json_keys():
+    orchestrator = BlobOrchestrator.__new__(BlobOrchestrator)
+
+    assert orchestrator._parse_tool_call(
+        '<tool_call>\n{"args": {"location": "Delhi"}, "tool": "weather"}\n</tool_call>'
+    ) == ("weather", {"location": "Delhi"})
+    assert orchestrator._parse_tool_call(
+        'Here is an example: ```tool_call\n{"tool": "reminder", "args": {"minutes": 5}}\n```'
+    ) == (None, None)
+
+
+@pytest.mark.asyncio
+async def test_current_weather_uses_confirmed_tool_result_without_model_paraphrase():
+    skill = SimpleNamespace(name="weather", description="Current weather", async_execute=AsyncMock(
+        return_value=SkillResult("Bengaluru: Clear, 29 C", True, "HAPPY")))
+    registry = SkillRegistry()
+    registry.register(skill)
+    orchestrator = BlobOrchestrator.__new__(BlobOrchestrator)
+    orchestrator.guardrails = SimpleNamespace(sanitize_input=lambda text: text, filter_output=lambda text: text)
+    orchestrator.skill_registry = registry
+    orchestrator.screen_sampler = None
+    orchestrator.event_dispatcher = SimpleNamespace(broadcast=AsyncMock())
+    orchestrator.dispatch_emote = AsyncMock()
+    orchestrator.episodic = SimpleNamespace(add_episode=MagicMock())
+    orchestrator._build_context = lambda text: "No relevant memories"
+    orchestrator._build_system_prompt = lambda: "System"
+    orchestrator.llm = SimpleNamespace(generate_from_messages=AsyncMock(return_value=SimpleNamespace(
+        content='<tool_call>\n{"tool": "weather", "args": {}}\n</tool_call>')))
+
+    answer = await orchestrator.handle_user_message(SimpleNamespace(text="What's the weather right now?"))
+
+    assert answer == "Bengaluru: Clear, 29 C"
+    skill.async_execute.assert_awaited_once_with({})
+    orchestrator.llm.generate_from_messages.assert_awaited_once()
+
+    skill.async_execute.reset_mock()
+    orchestrator.llm.generate_from_messages.return_value = SimpleNamespace(
+        content='<tool_call>\n{"tool": "weather", "args": {"location": "Delhi"}}\n</tool_call>')
+    await orchestrator.handle_user_message(SimpleNamespace(text="What's the weather in Mumbai right now?"))
+    skill.async_execute.assert_awaited_once_with({"location": "Mumbai"})
+
+
+@pytest.mark.asyncio
+async def test_future_weather_request_does_not_get_current_conditions():
+    orchestrator = BlobOrchestrator.__new__(BlobOrchestrator)
+    orchestrator.guardrails = SimpleNamespace(sanitize_input=lambda text: text)
+    orchestrator.screen_sampler = None
+    orchestrator.episodic = SimpleNamespace(add_episode=MagicMock())
+    orchestrator.event_dispatcher = SimpleNamespace(broadcast=AsyncMock())
+    orchestrator.dispatch_emote = AsyncMock()
+    orchestrator.llm = SimpleNamespace(generate_from_messages=AsyncMock())
+
+    answer = await orchestrator.handle_user_message(SimpleNamespace(text="What's the weather tomorrow?"))
+
+    assert "don't have a forecast tool" in answer
+    orchestrator.llm.generate_from_messages.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_reminder_request_without_tool_call_does_not_claim_success():
+    orchestrator = BlobOrchestrator.__new__(BlobOrchestrator)
+    orchestrator.guardrails = SimpleNamespace(sanitize_input=lambda text: text, filter_output=lambda text: text)
+    orchestrator.skill_registry = SkillRegistry()
+    orchestrator.screen_sampler = None
+    orchestrator.event_dispatcher = SimpleNamespace(broadcast=AsyncMock())
+    orchestrator.dispatch_emote = AsyncMock()
+    orchestrator.episodic = SimpleNamespace(add_episode=MagicMock())
+    orchestrator._build_context = lambda text: "No relevant memories"
+    orchestrator._build_system_prompt = lambda: "System"
+    orchestrator.llm = SimpleNamespace(generate_from_messages=AsyncMock(return_value=SimpleNamespace(
+        content="I set your reminder for five minutes.")))
+
+    answer = await orchestrator.handle_user_message(SimpleNamespace(text="Remind me to stretch in five minutes"))
+
+    assert answer.startswith("I haven't set a reminder")
+    assert "I set your reminder" not in answer
+    assert orchestrator.event_dispatcher.broadcast.call_args.args[0].notification.text == answer
 
 
 def test_style_preference_is_recalled_for_unrelated_message():
@@ -305,6 +401,16 @@ async def test_streamed_reply_previews_text_without_emote_or_tool_block(capsys):
     orchestrator.llm = SimpleNamespace(generate_from_messages_stream=tool_stream)
     response, preview = await orchestrator._generate_with_preview([], "System")
     assert '"reminder"' in response
+    assert preview == ""
+    assert capsys.readouterr().out == ""
+
+    async def xml_tool_stream(messages, system_prompt):
+        for part in ("<tool", '_call>\n{"tool":"weather","args":{}}', "\n</tool_call>"):
+            yield part
+
+    orchestrator.llm = SimpleNamespace(generate_from_messages_stream=xml_tool_stream)
+    response, preview = await orchestrator._generate_with_preview([], "System")
+    assert '"weather"' in response
     assert preview == ""
     assert capsys.readouterr().out == ""
 
