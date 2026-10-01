@@ -11,7 +11,7 @@ MIDDLE_LIFETIME_DAYS = 30
 _FAVORITE = re.compile(r"\bfavou?rite\s+([a-z][a-z0-9 ]{0,40}?)\s+(?:is|are)\b", re.I)
 _LIKE = re.compile(r"\bI\s+(?:(?:no longer|don't|do not|still)\s+)?(?:like|love|enjoy)\s+"
                    r"([^,.!?;]+?)(?=\s+(?:and|but|now)\b|$|[,.!?;])", re.I)
-_EVENT = re.compile(r"\b(?:exam|test|meeting|appointment|interview|deadline|flight|trip)\b", re.I)
+_EVENT = re.compile(r"\b(?:exam|test|meeting|appointment|interview|deadline|flight|trip|presentation)s?\b", re.I)
 _WEEKDAY = re.compile(r"\b(?:(next|this)\s+)?(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b", re.I)
 _ON_DATE = re.compile(r"\bon\s+(\d{4}-\d{2}-\d{2})\b", re.I)
 
@@ -40,6 +40,12 @@ def middle_expiry(text: str, source_timestamp: float) -> float:
     target = None
     if re.search(r"\btomorrow\b", text, re.I):
         target = source.date() + timedelta(days=1)
+    elif re.search(r"\b(?:today|tonight)\b", text, re.I):
+        target = source.date()
+    elif re.search(r"\bnext week\b", text, re.I):
+        target = source.date() + timedelta(days=13 - source.weekday())
+    elif re.search(r"\bthis weekend\b", text, re.I):
+        target = source.date() + timedelta(days=6 - source.weekday())
     else:
         match = _ON_DATE.search(text)
         if match:

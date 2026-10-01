@@ -17,10 +17,42 @@ class VectorStore:
         os.chmod(path, 0o700)
         self.client = chromadb.PersistentClient(path=str(path))
         self.episodic = self.client.get_or_create_collection("episodic")
+        # Search user words separately so an invented assistant reply cannot
+        # make an unrelated conversation look like a relevant user memory.
+        self.episodic_user = self.client.get_or_create_collection("episodic_user")
         self.semantic = self.client.get_or_create_collection("semantic")
         self.middle = self.client.get_or_create_collection("middle")
         self.decay_algo = DecayAlgorithm()
         self.semantic_revision = 0
+        self._backfill_episode_index()
+
+    @staticmethod
+    def _episode_user_text(document: str) -> str:
+        if document.startswith("User: "):
+            return document.split("\nBlob: ", 1)[0][6:] or "[Empty user message]"
+        return "[Unattributed archived episode]"
+
+    def _backfill_episode_index(self) -> int:
+        """Reconcile the search index with archived episodes after a restart."""
+        episode_ids = set(self.episodic.get(include=[])["ids"])
+        indexed_ids = set(self.episodic_user.get(include=[])["ids"])
+        stale = list(indexed_ids - episode_ids)
+        for start in range(0, len(stale), 100):
+            self.episodic_user.delete(ids=stale[start:start + 100])
+        missing_ids = list(episode_ids - indexed_ids)
+        for start in range(0, len(missing_ids), 100):
+            data = self.episodic.get(ids=missing_ids[start:start + 100],
+                                     include=["documents", "metadatas"])
+            self.episodic_user.upsert(
+                ids=data["ids"],
+                documents=[self._episode_user_text(document) for document in data["documents"]],
+                metadatas=[{"timestamp": (meta or {}).get("timestamp", 0.0)}
+                           for meta in data["metadatas"]],
+            )
+        if missing_ids or stale:
+            logger.info("Reconciled memory search index: %d added, %d removed",
+                        len(missing_ids), len(stale))
+        return len(missing_ids)
 
     def backfill_grounded_provenance(self) -> int:
         """Attach source and correction topics to older verbatim long-term facts."""
@@ -74,6 +106,11 @@ class VectorStore:
         values.setdefault("last_accessed", now)
         values.setdefault("access_count", 0)
         col.upsert(documents=[text], metadatas=[values], ids=[doc_id])
+        if collection == "episodic" and hasattr(self, "episodic_user"):
+            self.episodic_user.upsert(
+                documents=[self._episode_user_text(text)],
+                metadatas=[{"timestamp": values["timestamp"]}], ids=[doc_id],
+            )
         if collection in {"semantic", "middle"}:
             self.semantic_revision = getattr(self, "semantic_revision", 0) + 1
         return doc_id
@@ -116,9 +153,12 @@ class VectorStore:
         return memory_id
         
     def recall(self, query: str, top_k: int = 5, collection: str = "episodic",
-               max_distance: float | None = None, min_timestamp: float | None = None) -> list:
+               max_distance: float | None = None, min_timestamp: float | None = None,
+               search_full_episode: bool = False) -> list:
         col = self._collection(collection)
-        if not query.strip() or top_k <= 0 or col.count() == 0:
+        search_col = (self.episodic_user if collection == "episodic" and
+                      not search_full_episode and hasattr(self, "episodic_user") else col)
+        if not query.strip() or top_k <= 0 or search_col.count() == 0:
             return []
         current_time = time.time()
         where = None
@@ -126,12 +166,21 @@ class VectorStore:
             where = {"expires_at": {"$gt": current_time}}
         elif collection == "episodic" and min_timestamp is not None:
             where = {"timestamp": {"$gte": min_timestamp}}
-        query_args = {"query_texts": [query], "n_results": min(top_k * 10, col.count())}
+        query_args = {"query_texts": [query], "n_results": min(top_k * 10, search_col.count())}
         if where is not None:
             query_args["where"] = where
-        results = col.query(**query_args)
+        results = search_col.query(**query_args)
+        originals = {}
+        if search_col is not col and results["ids"][0]:
+            data = col.get(ids=results["ids"][0], include=["documents", "metadatas"])
+            originals = {item_id: (doc, meta) for item_id, doc, meta in
+                         zip(data["ids"], data["documents"], data["metadatas"])}
         candidates = []
         for doc, meta, id_, dist in zip(results['documents'][0], results['metadatas'][0], results['ids'][0], results['distances'][0]):
+            if search_col is not col:
+                if id_ not in originals:
+                    continue
+                doc, meta = originals[id_]
             # A nearest neighbour is not necessarily a relevant memory. Gate on
             # the raw embedding distance before recency or access can affect rank.
             if not math.isfinite(dist) or (max_distance is not None and dist > max_distance):
@@ -148,15 +197,6 @@ class VectorStore:
             score = self.decay_algo.calculate_score(base_sim, days_since, 0, pinned=meta.get("pinned", False))
             candidates.append({"id": id_, "text": doc, "metadata": meta, "score": score})
         recalled = sorted(candidates, key=lambda item: item["score"], reverse=True)[:top_k]
-        updated_metadatas = []
-        for item in recalled:
-            meta = dict(item["metadata"])
-            meta["last_accessed"] = current_time
-            meta["access_count"] = meta.get("access_count", 0) + 1
-            updated_metadatas.append(meta)
-            item["metadata"] = meta
-        if recalled:
-            col.update(ids=[item["id"] for item in recalled], metadatas=updated_metadatas)
         return recalled
 
     def purge_expired_middle(self, now: float | None = None) -> int:
@@ -166,6 +206,21 @@ class VectorStore:
             self.middle.delete(ids=expired)
             self.semantic_revision += 1
         return len(expired)
+
+    def list_active(self, collection: str, limit: int = 20) -> list:
+        """List current facts for broad questions that have no useful search terms."""
+        if collection not in {"semantic", "middle"} or limit <= 0:
+            return []
+        data = self._collection(collection).get(include=["documents", "metadatas"])
+        current_time = time.time()
+        items = [
+            {"id": item_id, "text": doc, "metadata": dict(meta or {})}
+            for item_id, doc, meta in zip(data["ids"], data["documents"], data["metadatas"])
+            if is_active(meta, current_time)
+        ]
+        items.sort(key=lambda item: item["metadata"].get(
+            "source_timestamp", item["metadata"].get("timestamp", 0)), reverse=True)
+        return items[:limit]
 
     def unconsolidated_episodes(self, limit: int = 20) -> list:
         data = self.episodic.get(where={"consolidated": {"$ne": True}}, limit=limit, include=["documents", "metadatas"])
@@ -179,5 +234,7 @@ class VectorStore:
 
     def delete(self, memory_id: str, collection: str = "episodic"):
         self._collection(collection).delete(ids=[memory_id])
+        if collection == "episodic" and hasattr(self, "episodic_user"):
+            self.episodic_user.delete(ids=[memory_id])
         if collection in {"semantic", "middle"}:
             self.semantic_revision = getattr(self, "semantic_revision", 0) + 1

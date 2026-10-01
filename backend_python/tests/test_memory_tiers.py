@@ -15,6 +15,8 @@ def test_event_expiry_and_correction_topics():
     tomorrow = middle_expiry("I have an exam tomorrow.", tuesday)
     next_wednesday = middle_expiry("I have an exam next Wednesday.", tuesday)
     assert 86400 < tomorrow - tuesday < 2 * 86400
+    assert 86400 < middle_expiry("I have a presentation tomorrow.", tuesday) - tuesday < 2 * 86400
+    assert 12 * 86400 < middle_expiry("I have a presentation next week.", tuesday) - tuesday < 14 * 86400
     assert 7 * 86400 < next_wednesday - tuesday < 9 * 86400
     assert middle_expiry("I am building a model railway.", tuesday) == tuesday + MIDDLE_LIFETIME_DAYS * 86400
     assert topic_key("My favourite anime is Trigun.") == topic_key("Actually, my favorite anime is Frieren now.")

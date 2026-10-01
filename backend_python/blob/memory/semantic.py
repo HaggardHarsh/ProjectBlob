@@ -118,6 +118,12 @@ class SemanticMemory:
         return self.vector_store.recall(query, top_k=top_k, collection="middle",
                                         max_distance=max_distance)
 
+    def list_facts(self, limit: int = 12) -> list:
+        return self.vector_store.list_active("semantic", limit=limit)
+
+    def list_middle(self, limit: int = 8) -> list:
+        return self.vector_store.list_active("middle", limit=limit)
+
     async def consolidate_once(self) -> int:
         episodes = self.vector_store.unconsolidated_episodes(limit=20)
         if episodes and await self.summarize_and_store(episodes):

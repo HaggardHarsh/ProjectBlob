@@ -9,7 +9,9 @@ from blob.skills.builtin.weather import WeatherSkill
 from blob.skills.builtin.screen_capture import ScreenCaptureSkill
 from blob.skills.builtin.file_search import FileSearchSkill
 from blob.skills.registry import SkillRegistry
-from blob.ai.orchestrator import BlobOrchestrator, SCREEN_REQUEST
+from blob.ai.orchestrator import BlobOrchestrator, SCREEN_REQUEST, _requested_face
+from blob.ai.guardrails import unsupported_personal_event_claim
+from blob.ai.context_budget import prompt_size_bytes
 from blob.ai.llm_engine import NebiusEngine
 from blob.ipc import blob_service_pb2
 
@@ -317,6 +319,46 @@ def test_old_assistant_reply_is_excluded_unless_user_asks_for_it():
     assert "Blob: Sunday" in orchestrator._build_context("What did you say earlier?")
 
 
+def test_retrieved_episode_dates_user_words_without_grounding_old_blob_claim():
+    config = MagicMock(nebius_api_key="test", nebius_base_url="http://test", model_name="test")
+    orchestrator = BlobOrchestrator(config, MagicMock(), SkillRegistry(), AsyncMock())
+    said_at = datetime.now(timezone.utc).timestamp()
+    orchestrator.episodic.recall_relevant = MagicMock(return_value=[{
+        "text": "User: What presentation?\nBlob: Your presentation is tomorrow.",
+        "metadata": {"timestamp": said_at},
+    }])
+    orchestrator.semantic.recall_facts = MagicMock(return_value=[])
+    orchestrator.semantic.recall_middle = MagicMock(return_value=[])
+
+    context = orchestrator._build_context("Which presentation?")
+
+    date = datetime.fromtimestamp(said_at).astimezone().date().isoformat()
+    assert f"[User said this on {date}]" in context
+    assert "Your presentation is tomorrow" not in context
+    assert orchestrator._grounded_user_evidence == [("What presentation?", said_at)]
+
+
+def test_newer_user_denial_overrides_older_grounded_fact_for_claim_check():
+    config = MagicMock(nebius_api_key="test", nebius_base_url="http://test", model_name="test")
+    orchestrator = BlobOrchestrator(config, MagicMock(), SkillRegistry(), AsyncMock())
+    said_at = datetime.now(timezone.utc).timestamp()
+    orchestrator.episodic.recall_relevant = MagicMock(return_value=[{
+        "text": "User: I have no presentation.\nBlob: Got it.",
+        "metadata": {"timestamp": said_at},
+    }])
+    orchestrator.semantic.recall_facts = MagicMock(return_value=[{
+        "text": "I have a presentation tomorrow.",
+        "metadata": {"grounded": True, "source_timestamp": said_at - 86400},
+    }])
+    orchestrator.semantic.recall_middle = MagicMock(return_value=[])
+
+    orchestrator._build_context("Do I have a presentation?")
+
+    assert orchestrator._grounded_user_evidence[0] == ("I have no presentation.", said_at)
+    assert unsupported_personal_event_claim(
+        "Your presentation is tomorrow.", orchestrator._grounded_user_evidence)
+
+
 def test_stale_weekday_fact_is_excluded_from_prompt():
     config = MagicMock(nebius_api_key="test", nebius_base_url="http://test", model_name="test")
     orchestrator = BlobOrchestrator(config, MagicMock(), SkillRegistry(), AsyncMock())
@@ -350,9 +392,33 @@ def test_middle_term_context_and_explicit_archive_recall():
     orchestrator._build_context("What did we discuss last month?")
     assert orchestrator.episodic.recall_relevant.call_args.kwargs["min_timestamp"] is None
 
+    orchestrator._build_context("What did you say about my project?")
+    assert orchestrator.episodic.recall_relevant.call_args.kwargs["search_full_episode"] is True
+
+
+def test_profile_overview_lists_saved_facts_without_vector_search():
+    orchestrator = BlobOrchestrator.__new__(BlobOrchestrator)
+    orchestrator.screen_sampler = None
+    orchestrator.last_screen_context = "No screen data captured yet."
+    orchestrator.episodic = SimpleNamespace(recall_relevant=MagicMock())
+    orchestrator.semantic = SimpleNamespace(
+        list_facts=MagicMock(return_value=[{
+            "text": "I like astronomy.", "metadata": {"grounded": True}}]),
+        list_middle=MagicMock(return_value=[]),
+        recall_facts=MagicMock(), recall_middle=MagicMock(),
+    )
+    orchestrator._get_style_facts = lambda: []
+
+    context = orchestrator._build_context("What do you know about me?")
+
+    assert "I like astronomy." in context
+    orchestrator.semantic.list_facts.assert_called_once()
+    orchestrator.semantic.recall_facts.assert_not_called()
+    orchestrator.episodic.recall_relevant.assert_not_called()
+
 
 @pytest.mark.asyncio
-async def test_grounded_plan_question_gets_direct_reply_guidance():
+async def test_grounded_plan_question_keeps_actual_request_last():
     orchestrator = BlobOrchestrator.__new__(BlobOrchestrator)
     orchestrator.guardrails = SimpleNamespace(sanitize_input=lambda text: text, filter_output=lambda text: text)
     orchestrator.skill_registry = SkillRegistry()
@@ -377,9 +443,123 @@ async def test_grounded_plan_question_gets_direct_reply_guidance():
 
     messages = orchestrator.llm.generate_from_messages.call_args.args[0]
     assert "bike service" in messages[1]["content"]
-    assert messages[-2]["content"] == "Do I have any plans next week?"
-    assert "answer only that question in one casual sentence" in messages[-1]["content"]
+    assert messages[-1] == {"role": "user", "content": "Do I have any plans next week?"}
     assert answer == "Yep, your bike service is next week."
+
+
+@pytest.mark.asyncio
+async def test_unsupported_presentation_claim_is_corrected_before_display_or_storage(capsys):
+    async def false_reply(messages, system_prompt):
+        yield "Yep, your presentation is tomorrow. <emote>HAPPY</emote>"
+
+    orchestrator = BlobOrchestrator.__new__(BlobOrchestrator)
+    orchestrator.guardrails = SimpleNamespace(sanitize_input=lambda text: text, filter_output=lambda text: text)
+    orchestrator.skill_registry = SkillRegistry()
+    orchestrator.screen_sampler = None
+    orchestrator.event_dispatcher = SimpleNamespace(broadcast=AsyncMock())
+    orchestrator.dispatch_emote = AsyncMock()
+    orchestrator.episodic = SimpleNamespace(add_episode=MagicMock())
+    orchestrator._build_context = lambda text: "User: What presentation?\nBlob: Your presentation is tomorrow."
+    orchestrator._build_system_prompt = lambda: "System"
+    orchestrator.llm = SimpleNamespace(generate_from_messages_stream=false_reply)
+
+    answer = await orchestrator.handle_user_message(
+        SimpleNamespace(text="Which presentation? I have no presentation."))
+
+    assert answer == "I don't have evidence for that plan. I shouldn't have stated it as fact."
+    assert "your presentation is tomorrow" not in capsys.readouterr().out.lower()
+    orchestrator.episodic.add_episode.assert_called_once_with(
+        "Which presentation? I have no presentation.", answer)
+    assert orchestrator.event_dispatcher.broadcast.call_args.args[0].notification.text == answer
+
+
+@pytest.mark.asyncio
+async def test_chat_prompt_is_bounded_before_model_call():
+    orchestrator = BlobOrchestrator.__new__(BlobOrchestrator)
+    orchestrator.guardrails = SimpleNamespace(sanitize_input=lambda text: text, filter_output=lambda text: text)
+    orchestrator.skill_registry = SkillRegistry()
+    orchestrator.screen_sampler = None
+    orchestrator.event_dispatcher = SimpleNamespace(broadcast=AsyncMock())
+    orchestrator.dispatch_emote = AsyncMock()
+    orchestrator.episodic = SimpleNamespace(add_episode=MagicMock())
+    orchestrator._build_context = lambda text: "old fact\n" * 1000
+    orchestrator._build_system_prompt = lambda: "System"
+    orchestrator._max_prompt_bytes = 400
+    orchestrator._recent_turns = [
+        {"role": "user", "content": "old question " * 30},
+        {"role": "assistant", "content": "old answer " * 30},
+    ]
+    orchestrator.llm = SimpleNamespace(generate_from_messages=AsyncMock(
+        return_value=SimpleNamespace(content="Here's a brief answer.")))
+
+    await orchestrator.handle_user_message(SimpleNamespace(text="Tell me briefly."))
+
+    messages = orchestrator.llm.generate_from_messages.call_args.args[0]
+    assert prompt_size_bytes(messages) <= 400
+    assert messages[-1] == {"role": "user", "content": "Tell me briefly."}
+    assert all("old question" not in item["content"] for item in messages)
+
+
+@pytest.mark.asyncio
+async def test_oversized_latest_request_is_not_sent_or_saved():
+    orchestrator = BlobOrchestrator.__new__(BlobOrchestrator)
+    orchestrator.guardrails = SimpleNamespace(sanitize_input=lambda text: text, filter_output=lambda text: text)
+    orchestrator.skill_registry = SkillRegistry()
+    orchestrator.screen_sampler = None
+    orchestrator.event_dispatcher = SimpleNamespace(broadcast=AsyncMock())
+    orchestrator.dispatch_emote = AsyncMock()
+    orchestrator.episodic = SimpleNamespace(add_episode=MagicMock())
+    orchestrator._build_context = lambda text: "No relevant memories"
+    orchestrator._build_system_prompt = lambda: "System"
+    orchestrator._max_prompt_bytes = 300
+    orchestrator.llm = SimpleNamespace(generate_from_messages=AsyncMock())
+
+    answer = await orchestrator.handle_user_message(SimpleNamespace(text="x" * 1000))
+
+    assert "Please narrow or split" in answer
+    orchestrator.llm.generate_from_messages.assert_not_awaited()
+    orchestrator.episodic.add_episode.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("user_text", "emote", "answer"), [
+    ("Can you make melting face?", "MELTING", "Here's my melting face."),
+    ("Can you make sad face?", "SAD", "Here's my sad face."),
+    ("What about a happy face", "HAPPY", "Here's my happy face."),
+    ("Show me your happy expression!", "HAPPY", "Here's my happy face."),
+    ("Could you make a sad face for me, please?", "SAD", "Here's my sad face."),
+])
+async def test_face_request_uses_visible_emote_without_model(user_text, emote, answer):
+    orchestrator = BlobOrchestrator.__new__(BlobOrchestrator)
+    orchestrator.guardrails = SimpleNamespace(sanitize_input=lambda text: text)
+    orchestrator.screen_sampler = None
+    orchestrator.episodic = SimpleNamespace(add_episode=MagicMock())
+    orchestrator.event_dispatcher = SimpleNamespace(broadcast=AsyncMock())
+    orchestrator.llm = SimpleNamespace(generate_from_messages=AsyncMock())
+
+    result = await orchestrator.handle_user_message(SimpleNamespace(text=user_text))
+
+    events = [call.args[0] for call in orchestrator.event_dispatcher.broadcast.call_args_list]
+    assert result == answer
+    assert len(events) == 2
+    assert events[0].emote.emote == getattr(blob_service_pb2.EmoteCommand, emote)
+    assert events[1].notification.text == answer
+    orchestrator.llm.generate_from_messages.assert_not_awaited()
+    orchestrator.episodic.add_episode.assert_called_once_with(user_text, answer)
+    assert list(orchestrator._recent_turns)[-2:] == [
+        {"role": "user", "content": user_text},
+        {"role": "assistant", "content": answer},
+    ]
+
+
+@pytest.mark.parametrize("user_text", [
+    "Why not?",
+    "What does a sad face mean?",
+    "Can you make a happy face in CSS?",
+    "Make a sad face and set a timer",
+])
+def test_face_request_does_not_hijack_other_tasks(user_text):
+    assert _requested_face(user_text) is None
 
 
 @pytest.mark.asyncio

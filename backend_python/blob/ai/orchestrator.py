@@ -9,7 +9,8 @@ import re
 import time
 from blob.ai.llm_engine import NebiusEngine
 from blob.ipc import blob_service_pb2
-from blob.ai.guardrails import GuardrailsEngine
+from blob.ai.guardrails import GuardrailsEngine, PERSONAL_PLAN_TOPIC, unsupported_personal_event_claim
+from blob.ai.context_budget import DEFAULT_MAX_PROMPT_BYTES, fit_messages
 from blob.ai.prompt_templates import SYSTEM_PROMPT, CONTEXT_TEMPLATE
 from blob.memory.episodic import EpisodicMemory
 from blob.memory.semantic import SemanticMemory, is_temporary_fact
@@ -24,6 +25,16 @@ MAX_MEMORY_DISTANCE = 1.35  # Calibrated for Chroma's default normalized MiniLM 
 STYLE_QUERY = "How does the user want Blob to speak to them: friendly buddy, formal, professional, direct, or quiet?"
 EMOTE_NAMES = "IDLE|HAPPY|SAD|ANGRY|CONFUSED|THINKING|WORRIED|CELEBRATE|EXCITED|TIRED|OFFER_COFFEE|SHY|SLEEPING|EATING|PROUD|PLAYFUL|WORKING|DEEP_THINKING|LISTENING|SHOCKED|MELTING|ERROR|SUCCESS|WAITING"
 EMOTE_MARKER = re.compile(rf"<emote>\s*({EMOTE_NAMES})\s*</emote>|\(({EMOTE_NAMES})\)", re.IGNORECASE)
+FACE_REQUEST = re.compile(
+    r"(?:"
+    r"(?:(?:can|could|would|will) you\s+)?(?:please\s+)?"
+    r"(?:make|do|show|give|put on)\s+(?:me\s+)?(?:(?:a|the|your)\s+)?"
+    r"|what about\s+(?:(?:a|the|your)\s+)?"
+    r")"
+    r"(?P<mood>melting|melted|sad|happy)\s+(?:face|expression)"
+    r"(?:\s+for me)?(?:,?\s+please)?[?.!]*",
+    re.IGNORECASE,
+)
 CAMERA_REQUEST = re.compile(
     r"\b(?:open|turn on|switch on|start|use|scan|check|share|access|view|see|look through|look at|see through)\b"
     r".{0,35}\b(?:camera|webcam)\b|\bturn\b.{0,15}\b(?:camera|webcam)\b\s+on\b",
@@ -79,6 +90,11 @@ REMEMBER_ME_REQUEST = re.compile(
     re.IGNORECASE,
 )
 MEMORY_TOPIC = re.compile(r"\b(?:remember|memory|recall|retain)\b", re.IGNORECASE)
+PROFILE_OVERVIEW_REQUEST = re.compile(
+    r"\b(?:what do you (?:know|remember) about me|what have you learned about me|"
+    r"(?:tell me|summari[sz]e) what you (?:know|remember) about me)\b",
+    re.IGNORECASE,
+)
 HISTORICAL_RECALL = re.compile(
     r"\b(?:yesterday|last (?:week|month|year)|previous (?:chat|conversation)|"
     r"earlier (?:chat|conversation)|what did we (?:talk|discuss))\b", re.IGNORECASE,
@@ -121,6 +137,15 @@ def _visible_preview(text: str) -> str:
     return re.sub(r"<[^>]*$", "", text).rstrip()
 
 
+def _requested_face(text: str) -> str | None:
+    """Recognize a whole-message request to change Blob's visible expression."""
+    match = FACE_REQUEST.fullmatch(text.strip())
+    if match is None:
+        return None
+    mood = match.group("mood").upper()
+    return "MELTING" if mood == "MELTED" else mood
+
+
 class BlobOrchestrator:
     def __init__(self, config, vector_store, skill_registry, event_dispatcher, screen_sampler=None):
         self.config = config
@@ -140,6 +165,9 @@ class BlobOrchestrator:
         self._profile_latency = os.environ.get("BLOB_PROFILE_LATENCY", "").lower() in {"1", "true", "yes", "on"}
         self._streaming_disabled = False
         self._recent_turns = deque(maxlen=12)
+        configured_budget = getattr(config, "max_prompt_bytes", DEFAULT_MAX_PROMPT_BYTES)
+        self._max_prompt_bytes = (configured_budget if isinstance(configured_budget, int)
+                                  else DEFAULT_MAX_PROMPT_BYTES)
         
         # Holds the latest screen context text (populated by ScreenCaptureSkill or sampler)
         self.last_screen_context = "No screen data captured yet."
@@ -184,16 +212,37 @@ class BlobOrchestrator:
 
     def _build_context(self, clean_text: str) -> str:
         """Build the context block with memories, active window, and screen data."""
+        overview = bool(PROFILE_OVERVIEW_REQUEST.search(clean_text))
         historical = bool(MEMORY_TOPIC.search(clean_text) or
                           HISTORICAL_RECALL.search(clean_text) or
                           ASSISTANT_HISTORY_REQUEST.search(clean_text))
-        episodes = self.episodic.recall_relevant(
+        episodes = [] if overview else self.episodic.recall_relevant(
             clean_text, top_k=5, max_distance=MAX_MEMORY_DISTANCE,
-            min_timestamp=None if historical else time.time() - SHORT_RECALL_DAYS * 86400)
-        facts = self.semantic.recall_facts(
-            clean_text, top_k=3, max_distance=MAX_MEMORY_DISTANCE)
-        middle_facts = self.semantic.recall_middle(
-            clean_text, top_k=3, max_distance=MAX_MEMORY_DISTANCE)
+            min_timestamp=None if historical else time.time() - SHORT_RECALL_DAYS * 86400,
+            search_full_episode=bool(ASSISTANT_HISTORY_REQUEST.search(clean_text)))
+        facts = (self.semantic.list_facts() if overview else
+                 self.semantic.recall_facts(clean_text, top_k=3,
+                                            max_distance=MAX_MEMORY_DISTANCE))
+        middle_facts = (self.semantic.list_middle() if overview else
+                        self.semantic.recall_middle(clean_text, top_k=3,
+                                                    max_distance=MAX_MEMORY_DISTANCE))
+        evidence = []
+        for item in facts + middle_facts:
+            meta = item.get("metadata") or {}
+            if meta.get("grounded") is True:
+                evidence.append((meta.get("source_timestamp", meta.get("timestamp", 0)), item["text"]))
+        for item in episodes:
+            if not item["text"].startswith("User: "):
+                continue
+            meta = item.get("metadata") or {}
+            user_text = item["text"].partition("\nBlob: ")[0].removeprefix("User: ")
+            if user_text:
+                evidence.append((meta.get("timestamp", 0), user_text))
+        self._grounded_user_evidence = [
+            (text, timestamp) for timestamp, text in sorted(
+                evidence, key=lambda entry: entry[0] if isinstance(entry[0], (int, float)) else 0,
+                reverse=True)
+        ]
         # Tone preferences must remain in view even when the current question
         # is about an unrelated task.
         style_facts = self._get_style_facts()
@@ -211,7 +260,17 @@ class BlobOrchestrator:
             said = datetime.fromtimestamp(meta.get("source_timestamp", meta.get("timestamp", time.time()))).astimezone().date().isoformat()
             expires = datetime.fromtimestamp(meta["expires_at"]).astimezone().date().isoformat() if meta.get("expires_at") else "unknown"
             fact_texts.append(f"Active middle-term user quote (said {said}, expires {expires}): {item['text']}")
-        episode_texts = [item["text"] for item in episodes]
+        episode_texts = []
+        for item in episodes:
+            text = item["text"]
+            timestamp = (item.get("metadata") or {}).get("timestamp")
+            if isinstance(timestamp, (int, float)) and text.startswith("User: "):
+                user_part, separator, reply = text.partition("\nBlob: ")
+                said = datetime.fromtimestamp(timestamp).astimezone().date().isoformat()
+                text = f"{user_part}\n[User said this on {said}]"
+                if separator:
+                    text += separator + reply
+            episode_texts.append(text)
         # Old assistant replies are not evidence for ordinary questions. Include
         # them only when the user explicitly asks what Blob said before.
         fact_view, episode_view = build_memory_view(
@@ -219,11 +278,6 @@ class BlobOrchestrator:
             user_only=not bool(ASSISTANT_HISTORY_REQUEST.search(clean_text)),
             recall_mode=historical,
         )
-        self._has_grounded_personal_context = bool(
-            middle_facts or episodes or
-            any((item.get("metadata") or {}).get("grounded") for item in facts)
-        )
-        
         # Try to get active window title (lightweight, no screenshot)
         active_window = "Unknown"
         shielded = bool(self.screen_sampler and self.screen_sampler.privacy_shield.is_capture_blocked())
@@ -347,6 +401,11 @@ class BlobOrchestrator:
             return await self._handle_camera_command("/camera status")
         if CAMERA_REQUEST.search(stripped) and not re.search(r"\b(?:don't|do not|never|how (?:do|can|to))\b", stripped, re.IGNORECASE):
             return await self._handle_camera_command("/camera scan")
+        requested_face = _requested_face(stripped)
+        if requested_face is not None:
+            answer = f"Here's my {requested_face.lower()} face."
+            self._remember_turn(clean_text, answer)
+            return await self._send_direct_response(answer, requested_face)
         if REMEMBER_ME_REQUEST.fullmatch(stripped):
             return await self._handle_remember_me(clean_text)
         if DAY_ONLY_REQUEST.fullmatch(stripped):
@@ -382,7 +441,7 @@ class BlobOrchestrator:
         # Show the thinking state before local memory retrieval begins.
         await self.dispatch_emote("THINKING")
         print("\033[90m(Thinking...)\033[0m", end="", flush=True)
-        self._has_grounded_personal_context = False
+        self._grounded_user_evidence = []
         context = self._build_context(clean_text)
         sys_prompt = self._build_system_prompt()
         preparation_seconds = time.perf_counter() - started_at
@@ -395,14 +454,7 @@ class BlobOrchestrator:
             *list(getattr(self, "_recent_turns", ())),
             {"role": "user", "content": clean_text},
         ]
-        if (self._has_grounded_personal_context and required_tool is None and
-                not screen_requested and not FILE_REQUEST.search(stripped)):
-            messages.append({"role": "user", "content":
-                "[App reply guidance] If the latest request is a short question about a personal fact in the context, "
-                "answer only that question in one casual sentence. State a grounded fact directly, without describing "
-                "where you learned it. For a plan tomorrow, say yep and use 'tomorrow'. Do not add related details, "
-                "such as its grade weight, unless asked. If the fact is uncertain, say so plainly. "
-                "For requests needing a fuller answer, respond at the requested length."})
+        current_request = messages[-1]
         if screen_result is not None:
             study_guidance = (
                 "The user asked for study help. Start helping from the readable text: "
@@ -421,16 +473,26 @@ class BlobOrchestrator:
         preview_text = ""
         direct_tool_emote = None
         file_search_ran = False
+        prompt_overflow = False
+        max_prompt_bytes = getattr(self, "_max_prompt_bytes", DEFAULT_MAX_PROMPT_BYTES)
+        allow_preview = (required_tool is None and screen_result is None and
+                         not PERSONAL_PLAN_TOPIC.search(stripped))
         
         # ── ReAct Loop ──────────────────────────────────────────────────
         for iteration in range(MAX_REACT_ITERATIONS):
             logger.info(f"ReAct iteration {iteration + 1}/{MAX_REACT_ITERATIONS}")
+            bounded_messages = fit_messages(messages, current_request, max_prompt_bytes)
+            if bounded_messages is None:
+                final_response = "That is too much text for me to handle reliably. Please narrow or split the request."
+                direct_tool_emote = "CONFUSED"
+                prompt_overflow = True
+                break
             
             # Generate LLM response
             model_started_at = time.perf_counter()
             response_text, preview_text = await self._await_with_progress(
                 self._generate_with_preview(
-                    messages, sys_prompt, allow_preview=required_tool is None and screen_result is None),
+                    bounded_messages, sys_prompt, allow_preview=allow_preview),
                 4.0, "DEEP_THINKING")
             model_seconds += time.perf_counter() - model_started_at
             
@@ -544,13 +606,19 @@ class BlobOrchestrator:
             if messages and messages[-1]["role"] == "user":
                 # Force one more generate to get a final answer
                 messages.append({"role": "user", "content": "[System] You have used all available tool calls. Please provide your final response to the user now."})
-                model_started_at = time.perf_counter()
-                final_response, preview_text = await self._await_with_progress(
-                    self._generate_with_preview(
-                        messages, sys_prompt, allow_preview=required_tool is None and screen_result is None),
-                    4.0, "DEEP_THINKING")
-                model_seconds += time.perf_counter() - model_started_at
-                final_response = final_response or "Sorry, I got a bit lost there! 😅"
+                bounded_messages = fit_messages(messages, current_request, max_prompt_bytes)
+                if bounded_messages is None:
+                    final_response = "That is too much text for me to handle reliably. Please narrow or split the request."
+                    direct_tool_emote = "CONFUSED"
+                    prompt_overflow = True
+                else:
+                    model_started_at = time.perf_counter()
+                    final_response, preview_text = await self._await_with_progress(
+                        self._generate_with_preview(
+                            bounded_messages, sys_prompt, allow_preview=allow_preview),
+                        4.0, "DEEP_THINKING")
+                    model_seconds += time.perf_counter() - model_started_at
+                    final_response = final_response or "Sorry, I got a bit lost there! 😅"
             else:
                 final_response = "I tried my best but something went wrong! 😅"
         
@@ -565,6 +633,15 @@ class BlobOrchestrator:
         
         # Apply output guardrails
         final_response = self.guardrails.filter_output(final_response)
+        if (direct_tool_emote is None and screen_result is None and not file_search_ran and
+                unsupported_personal_event_claim(
+                    final_response,
+                    [(clean_text, None)] + [(item["content"], None)
+                                            for item in reversed(getattr(self, "_recent_turns", ()))
+                                            if item["role"] == "user"] +
+                    getattr(self, "_grounded_user_evidence", []))):
+            final_response = "I don't have evidence for that plan. I shouldn't have stated it as fact."
+            emote_str = "CONFUSED"
         if screen_result is not None and not file_search_ran and FILE_SEARCH_CLAIM.search(final_response):
             final_response = "I captured your screen, but couldn't identify the material confidently. Which line or term would you like help with?"
             emote_str = "CONFUSED"
@@ -582,7 +659,8 @@ class BlobOrchestrator:
             final_response = MEMORY_CAPABILITY_RESPONSE
         
         # Save episodic memory
-        self._remember_turn(clean_text, final_response)
+        if not prompt_overflow:
+            self._remember_turn(clean_text, final_response)
         
         # Dispatch emote to frontend
         await self.dispatch_emote(emote_str)

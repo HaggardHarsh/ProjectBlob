@@ -58,7 +58,7 @@ async def test_failed_consolidation_is_retried():
     assert llm.generate.await_count == 2
 
 
-def test_recall_refreshes_only_returned_memories():
+def test_recall_does_not_write_access_metadata():
     class Collection:
         def __init__(self):
             self.updated = []
@@ -82,7 +82,7 @@ def test_recall_refreshes_only_returned_memories():
     store.decay_algo = DecayAlgorithm()
     recalled = store.recall("query", top_k=1)
     assert [item["id"] for item in recalled] == ["a"]
-    assert store.episodic.updated == ["a"]
+    assert store.episodic.updated == []
 
 
 def test_unrelated_nearest_neighbours_are_not_recalled_or_reinforced():
@@ -111,7 +111,7 @@ def test_unrelated_nearest_neighbours_are_not_recalled_or_reinforced():
     recalled = store.recall("Python", top_k=3, max_distance=1.35)
 
     assert [item["id"] for item in recalled] == ["a", "c"]
-    assert store.episodic.updated == ["a", "c"]
+    assert store.episodic.updated == []
 
 
 def test_memory_prompt_view_is_bounded_and_keeps_query_match_without_changing_source():
@@ -272,4 +272,89 @@ def test_memory_survives_store_reopen(tmp_path, monkeypatch):
     other_id = second.store("I like Rust", {"type": "semantic", "pinned": True}, collection="semantic")
     assert {item["id"] for item in second.recall("programming", top_k=2, collection="semantic")} == {memory_id, other_id}
     metadata = second.semantic.get(ids=[memory_id, other_id], include=["metadatas"])["metadatas"]
-    assert sorted(item["access_count"] for item in metadata) == [1, 2]
+    assert sorted(item["access_count"] for item in metadata) == [0, 0]
+
+
+def test_user_only_episode_index_backfills_and_ignores_invented_blob_claim(tmp_path, monkeypatch):
+    import chromadb
+    import blob.memory.vector_store as module
+
+    assert VectorStore._episode_user_text("User: \nBlob: Invented event") == "[Empty user message]"
+    assert VectorStore._episode_user_text("Blob: Invented event") == "[Unattributed archived episode]"
+
+    class KeywordEmbedding:
+        def __call__(self, input):
+            return [[float("presentation" in text.casefold()),
+                     float("face" in text.casefold()), 1.0] for text in input]
+
+        def embed_query(self, input):
+            return self(input)
+
+        def name(self):
+            return "keyword-test"
+
+        def is_legacy(self):
+            return False
+
+        def default_space(self):
+            return "l2"
+
+        def supported_spaces(self):
+            return ["l2"]
+
+    real_client = chromadb.PersistentClient
+
+    class Client:
+        def __init__(self, path):
+            self.client = real_client(path=path)
+
+        def get_or_create_collection(self, name):
+            return self.client.get_or_create_collection(name, embedding_function=KeywordEmbedding())
+
+    monkeypatch.setattr(module.chromadb, "PersistentClient", Client)
+    legacy = Client(str(tmp_path)).get_or_create_collection("episodic")
+    legacy.add(ids=["old"], documents=[
+        "User: Show me a happy face.\nBlob: Yep, your presentation is tomorrow."],
+        metadatas=[{"timestamp": 1.0}])
+
+    store = VectorStore(str(tmp_path))
+    assert store.episodic_user.get(ids=["old"], include=["documents"])["documents"] == [
+        "Show me a happy face."]
+    store.store("User: I have no presentation.\nBlob: Sorry, I was wrong.",
+                {"timestamp": 2.0}, memory_id="correction")
+    assert store.episodic_user.count() == 2
+    assert [item["id"] for item in store.recall("presentation", top_k=2,
+                                                max_distance=0.5)] == ["correction"]
+    assert {item["id"] for item in store.recall("presentation", top_k=2,
+                                                 max_distance=1.5,
+                                                 search_full_episode=True)} == {"old", "correction"}
+
+    reopened = VectorStore(str(tmp_path))
+    assert reopened.episodic_user.count() == 2
+    reopened.episodic_user.upsert(ids=["orphan"], documents=["Orphan"],
+                                  metadatas=[{"timestamp": 0.0}])
+    reopened = VectorStore(str(tmp_path))
+    assert reopened.episodic_user.count() == 2
+    reopened.delete("old")
+    assert reopened.episodic_user.count() == 1
+
+
+def test_broad_memory_listing_skips_superseded_and_expired_records(tmp_path):
+    import time
+
+    store = VectorStore(str(tmp_path))
+    now = time.time()
+    store.store("I like cats.", {"source_timestamp": now - 20}, collection="semantic",
+                memory_id="old")
+    store.store("I like dogs.", {"source_timestamp": now - 10}, collection="semantic",
+                memory_id="new")
+    store.store("I used to like fish.", {"source_timestamp": now - 30,
+                                         "superseded_by": "new"}, collection="semantic",
+                memory_id="superseded")
+    store.store("I have an exam tomorrow.", {"expires_at": now + 86400},
+                collection="middle", memory_id="active")
+    store.store("I had a meeting yesterday.", {"expires_at": now - 86400},
+                collection="middle", memory_id="expired")
+
+    assert [item["id"] for item in store.list_active("semantic")] == ["new", "old"]
+    assert [item["id"] for item in store.list_active("middle")] == ["active"]
