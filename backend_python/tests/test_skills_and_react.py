@@ -2,6 +2,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 import pytest
+from PIL import Image
 from unittest.mock import AsyncMock, MagicMock
 from blob.skills.base import SkillResult
 from blob.skills.builtin.reminder import ReminderSkill
@@ -89,8 +90,108 @@ async def test_screen_capture_skill():
 
     result = await skill.async_execute({})
     assert result.success is True
-    assert "Test Terminal" in result.output
+    assert "Active Window: Terminal" in result.output
     assert "Hello World on Screen" in result.output
+
+
+@pytest.mark.asyncio
+async def test_screen_capture_masks_blob_terminal_and_keeps_visible_lesson():
+    skill = ScreenCaptureSkill()
+    sampler = MagicMock()
+    sampler.get_active_window_title.return_value = "ProjectBlob - Terminal"
+    sampler.privacy_shield.is_capture_blocked.return_value = False
+    sampler.privacy_shield.monitor.get_active_window.return_value = SimpleNamespace(
+        process_name="gnome-terminal-server", bbox=(0, 0, 30, 30))
+    sampler.capture = AsyncMock(return_value=Image.new("RGB", (100, 60), "white"))
+    seen_pixels = []
+
+    def read_screen(image):
+        seen_pixels.append(image.getpixel((5, 5)))
+        if len(seen_pixels) == 1:
+            return "Blob> Can u help me with whats on the screen\nBlob: Earlier reply\nBarkhausen Criterion"
+        return "Barkhausen Criterion\n|Aβ| = 1"
+
+    skill.set_sampler(sampler)
+    skill.set_ocr(SimpleNamespace(extract_text=read_screen))
+
+    result = await skill.async_execute({})
+
+    assert result.success
+    assert seen_pixels == [(255, 255, 255), (0, 0, 0)]
+    assert "Barkhausen Criterion" in result.output
+    assert "Blob>" not in result.output
+    assert "ProjectBlob" not in result.output
+
+
+@pytest.mark.asyncio
+async def test_screen_capture_filters_chat_without_window_geometry():
+    skill = ScreenCaptureSkill()
+    sampler = MagicMock()
+    sampler.get_active_window_title.return_value = "Terminal"
+    sampler.privacy_shield.is_capture_blocked.return_value = False
+    sampler.privacy_shield.monitor.get_active_window.return_value = None
+    sampler.capture = AsyncMock(return_value=Image.new("RGB", (20, 20), "white"))
+    skill.set_sampler(sampler)
+    skill.set_ocr(SimpleNamespace(extract_text=lambda image:
+        "Blob> Can u help me with whats on the screen\nBlob: Old answer\nBarkhausen Criterion"))
+
+    result = await skill.async_execute({})
+
+    assert result.success
+    assert "Barkhausen Criterion" in result.output
+    assert "Blob>" not in result.output
+    assert "Blob: Old answer" not in result.output
+
+
+@pytest.mark.asyncio
+async def test_screen_capture_reports_when_only_chat_is_visible():
+    skill = ScreenCaptureSkill()
+    sampler = MagicMock()
+    sampler.get_active_window_title.return_value = "Terminal"
+    sampler.privacy_shield.is_capture_blocked.return_value = False
+    sampler.privacy_shield.monitor.get_active_window.return_value = None
+    sampler.capture = AsyncMock(return_value=Image.new("RGB", (20, 20), "white"))
+    skill.set_sampler(sampler)
+    skill.set_ocr(SimpleNamespace(extract_text=lambda image: "Blob> What's on my screen?"))
+
+    result = await skill.async_execute({})
+
+    assert not result.success
+    assert "Move it aside" in result.output
+
+
+@pytest.mark.asyncio
+async def test_screen_help_sends_cleaned_ocr_to_model():
+    sampler = MagicMock()
+    sampler.get_active_window_title.return_value = "ProjectBlob - Terminal"
+    sampler.privacy_shield.is_capture_blocked.return_value = False
+    sampler.privacy_shield.monitor.get_active_window.return_value = None
+    sampler.capture = AsyncMock(return_value=Image.new("RGB", (20, 20), "white"))
+    screen = ScreenCaptureSkill()
+    screen.set_sampler(sampler)
+    screen.set_ocr(SimpleNamespace(extract_text=lambda image:
+        "Blob> Can u help me with whats on the screen\nBarkhausen Criterion\n|Aβ| = 1"))
+    registry = SkillRegistry()
+    registry.register(screen)
+    orchestrator = BlobOrchestrator.__new__(BlobOrchestrator)
+    orchestrator.guardrails = SimpleNamespace(sanitize_input=lambda text: text, filter_output=lambda text: text)
+    orchestrator.skill_registry = registry
+    orchestrator.screen_sampler = sampler
+    orchestrator.event_dispatcher = SimpleNamespace(broadcast=AsyncMock())
+    orchestrator.dispatch_emote = AsyncMock()
+    orchestrator.episodic = SimpleNamespace(add_episode=MagicMock())
+    orchestrator._build_context = lambda text: "Context"
+    orchestrator._build_system_prompt = lambda: "System"
+    orchestrator.llm = SimpleNamespace(generate_from_messages=AsyncMock(
+        return_value=SimpleNamespace(content="The Barkhausen Criterion describes sustained oscillation.")))
+
+    await orchestrator.handle_user_message(SimpleNamespace(
+        text="Can u help me with whats on the screen"))
+
+    observation = orchestrator.llm.generate_from_messages.call_args.args[0][-1]["content"]
+    assert "Barkhausen Criterion" in observation
+    assert "Blob>" not in observation
+    assert "ProjectBlob" not in observation
 
 
 @pytest.mark.asyncio

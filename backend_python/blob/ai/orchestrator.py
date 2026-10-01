@@ -500,7 +500,8 @@ class BlobOrchestrator:
             )
             messages.append({"role": "user", "content":
                 f"[Observation] A fresh screen capture succeeded. {screen_result.output}\n"
-                "Use the OCR text and window title as the only visual evidence. Name a study topic only if its words appear there. "
+                "Use the cleaned OCR text as visual evidence. The Blob chat terminal and its title are not a lesson topic. "
+                "Name a study topic only if its words appear in the cleaned OCR text. "
                 f"{study_guidance}"
                 "If the text is unclear, ask the user which part they mean. Do not search for files unless the user requested a file search. "
                 "The capture contains text, not a full visual description."})
