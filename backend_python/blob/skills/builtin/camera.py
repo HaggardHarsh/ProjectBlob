@@ -38,6 +38,9 @@ class CameraSkill(SkillInterface):
                 output = (f"Camera opened successfully. Scan: {result['faces']} face(s), "
                           f"{result['full_bodies']} full body/person detection(s). "
                           f"Recognized: {names}. Unknown faces: {result['unknown_faces']}.")
+                if result["faces"] == 0:
+                    output += (" No face was detected in that frame, so there was nothing to recognize. "
+                               "Face the camera in good light and try again.")
             elif action == "enroll":
                 name = args.get("name", "")
                 count = self.vision.enroll(name)

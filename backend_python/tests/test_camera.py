@@ -73,6 +73,19 @@ def test_scan_reports_enrolled_name_and_releases_camera(tmp_path):
     capture.release.assert_called_once()
 
 
+def test_zero_face_scan_explains_camera_opened_but_no_face_detected():
+    vision = SimpleNamespace(scan=lambda: {
+        "faces": 0, "full_bodies": 0, "recognized": [], "unknown_faces": 0,
+    })
+
+    result = CameraSkill(vision).execute({"action": "scan"})
+
+    assert result.success
+    assert "Camera opened successfully" in result.output
+    assert "No face was detected" in result.output
+    assert "good light" in result.output
+
+
 def test_camera_status_checks_a_frame_and_releases_camera(tmp_path):
     camera = CameraVision(SimpleNamespace(camera_enabled=True, camera_device_index=0, face_db_path=str(tmp_path)))
     capture = MagicMock()
@@ -108,6 +121,65 @@ async def test_explicit_camera_request_bypasses_llm():
 
 
 @pytest.mark.asyncio
+async def test_camera_retry_and_face_recognition_requests_repeat_direct_scan():
+    scan_result = "Camera opened successfully. Scan: 0 face(s). Recognized: none."
+    skill = SimpleNamespace(name="camera", async_execute=AsyncMock(return_value=SkillResult(
+        scan_result, True, "HAPPY")))
+    registry = SkillRegistry()
+    registry.register(skill)
+    orchestrator = BlobOrchestrator.__new__(BlobOrchestrator)
+    orchestrator.guardrails = SimpleNamespace(sanitize_input=lambda text: text)
+    orchestrator.skill_registry = registry
+    orchestrator.event_dispatcher = SimpleNamespace(broadcast=AsyncMock())
+    orchestrator.dispatch_emote = AsyncMock()
+    orchestrator.episodic = SimpleNamespace(add_episode=MagicMock())
+    orchestrator.llm = SimpleNamespace(generate_from_messages=AsyncMock())
+
+    requests = (
+        "Can you look at me with camera",
+        "try again",
+        "no try camera again",
+        "recognize my face with camera",
+    )
+    replies = [await orchestrator.handle_user_message(SimpleNamespace(text=text))
+               for text in requests]
+
+    assert replies == [scan_result] * len(requests)
+    assert skill.async_execute.await_count == len(requests)
+    assert all(call.args[0] == {"action": "scan", "name": ""}
+               for call in skill.async_execute.await_args_list)
+    orchestrator.llm.generate_from_messages.assert_not_awaited()
+    orchestrator.episodic.add_episode.assert_not_called()
+    assert [turn["content"] for turn in orchestrator._recent_turns if turn["role"] == "user"] == list(requests)
+
+
+@pytest.mark.asyncio
+async def test_try_again_does_not_reopen_camera_after_unrelated_turn():
+    skill = SimpleNamespace(name="camera", async_execute=AsyncMock(return_value=SkillResult(
+        "Camera opened successfully.", True, "HAPPY")))
+    registry = SkillRegistry()
+    registry.register(skill)
+    orchestrator = BlobOrchestrator.__new__(BlobOrchestrator)
+    orchestrator.guardrails = SimpleNamespace(sanitize_input=lambda text: text, filter_output=lambda text: text)
+    orchestrator.skill_registry = registry
+    orchestrator.screen_sampler = None
+    orchestrator.event_dispatcher = SimpleNamespace(broadcast=AsyncMock())
+    orchestrator.dispatch_emote = AsyncMock()
+    orchestrator.episodic = SimpleNamespace(add_episode=MagicMock())
+    orchestrator._build_context = lambda text: "Context"
+    orchestrator._build_system_prompt = lambda: "System"
+    orchestrator.llm = SimpleNamespace(generate_from_messages=AsyncMock(
+        return_value=SimpleNamespace(content="Okay.")))
+
+    await orchestrator.handle_user_message(SimpleNamespace(text="Look at me with camera"))
+    await orchestrator.handle_user_message(SimpleNamespace(text="Hi"))
+    await orchestrator.handle_user_message(SimpleNamespace(text="Try again"))
+
+    skill.async_execute.assert_awaited_once_with({"action": "scan", "name": ""})
+    assert orchestrator.llm.generate_from_messages.await_count == 2
+
+
+@pytest.mark.asyncio
 async def test_camera_permission_question_checks_actual_camera_status():
     skill = SimpleNamespace(name="camera", async_execute=AsyncMock(return_value=SkillResult(
         "Camera device 0 opened and returned a frame.", True, "HAPPY")))
@@ -128,7 +200,11 @@ async def test_camera_permission_question_checks_actual_camera_status():
 
 
 @pytest.mark.asyncio
-async def test_model_camera_call_gives_command_instructions_without_opening_camera():
+@pytest.mark.parametrize("question", [
+    "How do I use my camera?",
+    "How do I recognize my face with camera?",
+])
+async def test_model_camera_call_gives_command_instructions_without_opening_camera(question):
     skill = SimpleNamespace(name="camera", async_execute=AsyncMock())
     registry = SkillRegistry()
     registry.register(skill)
@@ -142,7 +218,7 @@ async def test_model_camera_call_gives_command_instructions_without_opening_came
     orchestrator.llm = SimpleNamespace(generate_from_messages=AsyncMock(return_value=SimpleNamespace(
         content='```tool_call\n{"tool": "camera", "args": {"action": "scan"}}\n```')))
 
-    answer = await orchestrator.handle_user_message(SimpleNamespace(text="How do I use my camera?"))
+    answer = await orchestrator.handle_user_message(SimpleNamespace(text=question))
 
     assert "/camera scan" in answer
     skill.async_execute.assert_not_awaited()

@@ -36,8 +36,21 @@ FACE_REQUEST = re.compile(
     re.IGNORECASE,
 )
 CAMERA_REQUEST = re.compile(
-    r"\b(?:open|turn on|switch on|start|use|scan|check|share|access|view|see|look through|look at|see through)\b"
-    r".{0,35}\b(?:camera|webcam)\b|\bturn\b.{0,15}\b(?:camera|webcam)\b\s+on\b",
+    r"\b(?:open|turn on|switch on|start|use|scan|check|share|access|view|see|look through|look at|see through|"
+    r"recognize|recognise|identify|detect)\b"
+    r".{0,35}\b(?:camera|webcam)\b|\bturn\b.{0,15}\b(?:camera|webcam)\b\s+on\b"
+    r"|\b(?:recognize|recognise|identify|scan|detect)\b.{0,20}\bmy\s+face\b",
+    re.IGNORECASE,
+)
+CAMERA_RETRY_EXPLICIT = re.compile(
+    r"\b(?:try|scan|check|use|open)\b.{0,20}\b(?:camera|webcam)\b.{0,15}\bagain\b"
+    r"|\b(?:camera|webcam)\b.{0,15}\bagain\b"
+    r"|\btry\s+again\s+(?:with\s+)?(?:the\s+|my\s+)?(?:camera|webcam)\b",
+    re.IGNORECASE,
+)
+CAMERA_RETRY_FOLLOWUP = re.compile(
+    r"^(?:(?:no|okay|ok)[, ]+|please\s+|can you\s+)?"
+    r"(?:try|scan|check)(?:\s+it)?\s+again[?.!]*$",
     re.IGNORECASE,
 )
 CAMERA_STATUS_REQUEST = re.compile(
@@ -229,6 +242,10 @@ class BlobOrchestrator:
         if self.screen_sampler and self.screen_sampler.privacy_shield.is_capture_blocked():
             return
         self.episodic.add_episode(user_text, reply)
+        self._remember_recent_turn(user_text, reply)
+
+    def _remember_recent_turn(self, user_text: str, reply: str) -> None:
+        """Keep direct tool results in this session without saving them as facts."""
         if not hasattr(self, "_recent_turns"):
             self._recent_turns = deque(maxlen=12)
         self._recent_turns.extend((
@@ -427,17 +444,24 @@ class BlobOrchestrator:
         started_at = time.perf_counter()
         clean_text = self.guardrails.sanitize_input(user_msg.text)
         stripped = clean_text.strip()
+        previous_camera_action = getattr(self, "_last_camera_action", None)
+        self._last_camera_action = None
         # Screen OCR is evidence from one capture, never a live view that can be
         # reused for another user message.
         self.last_screen_context = "No fresh screen capture for this request."
         if stripped and stripped.split(maxsplit=1)[0].lower() == "/camera":
-            return await self._handle_camera_command(stripped)
+            return await self._handle_camera_command(stripped, clean_text)
         if re.fullmatch(r"(?:camera|webcam)[.!?]*", stripped, re.IGNORECASE):
-            return await self._handle_camera_command("/camera scan")
+            return await self._handle_camera_command("/camera scan", clean_text)
         if CAMERA_STATUS_REQUEST.search(stripped) and not re.search(r"\b(?:don't|do not|never)\b", stripped, re.IGNORECASE):
-            return await self._handle_camera_command("/camera status")
-        if CAMERA_REQUEST.search(stripped) and not re.search(r"\b(?:don't|do not|never|how (?:do|can|to))\b", stripped, re.IGNORECASE):
-            return await self._handle_camera_command("/camera scan")
+            return await self._handle_camera_command("/camera status", clean_text)
+        if (previous_camera_action in {"scan", "status"} and
+                CAMERA_RETRY_FOLLOWUP.fullmatch(stripped)):
+            return await self._handle_camera_command(f"/camera {previous_camera_action}", clean_text)
+        if ((CAMERA_REQUEST.search(stripped) or CAMERA_RETRY_EXPLICIT.search(stripped)) and
+                not re.search(r"\b(?:don't|do not|never|how (?:do|can|to)|why (?:can't|cannot|won't))\b",
+                              stripped, re.IGNORECASE)):
+            return await self._handle_camera_command("/camera scan", clean_text)
         requested_face = _requested_face(stripped)
         if requested_face is not None:
             answer = f"Here's my {requested_face.lower()} face."
@@ -755,7 +779,7 @@ class BlobOrchestrator:
             )
         return await self._send_direct_response(MEMORY_CAPABILITY_RESPONSE, "HAPPY")
 
-    async def _handle_camera_command(self, command: str):
+    async def _handle_camera_command(self, command: str, user_text: str | None = None):
         parts = command.split(maxsplit=2)
         action = parts[1].lower() if len(parts) > 1 else "scan"
         name = parts[2] if len(parts) > 2 else ""
@@ -773,6 +797,9 @@ class BlobOrchestrator:
             except Exception:
                 logger.exception("Camera command failed")
                 result_text, success = "Camera command failed. Check the local logs.", False
+        self._last_camera_action = action if action in {"scan", "status"} else None
+        if user_text is not None:
+            self._remember_recent_turn(user_text, result_text)
         return await self._send_direct_response(result_text, "HAPPY" if success else "WORRIED")
 
     async def dispatch_emote(self, emote_str: str):
