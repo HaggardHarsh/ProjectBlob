@@ -9,7 +9,7 @@ from blob.skills.builtin.weather import WeatherSkill
 from blob.skills.builtin.screen_capture import ScreenCaptureSkill
 from blob.skills.builtin.file_search import FileSearchSkill
 from blob.skills.registry import SkillRegistry
-from blob.ai.orchestrator import BlobOrchestrator, SCREEN_REQUEST, _requested_face
+from blob.ai.orchestrator import BlobOrchestrator, SCREEN_REQUEST, _requested_face, _wants_screen_capture
 from blob.ai.guardrails import unsupported_personal_event_claim
 from blob.ai.context_budget import prompt_size_bytes
 from blob.ai.llm_engine import NebiusEngine
@@ -796,10 +796,11 @@ async def test_screen_question_captures_before_model_answer(capsys):
     orchestrator.llm = SimpleNamespace(generate_from_messages=AsyncMock(
         return_value=SimpleNamespace(content="Your Notes window shows a project plan. (HAPPY)")))
 
-    for request in ("What is happening on my screen?", "Can I share my screen?", "/screen"):
+    for request in ("What is happening on my screen?", "Can I share my screen?", "/screen",
+                    "What does this thing on my screen even mean. Help me understand it"):
         answer = await orchestrator.handle_user_message(SimpleNamespace(text=request))
 
-    assert screen.async_execute.await_count == 3
+    assert screen.async_execute.await_count == 4
     screen.async_execute.assert_awaited_with({})
     messages = orchestrator.llm.generate_from_messages.call_args.args[0]
     assert "Project plan" in messages[-1]["content"]
@@ -807,6 +808,80 @@ async def test_screen_question_captures_before_model_answer(capsys):
     assert orchestrator.event_dispatcher.broadcast.call_args.args[0].notification.text == answer
     orchestrator.dispatch_emote.assert_any_await("HAPPY")
     assert "(HAPPY)" not in capsys.readouterr().out
+
+
+def test_screen_followup_understands_go_ahead_without_ignoring_real_denial():
+    previous = [{"role": "user", "content":
+                 "What does this thing on my screen even mean. Help me understand it"},
+                {"role": "assistant", "content": "Could you describe your screen?"}]
+
+    assert _wants_screen_capture("You do not need my permission to capture, just do it", previous)
+    assert _wants_screen_capture("Go ahead", previous)
+    assert not _wants_screen_capture("Do not capture my screen", previous)
+    assert not _wants_screen_capture("Don't do it", previous)
+    assert not _wants_screen_capture("I don't need you to capture my screen", previous)
+    assert not _wants_screen_capture("How do I capture my screen?", previous)
+    assert not _wants_screen_capture("Why can't you capture my screen?", previous)
+    assert not _wants_screen_capture("Just do it", [])
+
+
+@pytest.mark.asyncio
+async def test_screen_go_ahead_after_old_permission_reply_captures():
+    screen = SimpleNamespace(name="screen_capture", description="Capture screen", async_execute=AsyncMock(
+        return_value=SkillResult("Active Window: Notes\n\nExtracted Screen Text:\nVoltage divider", True)))
+    registry = SkillRegistry()
+    registry.register(screen)
+    orchestrator = BlobOrchestrator.__new__(BlobOrchestrator)
+    orchestrator.guardrails = SimpleNamespace(sanitize_input=lambda text: text, filter_output=lambda text: text)
+    orchestrator.skill_registry = registry
+    orchestrator.screen_sampler = SimpleNamespace(privacy_shield=SimpleNamespace(is_capture_blocked=lambda: False))
+    orchestrator.event_dispatcher = SimpleNamespace(broadcast=AsyncMock())
+    orchestrator.dispatch_emote = AsyncMock()
+    orchestrator.episodic = SimpleNamespace(add_episode=MagicMock())
+    orchestrator._build_context = lambda text: "Context"
+    orchestrator._build_system_prompt = lambda: "System"
+    orchestrator._recent_turns = [
+        {"role": "user", "content": "What does this thing on my screen even mean?"},
+        {"role": "assistant", "content": "I need permission before I capture it."},
+    ]
+    orchestrator.llm = SimpleNamespace(generate_from_messages=AsyncMock(
+        return_value=SimpleNamespace(content="A voltage divider reduces the input voltage.")))
+
+    answer = await orchestrator.handle_user_message(SimpleNamespace(
+        text="You do not need my permission to capture, just do it"))
+
+    screen.async_execute.assert_awaited_once_with({})
+    assert "voltage divider" in answer.lower()
+    assert "Voltage divider" in orchestrator.llm.generate_from_messages.call_args.args[0][-1]["content"]
+
+
+@pytest.mark.asyncio
+async def test_successful_capture_retries_false_permission_denial():
+    screen = SimpleNamespace(name="screen_capture", description="Capture screen", async_execute=AsyncMock(
+        return_value=SkillResult("Active Window: Notes\n\nExtracted Screen Text:\nVoltage divider", True)))
+    registry = SkillRegistry()
+    registry.register(screen)
+    orchestrator = BlobOrchestrator.__new__(BlobOrchestrator)
+    orchestrator.guardrails = SimpleNamespace(sanitize_input=lambda text: text, filter_output=lambda text: text)
+    orchestrator.skill_registry = registry
+    orchestrator.screen_sampler = SimpleNamespace(privacy_shield=SimpleNamespace(is_capture_blocked=lambda: False))
+    orchestrator.event_dispatcher = SimpleNamespace(broadcast=AsyncMock())
+    orchestrator.dispatch_emote = AsyncMock()
+    orchestrator.episodic = SimpleNamespace(add_episode=MagicMock())
+    orchestrator._build_context = lambda text: "Context"
+    orchestrator._build_system_prompt = lambda: "System"
+    orchestrator.llm = SimpleNamespace(generate_from_messages=AsyncMock(side_effect=[
+        SimpleNamespace(content="I can't capture the screen without your permission."),
+        SimpleNamespace(content="A voltage divider splits voltage across two resistors."),
+    ]))
+
+    answer = await orchestrator.handle_user_message(SimpleNamespace(
+        text="What does this thing on my screen even mean?"))
+
+    screen.async_execute.assert_awaited_once_with({})
+    assert orchestrator.llm.generate_from_messages.await_count == 2
+    assert "splits voltage" in answer
+    assert "permission" not in answer.lower()
 
 
 @pytest.mark.asyncio

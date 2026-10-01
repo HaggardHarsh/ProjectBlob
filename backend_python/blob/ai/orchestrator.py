@@ -50,7 +50,30 @@ SCREEN_REQUEST = re.compile(
     r".{0,45}\b(?:my |the |this )?(?:screen|desktop|display)\b"
     r"|\b(?:screen|desktop|display)\b.{0,30}\b(?:what(?:'s| is) on|look|check|read|describe|capture|see)\b"
     r"|\b(?:help(?: me)?(?: with)?|explain|teach|understand|studying|reading)\b"
-    r".{0,100}\b(?:on|from)\s+(?:my|the|this)\s+(?:screen|desktop|display)\b",
+    r".{0,100}\b(?:on|from)\s+(?:my|the|this)\s+(?:screen|desktop|display)\b"
+    r"|\bwhat does\b.{0,80}\bon\s+(?:my|the|this)\s+(?:screen|desktop|display)\b",
+    re.IGNORECASE,
+)
+SCREEN_CAPTURE_FOLLOWUP = re.compile(
+    r"\b(?:capture(?: it)?|take (?:a )?screenshot|screenshot|go ahead|just do it|do it now)\b",
+    re.IGNORECASE,
+)
+SCREEN_CAPTURE_DENIAL = re.compile(
+    r"\b(?:don't|do not|never)\s+(?!(?:need|require)\b)"
+    r"(?:(?:please|want|you|to|me|my|the|a)\s+){0,4}"
+    r"(?:capture|record|screenshot|look at|see|view|read|share|take (?:a )?screenshot|do (?:it|that))\b"
+    r"|\b(?:don't|do not)\s+need\s+(?:(?:you\s+)?to\s+"
+    r"(?:capture|record|look at|see|view|read)|(?:a\s+)?(?:screenshot|screen capture))\b",
+    re.IGNORECASE,
+)
+SCREEN_PROCEDURE_QUESTION = re.compile(
+    r"^\s*(?:how (?:do|can) (?:i|you)|why (?:can't|cannot|won't) you)\b"
+    r".{0,80}\b(?:capture|record|take (?:a )?screenshot)\b",
+    re.IGNORECASE,
+)
+FALSE_SCREEN_PERMISSION_DENIAL = re.compile(
+    r"\b(?:can't|cannot|unable to|need(?: your)? permission)\b.{0,100}"
+    r"\b(?:capture|see|view|read|access)\b.{0,60}\b(?:screen|desktop|display)\b",
     re.IGNORECASE,
 )
 STUDY_HELP_REQUEST = re.compile(
@@ -144,6 +167,20 @@ def _requested_face(text: str) -> str | None:
         return None
     mood = match.group("mood").upper()
     return "MELTING" if mood == "MELTED" else mood
+
+
+def _wants_screen_capture(text: str, recent_turns) -> bool:
+    """Treat a screen question or its immediate go-ahead as a capture request."""
+    if SCREEN_CAPTURE_DENIAL.search(text) or SCREEN_PROCEDURE_QUESTION.search(text):
+        return False
+    if SCREEN_REQUEST.search(text) or text.casefold() in {"/screen", "/screenshot"}:
+        return True
+    if not SCREEN_CAPTURE_FOLLOWUP.search(text):
+        return False
+    previous_user = next((item["content"] for item in reversed(recent_turns)
+                          if item["role"] == "user"), "")
+    return bool(SCREEN_REQUEST.search(previous_user) or
+                previous_user.strip().casefold() in {"/screen", "/screenshot"})
 
 
 class BlobOrchestrator:
@@ -420,8 +457,7 @@ class BlobOrchestrator:
                          "weather" if WEATHER_INTENT.search(stripped) else None)
 
         screen_result = None
-        screen_requested = bool(SCREEN_REQUEST.search(stripped) or stripped.lower() in {"/screen", "/screenshot"})
-        capture_allowed = screen_requested and not re.search(r"\b(?:don't|do not|never)\b", stripped, re.IGNORECASE)
+        capture_allowed = _wants_screen_capture(stripped, getattr(self, "_recent_turns", ()))
         if capture_allowed:
             skill = self.skill_registry.get_skill("screen_capture")
             if skill is None:
@@ -500,6 +536,15 @@ class BlobOrchestrator:
             tool_name, tool_args = self._parse_tool_call(response_text)
             
             if tool_name is None:
+                if screen_result is not None and FALSE_SCREEN_PERMISSION_DENIAL.search(response_text):
+                    if iteration < MAX_REACT_ITERATIONS - 1:
+                        messages.append({"role": "assistant", "content": response_text})
+                        messages.append({"role": "user", "content":
+                            "[Observation] A fresh screen capture already succeeded. "
+                            "Do not ask for another chat permission. Explain the readable OCR text now."})
+                        continue
+                    final_response = "I captured your screen, but couldn't interpret the text reliably. Which part should we focus on?"
+                    break
                 if screen_result is not None and not file_search_ran and FILE_SEARCH_CLAIM.search(response_text):
                     if iteration < MAX_REACT_ITERATIONS - 1:
                         messages.append({"role": "assistant", "content": response_text})
@@ -644,6 +689,9 @@ class BlobOrchestrator:
             emote_str = "CONFUSED"
         if screen_result is not None and not file_search_ran and FILE_SEARCH_CLAIM.search(final_response):
             final_response = "I captured your screen, but couldn't identify the material confidently. Which line or term would you like help with?"
+            emote_str = "CONFUSED"
+        if screen_result is not None and FALSE_SCREEN_PERMISSION_DENIAL.search(final_response):
+            final_response = "I captured your screen, but couldn't interpret the text reliably. Which part should we focus on?"
             emote_str = "CONFUSED"
         if required_tool and direct_tool_emote is None:
             if required_tool == "reminder":
