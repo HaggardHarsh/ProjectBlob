@@ -234,12 +234,17 @@ class BlobOrchestrator:
             lines.append(f"- **{name}**: {skill.description}")
         return "\n".join(lines) if lines else "No tools available."
 
+    @staticmethod
+    def _current_clock_context() -> str:
+        """Supply a fresh local clock for ordinary chat and file analysis."""
+        now = datetime.now().astimezone()
+        clock = now.strftime("%A, %Y-%m-%d %H:%M %Z (%z)")
+        return f"\n## Current local date and time\n{clock}\n"
+
     def _build_system_prompt(self) -> str:
         """Build the full system prompt with skills injected."""
         skills_text = self._build_skills_text()
-        now = datetime.now().astimezone()
-        clock = now.strftime("%A, %Y-%m-%d %H:%M %Z (%z)")
-        return SYSTEM_PROMPT.replace("{skills}", skills_text) + f"\n## Current local date and time\n{clock}\n"
+        return SYSTEM_PROMPT.replace("{skills}", skills_text) + self._current_clock_context()
 
     def _remember_turn(self, user_text: str, reply: str) -> None:
         if self.screen_sampler and self.screen_sampler.privacy_shield.is_capture_blocked():
@@ -528,7 +533,7 @@ class BlobOrchestrator:
         if not hasattr(self, "_attachment_reader"):
             self._attachment_reader = AttachmentReader()
         max_bytes = getattr(self, "_max_prompt_bytes", DEFAULT_MAX_PROMPT_BYTES)
-        system = ATTACHMENT_SYSTEM_PROMPT
+        system = ATTACHMENT_SYSTEM_PROMPT + self._current_clock_context()
         # Reserve the actual question and message overhead before selecting evidence.
         # History can be dropped later, but neither this question nor file labels can.
         available = max_bytes - prompt_size_bytes([
