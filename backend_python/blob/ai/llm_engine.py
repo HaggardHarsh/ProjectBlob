@@ -56,10 +56,12 @@ class NebiusEngine(LLMEngine):
                         modality = str((extra.get("architecture") or {}).get("modality", "")).lower()
                         if "image" in modality or "-vl-" in item.id.lower():
                             candidates.append(item.id)
-                    # Prefer the smaller available vision model for desktop requests.
-                    self._vision_model = min(candidates, key=lambda name: (
-                        int(size.group(1)) if (size := re.search(r"(\d+)[Bb]", name)) else 1000,
-                        name), default=None)
+                    # Keep the selected chat model for files when it accepts images.
+                    # Switching to an unrelated smaller model can undo a quality upgrade.
+                    self._vision_model = (self.model_name if self.model_name in candidates else
+                        min(candidates, key=lambda name: (
+                            int(size.group(1)) if (size := re.search(r"(\d+)[Bb]", name)) else 1000,
+                            name), default=None))
                     self._vision_checked = True
                 except Exception:
                     logger.warning("Could not discover a vision model; using local OCR")

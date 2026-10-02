@@ -44,7 +44,7 @@ Blob is a living desktop companion — a small blue slime with expressive eyes t
 | Component | Technology |
 |-----------|-----------|
 | **LLM** | [Nebius AI](https://studio.nebius.ai) — cloud API, no local GPU needed |
-| **Model** | `Qwen/Qwen3-30B-A3B-Instruct-2507` via Nebius |
+| **Model** | `zai-org/GLM-5.3-Flash` via Nebius |
 | **Memory** | ChromaDB (local vector store) + relevance-gated recall |
 | **Camera** | Optional OpenCV face and full-body detection with local face enrollment |
 | **Frontend** | C++ · SDL2 renderer · optional X11 system tray |
@@ -119,11 +119,13 @@ Blob also saves private local source copies in `~/.blob/documents/` (override wi
 
 Use `/files saved` to list saved document IDs, `/files open <id>` to reopen one, and `/files forget <id>` or `/files forget all` to delete saved copies and clear recent conversation context. Original files remain untouched. Detaching a file keeps its saved copy; a later question about it can reopen it.
 
-The backend extracts PDF text locally and includes filenames and page numbers as source references. File analysis budgets excerpts, page labels, and images together within `BLOB_MAX_PROMPT_BYTES` (32,000 by default). Long documents and wide page ranges use relevant page excerpts; the supplied context identifies omitted pages and text. Image analysis discovers an available image-input model from your Nebius account. You can set `BLOB_VISION_MODEL` to an exact model ID or `off` to use local OCR only. Ordinary chat continues using `BLOB_MODEL_NAME`.
+The backend extracts PDF text locally and includes filenames and page numbers as source references. File analysis budgets excerpts, page labels, and images together within `BLOB_MAX_PROMPT_BYTES` (32,000 by default). Long documents and wide page ranges use relevant page excerpts; the supplied context identifies omitted pages and text. Image analysis reuses the chat model when the provider reports image-input support, otherwise discovers another available image model. You can set `BLOB_VISION_MODEL` to an exact model ID or `off` to use local OCR only. Ordinary chat continues using `BLOB_MODEL_NAME`.
 
 Visual requests send resized images, including up to three selected PDF page images per document and four images total. When no vision model is available, Blob can read text in images and scanned PDFs using the optional `backend_python[ocr]` installation. OCR alone cannot describe objects, colors, or diagrams. Unreadable, damaged, password protected, and oversized files produce an error instead of an invented explanation.
 
 Dropping files, opening saved files, and asking related questions shares selected file content with your cloud AI provider. The backend prints a notice on drops and reopening saved files. PDF parsing and OCR happen locally; original files are left in place. Source copies and extracted excerpts are stored separately from personal memory. Attachment answers are kept only in recent session context, so future recall uses the actual document rather than a potentially mistaken earlier answer.
+
+Your own terminal messages about files are saved to personal memory before analysis, unless the privacy shield is active. Explicit subject lists and programs are available immediately after a restart, without waiting for consolidation. File questions include the current saved user statements, and your subjects help select relevant PDF pages. A newer subject list replaces the old list; explicit subjects take priority over program defaults. Blob asks for the missing subjects or program when it cannot identify your exams. `/files forget` removes document copies, not separately saved user statements.
 
 To run the backend test suite, install `backend_python[dev]` and run `python -m pytest backend_python/tests -q` from the repository root.
 
@@ -170,9 +172,13 @@ To replace old semantic summaries, stop Blob and create a JSON file containing a
 
 Memory search runs locally and sends only a bounded view of relevant matches to Nebius. The default embedding distance cutoff rejects weak matches; recent access does not make an old memory more relevant. Ordinary chat recalls conversation episodes from the last seven days. Explicit history questions can search the full episode archive. Long records are excerpted around terms in the current question; the full records remain in ChromaDB. Ordinary replies use the user's side of retrieved episodes; Blob's old replies appear only when asked what Blob said. Recent turns are also sent in their original user and assistant roles during the current backend session. Blob uses the computer's local clock for current day and date questions.
 
+Academic declarations use exact user quotes in middle-term memory with a 30-day lifetime. Their current values are retrieved by topic for file questions, even when words such as "Monday" have little similarity to the subject names. Startup recovers these declarations from older saved user conversations when present, preserving their original dates. Earlier attachment chats did not archive user messages, so those missing statements must be shared once again.
+
+To check document memory with isolated temporary storage and synthetic timetables, run `venv/bin/python -m blob.evals.document_memory`. Add `--live --report /tmp/blob-document-memory.json` to test the configured provider model; this sends only synthetic PDF pages and test user statements and uses normal API billing. The evaluation checks restarts before consolidation, corrections, conflicting program information, no matching Monday subjects, and missing personal information.
+
 Set `BLOB_PROFILE_LATENCY=1` when launching the backend to log how long local preparation and the model call take for each reply. Blob caches the fixed tone preference search between memory changes, so repeat messages avoid that extra lookup.
 
-Blob defaults to Qwen3-30B-A3B-Instruct-2507. Set `BLOB_MODEL_NAME` in `.env` to select another Nebius model. If you select `nvidia/Nemotron-3_5-Lightning`, Blob uses its faster non-reasoning chat mode unless `BLOB_CHAT_THINKING=1` is set.
+Blob defaults to `zai-org/GLM-5.3-Flash`. It passed the synthetic document-memory evaluation, including subject corrections and conflicting program information, using PDF text and rendered page images. It has higher token prices than the previous Qwen3-30B default; latency and cost depend on the request. Set `BLOB_MODEL_NAME` in `.env` to select another Nebius model. If you select `nvidia/Nemotron-3_5-Lightning`, Blob uses its faster non-reasoning chat mode unless `BLOB_CHAT_THINKING=1` is set.
 
 Normal replies begin appearing in the `Blob>` terminal as Nebius streams them. Tool calls, reasoning tags, and emote tags stay hidden. Reminder and current-weather requests wait for a confirmed tool result; Blob shows that result directly and never reports an unexecuted reminder as set. If the provider does not support streaming, Blob falls back to a complete response.
 

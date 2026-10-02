@@ -441,3 +441,14 @@ async def test_vision_catalog_discovers_modality_and_does_not_change_chat_model(
 def test_vision_model_can_be_configured(tmp_path, monkeypatch):
     monkeypatch.setenv("BLOB_VISION_MODEL", "specific-model")
     assert BlobConfig.load(str(tmp_path / "missing.yaml")).vision_model_name == "specific-model"
+
+
+@pytest.mark.asyncio
+async def test_image_analysis_keeps_the_selected_model_when_it_supports_images():
+    engine = NebiusEngine("test", "http://localhost", "selected-model")
+    engine.client = SimpleNamespace(models=SimpleNamespace(list=AsyncMock(return_value=SimpleNamespace(data=[
+        SimpleNamespace(id="smaller-3B", model_extra={"architecture": {"modality": "text+image->text"}}),
+        SimpleNamespace(id="selected-model", model_extra={"architecture": {"modality": "text+image->text"}}),
+    ]))))
+    assert (await engine.vision_engine()).model_name == "selected-model"
+    assert (await engine.vision_engine("explicit-model")).model_name == "explicit-model"

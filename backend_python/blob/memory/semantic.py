@@ -3,7 +3,7 @@ import hashlib
 import logging
 import re
 import time
-from blob.memory.lifecycle import middle_expiry, topic_key
+from blob.memory.lifecycle import ACADEMIC_TOPICS, MIDDLE_LIFETIME_DAYS, middle_expiry, topic_key
 
 logger = logging.getLogger(__name__)
 TEMPORARY_FACT = re.compile(
@@ -46,6 +46,87 @@ class SemanticMemory:
         self.vector_store = vector_store
         self.llm = llm_engine
 
+    def remember_explicit_statements(self, message: str, source_episode_id=None, source_timestamp=None):
+        """Save explicit academic selectors without waiting for model consolidation."""
+        timestamp = time.time() if source_timestamp is None else source_timestamp
+        for sentence in _user_sentences([message], include_temporary=True).values():
+            topic = topic_key(sentence)
+            if topic not in ACADEMIC_TOPICS or sentence.endswith("?"):
+                continue
+            metadata = {"type": "middle", "tier": "middle",
+                        "timestamp": timestamp, "source_timestamp": timestamp,
+                        "pinned": False, "grounded": True, "topic_key": topic,
+                        "expires_at": timestamp + MIDDLE_LIFETIME_DAYS * 86400}
+            if isinstance(source_episode_id, str):
+                metadata["source_episode_id"] = source_episode_id
+            memory_id = hashlib.sha256(_sentence_key(sentence).encode()).hexdigest()
+            self.vector_store.store_grounded(sentence, metadata, "middle", memory_id)
+
+    def document_context(self, query: str, *, max_bytes=1400) -> str:
+        """Give file analysis exact user quotes, with current academic selectors first."""
+        selectors = []
+        for tier in ("middle", "semantic"):
+            selectors.extend(self.vector_store.list_active(tier, limit=4, topic_keys=ACADEMIC_TOPICS))
+        selectors = [item for item in selectors if (item.get("metadata") or {}).get("grounded") is True]
+        selectors.sort(key=lambda item: (item.get("metadata") or {}).get("source_timestamp", 0), reverse=True)
+        # Metadata lookup ensures an exam question retrieves subjects even when
+        # their vocabulary is distant from "Monday" in embedding space.
+        selected_topics = {item["metadata"].get("topic_key") for item in selectors}
+        facts = self.recall_middle(query, top_k=3, max_distance=1.35) + self.recall_facts(query, top_k=3, max_distance=1.35)
+        candidates = [("Current user statement", item["text"]) for item in selectors]
+        for item in facts:
+            meta = item.get("metadata") or {}
+            if (meta.get("grounded") is True and meta.get("topic_key") not in selected_topics and
+                    topic_key(item["text"]) not in ACADEMIC_TOPICS):
+                candidates.append(("Saved user statement", item["text"]))
+        episodes = self.vector_store.recall(query, top_k=3, collection="episodic", max_distance=1.35,
+                                            min_timestamp=time.time() - 7 * 86400)
+        for episode in episodes:
+            text = episode["text"]
+            if not text.startswith("User: "):
+                continue
+            user = text.partition("\nBlob: ")[0].removeprefix("User: ")
+            for sentence in _user_sentences([user], include_temporary=True).values():
+                if (sentence.endswith("?") or re.match(
+                        r"^(?:who|what|when|where|why|how|which|can|could|would|do|does|did|is|are|will)\b", sentence, re.I)):
+                    continue
+                if topic_key(sentence) not in selected_topics and topic_key(sentence) not in ACADEMIC_TOPICS:
+                    candidates.append(("Earlier user statement", sentence))
+        lines, seen, used = [], set(), 0
+        for label, quote in candidates:
+            key = _sentence_key(quote)
+            if key in seen:
+                continue
+            seen.add(key)
+            line = f"{label}: {quote}"
+            size = len(line.encode("utf-8")) + 1
+            if used + size <= max_bytes:
+                lines.append(line)
+                used += size
+        return "\n".join(lines)
+
+    def backfill_explicit_statements(self):
+        """Recover clear declarations from preexisting user-authored episode archives."""
+        data = self.vector_store.episodic.get(include=["documents", "metadatas"])
+        newest = {}
+        for episode_id, text, metadata in zip(data["ids"], data["documents"], data["metadatas"]):
+            if not text.startswith("User: "):
+                continue
+            timestamp = (metadata or {}).get("timestamp", 0)
+            if not timestamp:
+                continue
+            for sentence in _user_sentences([text.partition("\nBlob: ")[0][6:]], include_temporary=True).values():
+                topic = topic_key(sentence)
+                if (topic in ACADEMIC_TOPICS and not sentence.endswith("?") and
+                        (topic not in newest or timestamp >= newest[topic][0])):
+                    newest[topic] = (timestamp, sentence, episode_id)
+        for timestamp, sentence, episode_id in newest.values():
+            memory_id = hashlib.sha256(_sentence_key(sentence).encode()).hexdigest()
+            existing = self.vector_store.middle.get(ids=[memory_id], include=["metadatas"])
+            if existing["ids"] and (existing["metadatas"][0] or {}).get("source_timestamp", 0) >= timestamp:
+                continue
+            self.remember_explicit_statements(sentence, episode_id, timestamp)
+
     async def summarize_and_store(self, episodes: list) -> bool:
         if not episodes:
             return True
@@ -84,6 +165,9 @@ class SemanticMemory:
                 number = int(token.lstrip("LlMm"))
                 if 1 <= number <= len(source_sentences):
                     source, episode = source_sentences[number - 1]
+                    topic = topic_key(source)
+                    if topic in ACADEMIC_TOPICS:
+                        tier = "middle"
                     if tier == "semantic" and is_temporary_fact(source):
                         continue
                     normalized = _sentence_key(source)
@@ -97,11 +181,11 @@ class SemanticMemory:
                                 "pinned": tier == "semantic", "grounded": True}
                     if episode.get("id"):
                         metadata["source_episode_id"] = episode["id"]
-                    topic = topic_key(source)
                     if topic:
                         metadata["topic_key"] = topic
                     if tier == "middle":
-                        metadata["expires_at"] = middle_expiry(source, source_timestamp)
+                        metadata["expires_at"] = (source_timestamp + MIDDLE_LIFETIME_DAYS * 86400 if topic in ACADEMIC_TOPICS
+                                                  else middle_expiry(source, source_timestamp))
                     self.vector_store.store_grounded(source, metadata, tier, memory_id)
             return True
         except Exception:

@@ -14,10 +14,32 @@ _LIKE = re.compile(r"\bI\s+(?:(?:no longer|don't|do not|still)\s+)?(?:like|love|
 _EVENT = re.compile(r"\b(?:exam|test|meeting|appointment|interview|deadline|flight|trip|presentation)s?\b", re.I)
 _WEEKDAY = re.compile(r"\b(?:(next|this)\s+)?(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b", re.I)
 _ON_DATE = re.compile(r"\bon\s+(\d{4}-\d{2}-\d{2})\b", re.I)
+_ACADEMIC_PREFIX = r"^\s*(?:(?:dude|bro|hey|actually|no|correction|update)[,:\s]+)*"
+_SUBJECTS = re.compile(
+    _ACADEMIC_PREFIX + r"my\s+(?:(?:current|new|mid[ -]?(?:sem(?:ester)?s?|terms?)|exam)\s+)?"
+    r"(?:subjects?|courses?|subject list|course list)\s+(?:are|is|include)\b", re.I)
+_PROGRAM = re.compile(
+    _ACADEMIC_PREFIX + r"(?:my\s+(?:degree|major|program|programme|academic branch)\s+is\b"
+    r"|(?:i am|i['’]m)\s+(?:in|studying)\s+(?:b\.?\s?tech|b\.?\s?sc|m\.?\s?tech|ece|cse|eee|cve|mce)\b"
+    r"|my\s+branch\s+is\s+(?:ece|cse|eee|cve|mce|civil|mechanical|electrical|electronics|computer)\b)", re.I)
+ACADEMIC_TOPICS = ("education:subjects", "education:program")
+
+
+def academic_selector_known(statement: str) -> bool:
+    """A declaration of uncertainty is not an actual course or program selector."""
+    if topic_key(statement) not in ACADEMIC_TOPICS:
+        return False
+    return not re.search(
+        r"\b(?:are|is|include)\s+(?:now\s+)?(?:unknown|none|empty|unsure|unconfirmed|not (?:known|sure|decided)|no longer)\b",
+        statement, re.I)
 
 
 def topic_key(text: str) -> str:
     """Identify a few explicit single-topic statements that can supersede each other."""
+    if _SUBJECTS.search(text):
+        return "education:subjects"
+    if _PROGRAM.search(text):
+        return "education:program"
     match = _FAVORITE.search(text)
     if match:
         return "favorite:" + " ".join(match.group(1).casefold().split())

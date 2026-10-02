@@ -11,7 +11,7 @@ except ImportError:
 
 class BlobConfig(BaseModel):
     ipc_address: str = Field(default="localhost:50051")
-    model_name: str = Field(default="Qwen/Qwen3-30B-A3B-Instruct-2507")
+    model_name: str = Field(default="zai-org/GLM-5.3-Flash")
     nebius_api_key: str = Field(default=os.environ.get("NEBIUS_API_KEY", ""))
     nebius_base_url: str = Field(default="https://api.studio.nebius.ai/v1")
     max_prompt_bytes: int = Field(default=32000, ge=4096)

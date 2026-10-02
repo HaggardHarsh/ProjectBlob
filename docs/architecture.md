@@ -274,10 +274,30 @@ memory without original image metadata. The prompt budget counts image context
 separately from base64 transport bytes. The model receives documents as source
 material and cannot execute tools through the attachment analysis path.
 
-Nebius model discovery checks the provider's input modality and selects an
-available vision model for attachment requests; `BLOB_VISION_MODEL` can override
+Nebius model discovery checks the provider's input modality and keeps the selected
+chat model when it accepts images, otherwise selects an available vision model;
+`BLOB_VISION_MODEL` can override
 or disable discovery. With no vision model, local OCR supplies text only.
 Attachment analysis stays outside episodic storage and memory consolidation.
+User-authored terminal messages take a separate path: save a user-only episode
+before calling the provider, then immediately index explicit subject/program
+declarations as grounded middle-term quotes. Synthetic file-drop overviews do
+not enter personal memory. Privacy-shield checks apply to these writes.
+
+File prompts reserve space for bounded recalled user statements before budgeting
+source evidence. Active academic declarations are looked up by topic rather than
+relying on similarity between a weekday question and subject names. Grounded
+related facts and recent user-only episodes fill remaining personal-context space;
+old assistant analyses never supply user facts. New declarations supersede older
+ones using source timestamps, including when consolidation runs out of order.
+Academic quotes expire after 30 days. Startup backfills explicit declarations from
+existing user-authored archives without resetting their age. An archived question
+or assistant's branch inference cannot supersede a user declaration.
+
+Saved subjects also rank PDF pages and excerpt locations; explicit requested page
+ranges still take precedence. Subject lists constrain eligible course rows even
+when a program default conflicts. Personal exam questions with no known selector
+produce a clarification instead of an unsupported branch assignment.
 
 `DocumentLibrary` saves the exact validated bytes read by `AttachmentReader` in
 private directories and indexes filenames and bounded source excerpts in SQLite.

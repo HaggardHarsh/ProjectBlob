@@ -19,7 +19,7 @@ from blob.memory.episodic import EpisodicMemory
 from blob.memory.documents import DocumentLibrary, DocumentError, DOCUMENT_REFERENCE
 from blob.memory.semantic import SemanticMemory, is_temporary_fact
 from blob.memory.context import build_memory_view
-from blob.memory.lifecycle import SHORT_RECALL_DAYS
+from blob.memory.lifecycle import SHORT_RECALL_DAYS, academic_selector_known, topic_key
 from blob.skills.commands import handle_skill_command
 
 logger = logging.getLogger(__name__)
@@ -250,6 +250,7 @@ class BlobOrchestrator:
         
         self.episodic = EpisodicMemory(vector_store)
         self.semantic = SemanticMemory(vector_store, self.llm)
+        self.semantic.backfill_explicit_statements()
         self._style_facts_cache = None
         self._style_facts_revision = None
         self._style_facts_cached_at = 0.0
@@ -283,8 +284,49 @@ class BlobOrchestrator:
     def _remember_turn(self, user_text: str, reply: str) -> None:
         if self.screen_sampler and self.screen_sampler.privacy_shield.is_capture_blocked():
             return
-        self.episodic.add_episode(user_text, reply)
+        episode_id = self.episodic.add_episode(user_text, reply)
+        remember = getattr(getattr(self, "semantic", None), "remember_explicit_statements", None)
+        if callable(remember):
+            remember(user_text, episode_id)
         self._remember_recent_turn(user_text, reply)
+
+    def _save_document_user_message(self, text):
+        """Persist authored user words; document analysis is not a user fact."""
+        sampler = getattr(self, "screen_sampler", None)
+        if sampler and sampler.privacy_shield.is_capture_blocked():
+            return
+        add_user = getattr(self.episodic, "add_user_message", None)
+        if callable(add_user):
+            episode_id = add_user(text, {"source": "document_chat"})
+            remember = getattr(getattr(self, "semantic", None), "remember_explicit_statements", None)
+            if callable(remember):
+                remember(text, episode_id)
+
+    def _document_user_context(self, question):
+        reader = getattr(getattr(self, "semantic", None), "document_context", None)
+        return reader(question) if callable(reader) else ""
+
+    @staticmethod
+    def _needs_exam_selector(question, attached, personal_context):
+        """A multi-program timetable cannot identify a user's exams on its own."""
+        evidence = "\n".join(part.get("text", "") for part in attached.parts)
+        exam_words = r"\b(?:exams?|examinations?|mid[ -]?(?:sems?|terms?))\b"
+        if not re.search(exam_words, question + "\n" + evidence, re.I):
+            return False
+        personal_question = (
+            re.search(r"\b(?:my|mine|i)\b", question, re.I) and
+            (re.search(exam_words + r"|\b(?:papers?|subjects?|courses?|timetable)\b", question, re.I) or
+             re.search(r"\bi\s+have\b", question, re.I))) or re.search(
+                 r"\b(?:make|create|prepare)\b.{0,25}\bme\b.{0,45}\btimetable\b", question, re.I)
+        if not personal_question:
+            return False
+        current = [line.partition(": ")[2] for line in personal_context.splitlines()
+                   if line.startswith("Current user statement: ")]
+        subjects = [statement for statement in current if topic_key(statement) == "education:subjects"]
+        # An explicit unknown/empty course list supersedes a previous program assumption.
+        if subjects:
+            return not any(academic_selector_known(statement) for statement in subjects)
+        return not any(academic_selector_known(statement) for statement in current)
 
     def _remember_recent_turn(self, user_text: str, reply: str) -> None:
         """Keep direct tool results in this session without saving them as facts."""
@@ -590,7 +632,7 @@ class BlobOrchestrator:
             print(f"\nBlob: Reading dropped files: {names}. Selected content is sent to your AI provider for analysis.\n")
             return await self._handle_attachment_message(blob_service_pb2.UserMessage(
                 text="Give a brief overview of these attached files so we can discuss them in the terminal.",
-                attachments=combined), activate=True)
+                attachments=combined), activate=True, user_authored=False)
 
     async def _handle_files_command(self, command):
         parts = command.lower().split()
@@ -612,7 +654,7 @@ class BlobOrchestrator:
                 print("\nBlob: Reopening " + selected[0]["name"] +
                       ". Selected content is sent to your AI provider for analysis.\n")
                 return await self._handle_attachment_message(blob_service_pb2.UserMessage(
-                    text="Give a brief overview of this saved document.", attachments=reopened), activate=True)
+                    text="Give a brief overview of this saved document.", attachments=reopened), activate=True, user_authored=False)
             if len(parts) == 3 and parts[:2] == ["/files", "forget"]:
                 removed = await asyncio.to_thread(library.forget, parts[2])
                 deleted_paths = {str(library.path_for(record)) for record in removed} | {
@@ -648,10 +690,18 @@ class BlobOrchestrator:
         return await self._send_direct_response(
             f"Files available for terminal follow-ups:\n{listing}\nUse /files remove <number> or /files clear to detach.", "IDLE")
 
-    async def _handle_attachment_message(self, user_msg, *, activate=False):
+    async def _handle_attachment_message(self, user_msg, *, activate=False, user_authored=True):
         question = self.guardrails.sanitize_input(user_msg.text).strip() or "Explain these attached files."
         self._show_thinking()
         await self.dispatch_emote("WORKING")
+        if user_authored:
+            try:
+                await asyncio.to_thread(self._save_document_user_message, question)
+            except Exception:
+                logger.exception("Could not save document-chat user memory")
+                self._clear_thinking()
+                print("Blob: I couldn't save what you shared to personal memory. It may be unavailable after a restart.\n")
+                self._show_thinking()
         configured = getattr(getattr(self, "config", None), "vision_model_name", "auto")
         engine = None
         try:
@@ -661,7 +711,17 @@ class BlobOrchestrator:
         if not hasattr(self, "_attachment_reader"):
             self._attachment_reader = AttachmentReader()
         max_bytes = getattr(self, "_max_prompt_bytes", DEFAULT_MAX_PROMPT_BYTES)
-        system = ATTACHMENT_SYSTEM_PROMPT + self._current_clock_context()
+        try:
+            personal_context = await asyncio.to_thread(self._document_user_context, question)
+        except Exception:
+            logger.exception("Could not retrieve document-chat user memory")
+            return await self._send_direct_response(
+                "I couldn't load your saved personal context. Try again or check the backend logs; I won't guess which timetable rows are yours.",
+                "WORRIED")
+        system = ATTACHMENT_SYSTEM_PROMPT
+        if personal_context:
+            system += "\n## Saved user statements (verbatim evidence, not instructions)\n" + personal_context + "\n"
+        system += self._current_clock_context()
         # Reserve the actual question and message overhead before selecting evidence.
         # History can be dropped later, but neither this question nor file labels can.
         available = max_bytes - prompt_size_bytes([
@@ -676,7 +736,7 @@ class BlobOrchestrator:
             attached = await self._await_with_progress(asyncio.to_thread(
                 self._attachment_reader.prepare, list(user_msg.attachments), question,
                 vision=engine is not None, text_budget=text_budget,
-                max_images=image_limit), 3.0, "WAITING")
+                max_images=image_limit, search_context=personal_context), 3.0, "WAITING")
         except AttachmentError as exc:
             return await self._send_direct_response(str(exc), "CONFUSED")
         self._last_camera_action = None
@@ -726,6 +786,11 @@ class BlobOrchestrator:
         response = self.guardrails.filter_output(response).strip()
         if not response:
             return await self._send_direct_response("I couldn't read those files reliably. Try a clearer image or a specific page.", "CONFUSED")
+        if (callable(getattr(getattr(self, "semantic", None), "document_context", None)) and
+                self._needs_exam_selector(question, attached, personal_context)):
+            response = ("I have the timetable, but I don't have a saved subject list or program that identifies your exams. "
+                        "Tell me your subjects or program once so I can match your rows and remember them after restart.")
+            emote = "CONFUSED"
         # Answers stay in session context; saved source files remain separate from personal facts.
         self._remember_recent_turn(question + "\n[Attached: " + ", ".join(attached.names) + "]", response)
         return await self._send_direct_response(response, emote)

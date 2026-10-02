@@ -1,28 +1,32 @@
 import chromadb
 import logging
 import math
+from contextlib import nullcontext
 import os
 from pathlib import Path
 import uuid
 import time
+import threading
 from blob.memory.decay import DecayAlgorithm
 from blob.memory.lifecycle import is_active, topic_key
 
 logger = logging.getLogger(__name__)
 
 class VectorStore:
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: str, *, embedding_function=None):
         path = Path(db_path).expanduser()
         path.mkdir(mode=0o700, parents=True, exist_ok=True)
         os.chmod(path, 0o700)
         self.client = chromadb.PersistentClient(path=str(path))
-        self.episodic = self.client.get_or_create_collection("episodic")
+        embedding_options = {"embedding_function": embedding_function} if embedding_function is not None else {}
+        self.episodic = self.client.get_or_create_collection("episodic", **embedding_options)
         # Search user words separately so an invented assistant reply cannot
         # make an unrelated conversation look like a relevant user memory.
-        self.episodic_user = self.client.get_or_create_collection("episodic_user")
-        self.semantic = self.client.get_or_create_collection("semantic")
-        self.middle = self.client.get_or_create_collection("middle")
+        self.episodic_user = self.client.get_or_create_collection("episodic_user", **embedding_options)
+        self.semantic = self.client.get_or_create_collection("semantic", **embedding_options)
+        self.middle = self.client.get_or_create_collection("middle", **embedding_options)
         self.decay_algo = DecayAlgorithm()
+        self._write_lock = threading.RLock()
         self.semantic_revision = 0
         self._backfill_episode_index()
 
@@ -117,6 +121,10 @@ class VectorStore:
 
     def store_grounded(self, text: str, metadata: dict, collection: str, memory_id: str):
         """Store an exact user quote and supersede older facts on the same clear topic."""
+        with getattr(self, "_write_lock", nullcontext()):
+            return self._store_grounded(text, metadata, collection, memory_id)
+
+    def _store_grounded(self, text: str, metadata: dict, collection: str, memory_id: str):
         if collection not in {"semantic", "middle"}:
             raise ValueError("Grounded memories must be long or middle term")
         values = dict(metadata)
@@ -207,11 +215,12 @@ class VectorStore:
             self.semantic_revision += 1
         return len(expired)
 
-    def list_active(self, collection: str, limit: int = 20) -> list:
+    def list_active(self, collection: str, limit: int = 20, topic_keys: tuple[str, ...] | None = None) -> list:
         """List current facts for broad questions that have no useful search terms."""
         if collection not in {"semantic", "middle"} or limit <= 0:
             return []
-        data = self._collection(collection).get(include=["documents", "metadatas"])
+        filters = {"where": {"topic_key": {"$in": list(topic_keys)}}} if topic_keys else {}
+        data = self._collection(collection).get(include=["documents", "metadatas"], **filters)
         current_time = time.time()
         items = [
             {"id": item_id, "text": doc, "metadata": dict(meta or {})}

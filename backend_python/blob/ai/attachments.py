@@ -21,6 +21,9 @@ MAX_PIXELS = 40_000_000
 IMAGE_EDGE = 1600
 SUPPORTED_IMAGES = {".png", ".jpg", ".jpeg", ".webp"}
 PDF_LOCK = threading.Lock()  # PDFium must never run concurrently in different threads.
+SEARCH_STOP_WORDS = frozenset("my the are and for from this that with subjects subject courses course current user statement saved earlier dude bro new program degree".split())
+QUESTION_STOP_WORDS = SEARCH_STOP_WORDS | frozenset("what which when how can could would should will have has exam exams examinations mid sem term timetable schedule explain tell about list page pages please".split())
+WEEKDAYS = frozenset("monday tuesday wednesday thursday friday saturday sunday".split())
 
 
 class AttachmentError(ValueError):
@@ -42,12 +45,13 @@ class AttachmentContext:
     sources: list[AttachmentSource] = field(default_factory=list)
 
 
-def _excerpt(text: str, question: str, budget: int) -> str:
+def _excerpt(text: str, question: str, budget: int, preferred_terms=()) -> str:
     encoded = text.encode("utf-8")
     if len(encoded) <= budget:
         return text
     terms = [word for word in re.findall(r"\w+", question.lower()) if len(word) > 3]
-    positions = [text.lower().find(term) for term in terms if term in text.lower()]
+    preferred = [text.lower().find(term) for term in preferred_terms if term in text.lower()]
+    positions = preferred or [text.lower().find(term) for term in terms if term in text.lower()]
     start = max(0, min(positions, default=0) - 200)
     marker = "[Excerpt; other text omitted]\n"
     excerpt = text[start:].encode("utf-8")[:max(0, budget - len(marker.encode("utf-8")))].decode("utf-8", errors="ignore")
@@ -64,7 +68,7 @@ class AttachmentReader:
         self.ocr = ocr or OCRProcessor()
 
     def prepare(self, paths, question: str, *, vision: bool, text_budget: int = 8000,
-                max_images: int = MAX_IMAGES):
+                max_images: int = MAX_IMAGES, search_context: str = ""):
         if len(paths) > MAX_FILES:
             raise AttachmentError(f"Attach up to {MAX_FILES} files at a time.")
         files = []
@@ -113,7 +117,8 @@ class AttachmentReader:
                 if path.suffix.lower() == ".pdf":
                     with PDF_LOCK:
                         used = self._pdf(data, path.name, question, budget, vision,
-                                         max(0, image_slots - remaining_images), file_result)
+                                         max(0, image_slots - remaining_images), file_result,
+                                         search_context=search_context)
                     image_slots -= used
                 else:
                     self._image(data, path.name, question, budget, image_slots > 0, file_result)
@@ -184,7 +189,7 @@ class AttachmentReader:
         finally:
             image.close()
 
-    def _pdf(self, data, name, question, budget, vision, image_slots, result):
+    def _pdf(self, data, name, question, budget, vision, image_slots, result, *, search_context=""):
         try:
             import pypdfium2 as pdfium
         except ImportError as exc:
@@ -211,11 +216,18 @@ class AttachmentReader:
             if any(index < 0 or index >= count for index in requested):
                 raise AttachmentError(f"{name} has {count} pages. Choose a page within that range.")
             terms = {word for word in re.findall(r"\w+", question.lower()) if len(word) > 3}
+            preferred = {word for word in re.findall(r"\w+", search_context.lower())
+                         if len(word) >= 3 and word not in SEARCH_STOP_WORDS}
+            explicit = {word for word in re.findall(r"\w+", question.lower())
+                        if len(word) >= 3 and word not in QUESTION_STOP_WORDS}
             scores = [sum(text.lower().count(word) for word in terms) for text in texts]
+            explicit_scores = [sum(word in text.lower() for word in explicit) for text in texts]
+            preferred_scores = [sum(word in text.lower() for word in preferred) for text in texts]
+            rank = lambda index: (-explicit_scores[index], -preferred_scores[index], -scores[index], index)
             if requested:
                 selected = sorted(set(requested))
-            elif any(scores):
-                selected = sorted(sorted(range(count), key=lambda i: (-scores[i], i))[:6])
+            elif any(scores) or any(preferred_scores) or any(explicit_scores):
+                selected = sorted(sorted(range(count), key=rank)[:6])
             else:
                 # Include all short documents; spread excerpts across long ones.
                 selected = list(range(count)) if count <= 6 else sorted({round(i * (count - 1) / 5) for i in range(6)})
@@ -225,8 +237,8 @@ class AttachmentReader:
             for limit in range(len(candidates), 0, -1):
                 if limit == len(candidates):
                     selected = candidates
-                elif any(scores[i] for i in candidates):
-                    selected = sorted(sorted(candidates, key=lambda i: (-scores[i], i))[:limit])
+                elif any(scores[i] or preferred_scores[i] or explicit_scores[i] for i in candidates):
+                    selected = sorted(sorted(candidates, key=rank)[:limit])
                 elif limit == 1:
                     selected = candidates[:1]
                 else:
@@ -259,7 +271,8 @@ class AttachmentReader:
                                     text = f"[Unreadable page: {exc}]"
                 readable |= bool(text) and not text.startswith("[Unreadable page:")
                 self._text(result, f"\n{name}, page {index + 1}:\n"
-                           + (_excerpt(text, question, page_budget) if text
+                           + (_excerpt(text, question, page_budget, preferred_terms=(
+                               {word for word in explicit - WEEKDAYS if not word.isdigit()} or preferred)) if text
                               else "[No text layer. Use the supplied page image.]"))
                 if index in visual_pages:
                     with closing(document[index]) as page:
