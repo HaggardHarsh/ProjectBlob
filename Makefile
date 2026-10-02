@@ -71,7 +71,7 @@ test: test-backend test-frontend
 
 test-backend:
 	@echo "═══ Running Python Tests ═══"
-	cd $(BACKEND_DIR) && $(PYTHON) tests/run_tests.py
+	$(PYTHON) -m pytest $(BACKEND_DIR)/tests -q
 
 test-frontend:
 	@echo "═══ Running C++ Tests ═══"

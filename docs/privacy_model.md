@@ -7,6 +7,23 @@ Blob stores conversation memory in a local ChromaDB database. New installations 
 Nebius API: normal chat sends the user's message, recalled memories, and the
 current context to that service. Blob does not currently offer a local LLM mode.
 
+## User-selected attachments
+
+The desktop panel reads only the files you select or drop onto Blob. Sending
+shares PDF text excerpts and, when a vision model is available, resized images
+or selected PDF page images with Nebius. The panel displays this before sending.
+PDF extraction, rendering, and fallback OCR happen locally. Blob does not copy,
+move, or modify original files, and image payloads omit original metadata.
+
+Attachment contents and answers are kept outside automatic episodic storage and
+personal memory consolidation. Recent questions, filenames, and replies remain
+in session context; a bounded reply cache supports desktop reconnection. Closing
+the chat panel hides it; exiting the frontend clears its history, and exiting the
+backend clears its session context and reply cache. Removing a selected attachment
+stops sending it on subsequent questions. The screen privacy shield controls
+screen capture and memory storage; explicitly selected attachments can still be
+sent while it is active.
+
 ## Screen capture
 
 The `screen_capture` skill runs only when called. It checks the active window

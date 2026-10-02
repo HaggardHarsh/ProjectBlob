@@ -31,6 +31,8 @@ class BlobServiceServicer(blob_service_pb2_grpc.BlobServiceServicer):
         self._stream_queues[client_id] = queue
         self._streams_closed.clear()
         self.dispatcher.register_client(client_id, queue)
+        for reply in getattr(self.orchestrator, "_chat_replies", ()):
+            queue.put_nowait(reply)
         shield = self.orchestrator.screen_sampler.privacy_shield if getattr(self.orchestrator, "screen_sampler", None) else None
         if shield:
             initial = blob_service_pb2.BackendEvent()
@@ -103,6 +105,12 @@ class BlobServiceServicer(blob_service_pb2_grpc.BlobServiceServicer):
             response = blob_service_pb2.BackendEvent()
             response.notification.text = "Blob could not process that message. Check the backend logs."
             await self.dispatcher.broadcast(response)
+            if message.request_id:
+                reply = blob_service_pb2.BackendEvent()
+                reply.chat_reply.request_id = message.request_id
+                reply.chat_reply.text = response.notification.text
+                reply.chat_reply.failed = True
+                await self.dispatcher.broadcast(reply)
 
     async def RegisterSkill(self, request, context):
         try:

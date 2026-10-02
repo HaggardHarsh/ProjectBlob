@@ -1,6 +1,7 @@
 from typing import AsyncIterator
 import logging
 import os
+import re
 from openai import AsyncOpenAI
 import abc
 
@@ -24,6 +25,8 @@ class NebiusEngine(LLMEngine):
     def __init__(self, api_key: str, base_url: str, model_name: str):
         self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         self.model_name = model_name
+        self._vision_model = None
+        self._vision_checked = False
         self.chat_thinking_enabled = os.environ.get("BLOB_CHAT_THINKING", "").lower() in {"1", "true", "yes", "on"}
 
     def _chat_kwargs(self) -> dict:
@@ -36,6 +39,39 @@ class NebiusEngine(LLMEngine):
                 and not getattr(self, "chat_thinking_enabled", False)):
             return {"extra_body": {"chat_template_kwargs": {"enable_thinking": False}}}
         return {}
+
+    async def vision_engine(self, configured_model: str = "auto"):
+        """Use the same provider/key for vision, without changing ordinary chat."""
+        if configured_model.lower() == "off":
+            return None
+        if configured_model.lower() != "auto":
+            model = configured_model
+        else:
+            if not self._vision_checked:
+                try:
+                    catalog = await self.client.models.list(extra_query={"verbose": "true"})
+                    candidates = []
+                    for item in catalog.data:
+                        extra = item.model_extra or {}
+                        modality = str((extra.get("architecture") or {}).get("modality", "")).lower()
+                        if "image" in modality or "-vl-" in item.id.lower():
+                            candidates.append(item.id)
+                    # Prefer the smaller available vision model for desktop requests.
+                    self._vision_model = min(candidates, key=lambda name: (
+                        int(size.group(1)) if (size := re.search(r"(\d+)[Bb]", name)) else 1000,
+                        name), default=None)
+                    self._vision_checked = True
+                except Exception:
+                    logger.warning("Could not discover a vision model; using local OCR")
+                    return None
+            model = self._vision_model
+        if not model:
+            return None
+        engine = NebiusEngine.__new__(NebiusEngine)
+        engine.client = self.client
+        engine.model_name = model
+        engine.chat_thinking_enabled = self.chat_thinking_enabled
+        return engine
 
     async def generate(self, prompt: str, context: str, system_prompt: str, tools: list = None) -> any:
         # returns full message object so we can read tool_calls

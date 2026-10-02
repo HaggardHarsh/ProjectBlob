@@ -70,14 +70,16 @@ class OverlayStateChange(_message.Message):
     def __init__(self, is_visible: _Optional[bool] = ..., is_minimized: _Optional[bool] = ..., screen_width: _Optional[int] = ..., screen_height: _Optional[int] = ...) -> None: ...
 
 class UserMessage(_message.Message):
-    __slots__ = ("text", "attachments", "conversation_id")
+    __slots__ = ("text", "attachments", "conversation_id", "request_id")
     TEXT_FIELD_NUMBER: _ClassVar[int]
     ATTACHMENTS_FIELD_NUMBER: _ClassVar[int]
     CONVERSATION_ID_FIELD_NUMBER: _ClassVar[int]
+    REQUEST_ID_FIELD_NUMBER: _ClassVar[int]
     text: str
     attachments: _containers.RepeatedScalarFieldContainer[str]
     conversation_id: str
-    def __init__(self, text: _Optional[str] = ..., attachments: _Optional[_Iterable[str]] = ..., conversation_id: _Optional[str] = ...) -> None: ...
+    request_id: str
+    def __init__(self, text: _Optional[str] = ..., attachments: _Optional[_Iterable[str]] = ..., conversation_id: _Optional[str] = ..., request_id: _Optional[str] = ...) -> None: ...
 
 class HeartbeatPing(_message.Message):
     __slots__ = ("frontend_uptime_ms",)
@@ -86,7 +88,7 @@ class HeartbeatPing(_message.Message):
     def __init__(self, frontend_uptime_ms: _Optional[int] = ...) -> None: ...
 
 class BackendEvent(_message.Message):
-    __slots__ = ("timestamp_ms", "emote", "state", "notification", "skill_ack", "privacy", "color_shift", "heartbeat", "position_hint")
+    __slots__ = ("timestamp_ms", "emote", "state", "notification", "skill_ack", "privacy", "color_shift", "heartbeat", "position_hint", "chat_reply")
     TIMESTAMP_MS_FIELD_NUMBER: _ClassVar[int]
     EMOTE_FIELD_NUMBER: _ClassVar[int]
     STATE_FIELD_NUMBER: _ClassVar[int]
@@ -96,6 +98,7 @@ class BackendEvent(_message.Message):
     COLOR_SHIFT_FIELD_NUMBER: _ClassVar[int]
     HEARTBEAT_FIELD_NUMBER: _ClassVar[int]
     POSITION_HINT_FIELD_NUMBER: _ClassVar[int]
+    CHAT_REPLY_FIELD_NUMBER: _ClassVar[int]
     timestamp_ms: int
     emote: EmoteCommand
     state: StateCommand
@@ -105,7 +108,18 @@ class BackendEvent(_message.Message):
     color_shift: ColorShiftEvent
     heartbeat: HeartbeatPong
     position_hint: BlobPositionHint
-    def __init__(self, timestamp_ms: _Optional[int] = ..., emote: _Optional[_Union[EmoteCommand, _Mapping]] = ..., state: _Optional[_Union[StateCommand, _Mapping]] = ..., notification: _Optional[_Union[NotificationBubble, _Mapping]] = ..., skill_ack: _Optional[_Union[SkillAcknowledgment, _Mapping]] = ..., privacy: _Optional[_Union[PrivacyShieldEvent, _Mapping]] = ..., color_shift: _Optional[_Union[ColorShiftEvent, _Mapping]] = ..., heartbeat: _Optional[_Union[HeartbeatPong, _Mapping]] = ..., position_hint: _Optional[_Union[BlobPositionHint, _Mapping]] = ...) -> None: ...
+    chat_reply: ChatReply
+    def __init__(self, timestamp_ms: _Optional[int] = ..., emote: _Optional[_Union[EmoteCommand, _Mapping]] = ..., state: _Optional[_Union[StateCommand, _Mapping]] = ..., notification: _Optional[_Union[NotificationBubble, _Mapping]] = ..., skill_ack: _Optional[_Union[SkillAcknowledgment, _Mapping]] = ..., privacy: _Optional[_Union[PrivacyShieldEvent, _Mapping]] = ..., color_shift: _Optional[_Union[ColorShiftEvent, _Mapping]] = ..., heartbeat: _Optional[_Union[HeartbeatPong, _Mapping]] = ..., position_hint: _Optional[_Union[BlobPositionHint, _Mapping]] = ..., chat_reply: _Optional[_Union[ChatReply, _Mapping]] = ...) -> None: ...
+
+class ChatReply(_message.Message):
+    __slots__ = ("request_id", "text", "failed")
+    REQUEST_ID_FIELD_NUMBER: _ClassVar[int]
+    TEXT_FIELD_NUMBER: _ClassVar[int]
+    FAILED_FIELD_NUMBER: _ClassVar[int]
+    request_id: str
+    text: str
+    failed: bool
+    def __init__(self, request_id: _Optional[str] = ..., text: _Optional[str] = ..., failed: _Optional[bool] = ...) -> None: ...
 
 class EmoteCommand(_message.Message):
     __slots__ = ("emote", "intensity", "duration_ms", "trigger_reason", "secondary_emote", "blend")

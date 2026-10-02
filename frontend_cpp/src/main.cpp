@@ -12,6 +12,7 @@
 #include "blob/physics.h"
 #include "blob/animation.h"
 #include "ui/tray.h"
+#include "ui/chat.h"
 
 static bool running = true;
 
@@ -47,12 +48,14 @@ int main(int argc, char* argv[]) {
     int width  = 132;
     int height = 116;
     std::string ipc_address = "localhost:50051";
+    bool open_chat = false;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--width"       && i + 1 < argc) width  = std::stoi(argv[++i]);
         else if (arg == "--height" && i + 1 < argc) height = std::stoi(argv[++i]);
         else if (arg == "--ipc-address" && i + 1 < argc) ipc_address = argv[++i];
+        else if (arg == "--chat") open_chat = true;
     }
 
     // On Linux systems with Wayland/XWayland, SDL2 defaults to the native Wayland
@@ -71,12 +74,14 @@ int main(int argc, char* argv[]) {
     Renderer renderer(window.getSDLWindow(), width, height);
     InputHandler input;
     GrpcClient grpc_client(ipc_address);
+    ChatPanel chat(grpc_client);
     BlobStateMachine state_machine;
     BlobPhysics physics(width, height);
     AnimationController animation;
     SystemTray tray;
 
     grpc_client.start();
+    if (open_chat) chat.show();
 
     Uint32 lastTime = SDL_GetTicks();
     const int FPS = 60;
@@ -95,6 +100,16 @@ int main(int argc, char* argv[]) {
         // ── Event loop ──
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_DROPFILE) {
+                auto input_event = input.processEvent(event);
+                const std::string& path = input_event.filepath;
+                if (path.size() >= 11 && path.substr(path.size() - 11) == ".skill.yaml") {
+                    chat.addNotice(grpc_client.installSkill(path) ? "Installing skill..." :
+                        "Could not queue skill installation. Start the backend and try again.");
+                } else chat.addAttachment(path);
+                continue;
+            }
+            if (chat.processEvent(event)) continue;
             if (event.type == SDL_QUIT) {
                 running = false;
             }
@@ -107,11 +122,14 @@ int main(int argc, char* argv[]) {
                      event.button.windowID == SDL_GetWindowID(window.getSDLWindow()) &&
                      event.button.button == SDL_BUTTON_RIGHT) {
                 physics.jiggle();
+                chat.toggle();
             }
             else if (event.type == SDL_MOUSEBUTTONDOWN &&
                      event.button.windowID == SDL_GetWindowID(window.getSDLWindow()) &&
                      event.button.button == SDL_BUTTON_LEFT && event.button.clicks >= 2) {
                 physics.jiggle();
+                window.stopDrag();
+                chat.show();
             }
             else if (event.type == SDL_MOUSEBUTTONDOWN &&
                      event.button.windowID == SDL_GetWindowID(window.getSDLWindow()) &&
@@ -145,20 +163,10 @@ int main(int argc, char* argv[]) {
                 running = false;
             }
 
-            if (event.type == SDL_DROPFILE) {
-                auto input_event = input.processEvent(event);
-                const std::string& path = input_event.filepath;
-                if (path.size() >= 11 && path.substr(path.size() - 11) == ".skill.yaml") {
-                    std::cout << (grpc_client.installSkill(path) ? "Installing skill pill...\n" :
-                                  "Could not queue skill installation. Start the backend and try again.\n");
-                } else {
-                    std::cout << "Drop a .skill.yaml file to install a skill.\n";
-                }
-            }
         }
 
         tray.poll();
-        if (tray.takeActivated()) physics.jiggle();
+        if (tray.takeActivated()) { physics.jiggle(); chat.toggle(); }
         while (auto event = grpc_client.pollEvent()) {
             if (event->has_skill_ack()) {
                 const auto& ack = event->skill_ack();
@@ -167,6 +175,9 @@ int main(int argc, char* argv[]) {
                 animation.setExpression(expression, ack.success() ? 0.5f : 0.7f);
                 animation.setBlend(BlobExpression::IDLE, 0.0f);
                 if (ack.success()) physics.jiggle();
+                chat.addNotice(ack.success() ? ack.description() : ack.error_message());
+            } else if (event->has_chat_reply()) {
+                chat.receiveReply(event->chat_reply().request_id(), event->chat_reply().text());
             } else if (event->has_emote()) {
                 const auto emote = event->emote().emote();
                 expression = expressionFor(emote);
@@ -248,6 +259,7 @@ int main(int argc, char* argv[]) {
         // ── Transparency mask ──
         renderer.stampShape(vertices, center.x, center.y);
         window.updateShape(renderer.getShapeSurface());
+        chat.render();
 
         // ── Frame-rate cap ──
         Uint32 frameTime = SDL_GetTicks() - frameStart;
@@ -257,6 +269,7 @@ int main(int argc, char* argv[]) {
     }
 
     grpc_client.stop();
+    chat.close();
     SDL_Quit();
     return 0;
 }

@@ -7,6 +7,7 @@
 #include <deque>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include <grpcpp/grpcpp.h>
 #include "blob_service.grpc.pb.h"
@@ -18,7 +19,8 @@ public:
     ~GrpcClient();
     void start();
     void stop();
-    bool sendMessage(const std::string& text);
+    bool sendMessage(const std::string& text, const std::vector<std::string>& attachments = {},
+                     const std::string& request_id = "");
     bool installSkill(const std::string& path);
     std::optional<blob::BackendEvent> pollEvent() { return inbound_.tryPop(); }
     bool isConnected() const { return connected_.load(); }

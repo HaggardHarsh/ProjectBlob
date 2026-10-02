@@ -15,6 +15,7 @@ class BlobConfig(BaseModel):
     nebius_api_key: str = Field(default=os.environ.get("NEBIUS_API_KEY", ""))
     nebius_base_url: str = Field(default="https://api.studio.nebius.ai/v1")
     max_prompt_bytes: int = Field(default=32000, ge=4096)
+    vision_model_name: str = "auto"  # Discover an available image-input model; "off" uses OCR only.
     memory_db_path: str = Field(default_factory=lambda: str(Path.home() / ".blob/memory/chromadb"))
     blacklist_path: str = Field(default_factory=lambda: str(Path(__file__).resolve().parents[1] / "data/blacklist.yaml"))
     personality_path: str = Field(default_factory=lambda: str(Path(__file__).resolve().parents[1] / "data/blob_personality.yaml"))
@@ -44,6 +45,8 @@ class BlobConfig(BaseModel):
             data["model_name"] = os.environ["BLOB_MODEL_NAME"]
         if "BLOB_MAX_PROMPT_BYTES" in os.environ:
             data["max_prompt_bytes"] = int(os.environ["BLOB_MAX_PROMPT_BYTES"])
+        if "BLOB_VISION_MODEL" in os.environ:
+            data["vision_model_name"] = os.environ["BLOB_VISION_MODEL"]
         if "BLOB_CAMERA_ENABLED" in os.environ:
             data["camera_enabled"] = os.environ["BLOB_CAMERA_ENABLED"].lower() in {"1", "true", "yes", "on"}
         if "BLOB_CAMERA_DEVICE_INDEX" in os.environ:

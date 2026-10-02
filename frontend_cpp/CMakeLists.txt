@@ -37,19 +37,26 @@ add_custom_command(
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 include_directories(src)
 
+add_library(blob_protocol STATIC ${PROTO_SRC} ${GRPC_SRC})
+target_link_libraries(blob_protocol PUBLIC gRPC::grpc++ gRPC::grpc protobuf::libprotobuf)
+
 file(GLOB_RECURSE SRC_FILES
     "src/*.cpp"
     "src/*.h"
 )
 
 # ─── Executable ───
-add_executable(blob_overlay ${SRC_FILES} ${PROTO_SRC} ${GRPC_SRC})
+add_executable(blob_overlay ${SRC_FILES})
+file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/data/OpenSans-Regular.ttf"
+          "${CMAKE_CURRENT_SOURCE_DIR}/data/OpenSans-LICENSE.txt"
+     DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/data")
 
 target_link_libraries(blob_overlay
     SDL2::SDL2
     gRPC::grpc++
     gRPC::grpc
     protobuf::libprotobuf
+    blob_protocol
 )
 
 if(X11_FOUND)
@@ -68,11 +75,9 @@ target_compile_options(blob_overlay PRIVATE
 add_executable(blob_ipc_smoke
     tests/grpc_client_smoke.cpp
     src/ipc/grpc_client.cpp
-    ${PROTO_SRC}
-    ${GRPC_SRC}
 )
 target_include_directories(blob_ipc_smoke PRIVATE ${CMAKE_CURRENT_BINARY_DIR} src)
-target_link_libraries(blob_ipc_smoke gRPC::grpc++ gRPC::grpc protobuf::libprotobuf)
+target_link_libraries(blob_ipc_smoke blob_protocol)
 
 enable_testing()
 add_executable(blob_render_smoke
@@ -85,3 +90,10 @@ target_include_directories(blob_render_smoke PRIVATE src)
 target_link_libraries(blob_render_smoke SDL2::SDL2)
 add_test(NAME blob_render_smoke COMMAND blob_render_smoke)
 set_tests_properties(blob_render_smoke PROPERTIES ENVIRONMENT "SDL_VIDEODRIVER=dummy")
+
+add_executable(blob_chat_smoke
+    tests/chat_smoke.cpp src/ui/chat.cpp src/ui/text.cpp src/ipc/grpc_client.cpp)
+target_include_directories(blob_chat_smoke PRIVATE ${CMAKE_CURRENT_BINARY_DIR} src)
+target_link_libraries(blob_chat_smoke SDL2::SDL2 blob_protocol)
+add_test(NAME blob_chat_smoke COMMAND blob_chat_smoke)
+set_tests_properties(blob_chat_smoke PROPERTIES ENVIRONMENT "SDL_VIDEODRIVER=dummy")

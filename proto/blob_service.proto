@@ -63,6 +63,7 @@ message UserMessage {
   string text = 1;
   repeated string attachments = 2;  // local file paths
   string conversation_id = 3;      // for multi-turn context
+  string request_id = 4;           // correlates a desktop submission with its reply
 }
 
 message HeartbeatPing {
@@ -84,7 +85,14 @@ message BackendEvent {
     ColorShiftEvent color_shift = 6;
     HeartbeatPong heartbeat = 7;
     BlobPositionHint position_hint = 8;
+    ChatReply chat_reply = 9;
   }
+}
+
+message ChatReply {
+  string request_id = 1;
+  string text = 2;
+  bool failed = 3;
 }
 
 message EmoteCommand {

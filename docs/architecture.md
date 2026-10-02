@@ -3,7 +3,7 @@
 > Technical architecture documentation for Project Blob
 
 The C++ overlay renders a small expressive slime and receives emotes over gRPC.
-Conversation stays in the Python backend terminal. The backend loads
+Conversation uses the desktop chat panel or Python backend terminal. The backend loads
 declarative skill pills; an OS-level agent sandbox remains planned.
 
 ---
@@ -52,8 +52,8 @@ Project Blob is a two-process desktop application:
 Communication uses **gRPC bidirectional streaming** over `localhost:50051` by
 default. The address is configurable and can also be a Unix domain socket.
 
-- **Frontend → Backend**: User interactions, skill pill drops, heartbeats
-- **Backend → Frontend**: Emote commands, skill acknowledgments, privacy shield events
+- **Frontend → Backend**: User messages with selected local attachment paths and request IDs, user interactions, skill pill drops, heartbeats
+- **Backend → Frontend**: Correlated chat replies, emote commands, skill acknowledgments, privacy shield events
 
 See [`proto/blob_service.proto`](../proto/blob_service.proto) for the full protocol definition.
 
@@ -231,7 +231,7 @@ The diagram below describes a possible local GPU and cloud routing design. It is
 ```
 User types message
     ↓
-Python backend terminal → BlobOrchestrator
+Desktop chat panel or Python backend terminal → BlobOrchestrator
     ↓
 GuardrailsEngine.sanitize_input()
     ↓
@@ -247,12 +247,33 @@ EpisodicMemory.capture(interaction)
     ↓
 Orchestrator extracts the emote tag
     ↓
-Response prints in the terminal; BackendEvent.EmoteCommand is broadcast
+Response prints in the terminal; emotes and a correlated ChatReply are broadcast
     ↓
 gRPC EventStream → Frontend
     ↓
-Renderer draws Blob's facial expression
+Renderer draws Blob's facial expression; the chat panel displays the reply
 ```
+
+### Attachment flow
+
+The SDL chat panel sends `UserMessage.attachments` as local file paths over the
+existing gRPC stream. `request_id` pairs each submission with a `ChatReply`, so
+unrelated notifications cannot finish an outstanding question. Completed replies
+are retained in a bounded backend session cache and replayed when a frontend
+reconnects. Desktop and terminal requests are processed in order.
+
+`AttachmentReader` validates file counts, types, sizes, page counts, and decoded
+image dimensions. PDFium text extraction and rendering run in a worker thread,
+under a shared lock because PDFium cannot run concurrently across threads. Text
+excerpts keep page numbers. Page and image payloads are resized and encoded in
+memory without original image metadata. The prompt budget counts image context
+separately from base64 transport bytes. The model receives documents as source
+material and cannot execute tools through the attachment analysis path.
+
+Nebius model discovery checks the provider's input modality and selects an
+available vision model for attachment requests; `BLOB_VISION_MODEL` can override
+or disable discovery. With no vision model, local OCR supplies text only.
+Attachment analysis stays outside episodic storage and memory consolidation.
 
 ### Screen Context Flow
 

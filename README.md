@@ -107,7 +107,17 @@ make run-backend-only   # Terminal 1: Python AI backend + CLI chat
 make run-frontend       # Terminal 2: C++ slime overlay
 ```
 
-Chat with Blob only at the backend's `Blob>` terminal prompt. The smaller desktop slime starts near the lower-right corner and shows emotions, but does not open a chat box or display replies. Drag it to move it; click, right-click, double-click, or click its optional X11 tray icon for a little jiggle. Drop a `.skill.yaml` file onto Blob to install it; the result appears in the terminal.
+Double-click or right-click Blob, or click its optional X11 tray icon, to open the desktop chat panel. Type a message and press Enter to send; Shift+Enter inserts a new line. Replies appear in the panel. The backend's `Blob>` terminal prompt remains available. Drag the small desktop slime to move it. Drop a `.skill.yaml` file onto Blob to install it; the result appears in the chat history and terminal. Start `frontend_cpp/build/blob_overlay --chat` to open the panel immediately.
+
+### PDF and image attachments
+
+Drop files onto Blob or its chat panel, or click **Attach file** and browse your folders. Supported formats are PDF, PNG, JPEG, and WebP. Attach up to four files, at most 20 MB each and 50 MB combined. PDFs can contain up to 100 pages. Ask a question such as "Explain page 12" or "Summarize pages 3-5", then send. Attachments remain selected for follow-up questions; click the **x** beside a filename to remove it.
+
+The backend extracts PDF text locally and includes filenames and page numbers as source references. Long documents use relevant page excerpts; the supplied context identifies omitted pages and text. Image analysis discovers an available image-input model from your Nebius account. You can set `BLOB_VISION_MODEL` to an exact model ID or `off` to use local OCR only. Ordinary chat continues using `BLOB_MODEL_NAME`.
+
+Visual requests send resized images, including up to three selected PDF page images per document and four images total. When no vision model is available, Blob can read text in images and scanned PDFs using the optional `backend_python[ocr]` installation. OCR alone cannot describe objects, colors, or diagrams. Unreadable, damaged, password protected, and oversized files produce an error instead of an invented explanation.
+
+Sending a message shares selected file content with your cloud AI provider. PDF parsing and OCR happen locally; original files are left in place. Document contents and attachment answers are not automatically saved as personal memories. The panel's history lasts for the current frontend session.
 
 To run the backend test suite, install `backend_python[dev]` and run `python -m pytest backend_python/tests -q` from the repository root.
 

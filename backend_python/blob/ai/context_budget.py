@@ -7,11 +7,17 @@ tokens and the model's reply.
 
 DEFAULT_MAX_PROMPT_BYTES = 32_000
 MESSAGE_OVERHEAD_BYTES = 64
+IMAGE_BUDGET_BYTES = 4096  # Reserve model context for each bounded image, separately from base64 transport.
 OMITTED_CONTEXT = "\n[Additional historical context omitted to fit the prompt.]"
 
 
 def prompt_size_bytes(messages: list[dict]) -> int:
-    return sum(len(message.get("content", "").encode("utf-8")) + MESSAGE_OVERHEAD_BYTES
+    def content_size(content):
+        if isinstance(content, str):
+            return len(content.encode("utf-8"))
+        return sum(len(part.get("text", "").encode("utf-8")) if part.get("type") == "text"
+                   else IMAGE_BUDGET_BYTES for part in content)
+    return sum(content_size(message.get("content", "")) + MESSAGE_OVERHEAD_BYTES
                for message in messages)
 
 
@@ -54,7 +60,8 @@ def fit_messages(messages: list[dict], current_request: dict,
     if prompt_size_bytes(fitted) <= max_bytes:
         return fitted
     background = next((item for i, item in working if i == 1 and
-                       item.get("content", "").startswith("Historical background")), None)
+                       isinstance(item.get("content"), str) and
+                       item["content"].startswith("Historical background")), None)
     if background is None:
         return None
     other_size = prompt_size_bytes(fitted) - len(background["content"].encode("utf-8"))
