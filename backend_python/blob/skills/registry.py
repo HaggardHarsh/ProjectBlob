@@ -1,13 +1,19 @@
 """Runtime skill registry and persistent YAML skill installation."""
 
+import asyncio
+from collections import deque
 import hashlib
+import json
 import logging
 import os
 from pathlib import Path
 import tempfile
+import time
 
+from blob.skills.base import SkillResult
+from blob.skills.contracts import validate_arguments
 from blob.skills.command_skill import CommandSkill
-from blob.skills.validator import SkillValidator
+from blob.skills.validator import SkillValidator, VALID_EMOTES
 
 logger = logging.getLogger(__name__)
 MAX_SKILL_BYTES = 64 * 1024
@@ -19,6 +25,7 @@ class SkillRegistry:
         self.install_dir = Path(install_dir or Path.home() / ".blob/skills").expanduser()
         self._installed = {}
         self.validator = SkillValidator()
+        self.history = deque(maxlen=30)
 
     def register(self, skill):
         if skill.name in self.skills:
@@ -27,6 +34,64 @@ class SkillRegistry:
 
     def get_skill(self, name):
         return self.skills.get(name)
+
+    def describe(self, name):
+        skill = self.get_skill(name)
+        if skill is None:
+            raise ValueError(f"Unknown skill: {name}. Use /skills to list tools.")
+        return {"name": name, "description": getattr(skill, "description", ""),
+                "arguments": getattr(skill, "argument_schema", None),
+                "permissions": sorted(getattr(skill, "permissions", ())),
+                "timeout_seconds": getattr(skill, "timeout_seconds", 15),
+                "model_callable": getattr(skill, "model_callable", True)}
+
+    def prompt_text(self):
+        lines = []
+        for name in sorted(self.skills):
+            info = self.describe(name)
+            if not info["model_callable"] or name == "camera":
+                continue
+            schema = info["arguments"]
+            contract = (" Arguments: " + json.dumps(schema, separators=(",", ":"), ensure_ascii=False)) if schema else ""
+            lines.append(f"- **{name}**: {info['description']}{contract}")
+        return "\n".join(lines) or "No tools available."
+
+    async def execute(self, name, args, *, source="model"):
+        """One execution path for chat and direct terminal commands."""
+        started = time.monotonic()
+        try:
+            if source not in {"model", "terminal"}:
+                raise ValueError("Unknown skill invocation source.")
+            info = self.describe(name)
+            if source == "model" and (not info["model_callable"] or name == "camera"):
+                raise ValueError("This skill requires an explicit terminal command.")
+            values = validate_arguments(info["arguments"], args)
+            result = await asyncio.wait_for(self.skills[name].async_execute(values), info["timeout_seconds"])
+            if not isinstance(result, SkillResult) or not isinstance(result.output, str) or type(result.success) is not bool:
+                raise ValueError("The skill returned an invalid result.")
+            if len(result.output.encode("utf-8")) > 8000:
+                marker = "\n[Additional skill output omitted.]"
+                output = result.output.encode("utf-8")[:8000 - len(marker.encode())].decode("utf-8", errors="ignore") + marker
+                result = SkillResult(output, result.success, result.emote_suggestion)
+            if result.emote_suggestion not in VALID_EMOTES:
+                result = SkillResult(result.output, result.success, "IDLE")
+        except asyncio.TimeoutError:
+            result = SkillResult(f"{name} timed out. Try a narrower request.", False, "WORRIED")
+        except (ValueError, TypeError) as exc:
+            result = SkillResult(str(exc), False, "CONFUSED")
+        except Exception:
+            logger.exception("Skill %s failed", name)
+            result = SkillResult(f"{name} failed. Check the local backend logs.", False, "WORRIED")
+        # Keep operational metadata, never raw arguments or file contents.
+        self.history.append({"name": name, "success": result.success,
+                             "duration_ms": round((time.monotonic() - started) * 1000), "source": source})
+        return result
+
+    async def close(self):
+        for skill in list(self.skills.values()):
+            close = getattr(skill, "close", None)
+            if close is not None:
+                await close()
 
     def install_file(self, file_path: str | Path, expected_hash: bytes | None = None, persist: bool = True) -> str:
         source = Path(file_path).expanduser()

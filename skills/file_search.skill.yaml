@@ -65,8 +65,11 @@ skill:
       args:
         - name: "minutes"
           description: "Files modified within this many minutes"
+          type: integer
+          minimum: 1
+          maximum: 10080
           required: false
-          default: "60"
+          default: 60
         - name: "directory"
           description: "Starting directory"
           required: false

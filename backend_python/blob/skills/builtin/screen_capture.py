@@ -2,7 +2,7 @@ import asyncio
 import logging
 import re
 from PIL import Image, ImageDraw
-from blob.skills.base import SkillInterface, SkillResult
+from blob.skills.base import SkillInterface, SkillResult, _skill_executor
 
 logger = logging.getLogger(__name__)
 _BLOB_CHAT_LINE = re.compile(r"^\s*Blob\s*[>:]", re.IGNORECASE)
@@ -47,6 +47,8 @@ def _terminal_box(info, image) -> tuple[int, int, int, int] | None:
 
 
 class ScreenCaptureSkill(SkillInterface):
+    permissions = ("screen.capture",)
+    timeout_seconds = 120  # Allow time to answer the desktop portal's dialog.
     def __init__(self):
         self.sampler = None
         self.ocr = None
@@ -101,6 +103,18 @@ class ScreenCaptureSkill(SkillInterface):
                 "WORRIED"
             )
 
+        # The worker owns the captured image until OCR completes. Cancelling
+        # the awaiting task must not close an image a running worker still uses.
+        future = _skill_executor.submit(self._read_capture, image, window_title, active_window)
+        future.add_done_callback(lambda done: image.close() if done.cancelled() and hasattr(image, "close") else None)
+        return await asyncio.wrap_future(future)
+
+    def _read_capture(self, image, window_title, active_window):
+        if self.sampler.privacy_shield.is_capture_blocked():
+            if hasattr(image, "close"):
+                image.close()
+            return SkillResult("Screen capture is blocked by the privacy shield.", False, "WORRIED")
+
         # Run OCR if available, then release the image promptly.
         try:
             if self.ocr:
@@ -151,4 +165,6 @@ class ScreenCaptureSkill(SkillInterface):
             )
 
         output = f"Active Window: {window_title}\n\nExtracted Screen Text:\n{text}"
+        if self.sampler.privacy_shield.is_capture_blocked():
+            return SkillResult("Screen capture is blocked by the privacy shield.", False, "WORRIED")
         return SkillResult(output, True, "THINKING")

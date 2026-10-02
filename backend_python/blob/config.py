@@ -23,6 +23,8 @@ class BlobConfig(BaseModel):
     camera_device_index: int = 0
     face_db_path: str = Field(default_factory=lambda: str(Path.home() / ".blob/faces"))
     skills_dir_path: str = Field(default_factory=lambda: str(Path.home() / ".blob/skills"))
+    reminders_db_path: str = Field(default_factory=lambda: str(Path.home() / ".blob/reminders.sqlite3"))
+    documents_dir_path: str = Field(default_factory=lambda: str(Path.home() / ".blob/documents"))
     screen_sample_interval_sec: int = Field(default=30)
     screen_capture_mode: str = Field(default="active_window") # "full_screen" or "active_window"
     privacy_poll_interval_ms: int = Field(default=500)
@@ -55,8 +57,14 @@ class BlobConfig(BaseModel):
             data["face_db_path"] = os.environ["BLOB_FACE_DB_PATH"]
         if "BLOB_SKILLS_DIR_PATH" in os.environ:
             data["skills_dir_path"] = os.environ["BLOB_SKILLS_DIR_PATH"]
+        if "BLOB_REMINDERS_DB_PATH" in os.environ:
+            data["reminders_db_path"] = os.environ["BLOB_REMINDERS_DB_PATH"]
+        if "BLOB_DOCUMENTS_DIR_PATH" in os.environ:
+            data["documents_dir_path"] = os.environ["BLOB_DOCUMENTS_DIR_PATH"]
         config = cls(**data)
         config.memory_db_path = str(Path(config.memory_db_path).expanduser().resolve())
         config.face_db_path = str(Path(config.face_db_path).expanduser().resolve())
         config.skills_dir_path = str(Path(config.skills_dir_path).expanduser().resolve())
+        config.reminders_db_path = str(Path(config.reminders_db_path).expanduser().resolve())
+        config.documents_dir_path = str(Path(config.documents_dir_path).expanduser().resolve())
         return config

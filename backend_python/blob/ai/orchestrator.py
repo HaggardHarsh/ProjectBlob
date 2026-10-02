@@ -6,6 +6,7 @@ import json
 import inspect
 import os
 import re
+import sqlite3
 import time
 from pathlib import Path
 from blob.ai.llm_engine import NebiusEngine
@@ -15,9 +16,11 @@ from blob.ai.guardrails import GuardrailsEngine, PERSONAL_PLAN_TOPIC, unsupporte
 from blob.ai.context_budget import DEFAULT_MAX_PROMPT_BYTES, IMAGE_BUDGET_BYTES, fit_messages, prompt_size_bytes
 from blob.ai.prompt_templates import SYSTEM_PROMPT, ATTACHMENT_SYSTEM_PROMPT, CONTEXT_TEMPLATE
 from blob.memory.episodic import EpisodicMemory
+from blob.memory.documents import DocumentLibrary, DocumentError, DOCUMENT_REFERENCE
 from blob.memory.semantic import SemanticMemory, is_temporary_fact
 from blob.memory.context import build_memory_view
 from blob.memory.lifecycle import SHORT_RECALL_DAYS
+from blob.skills.commands import handle_skill_command
 
 logger = logging.getLogger(__name__)
 
@@ -107,9 +110,24 @@ FILE_SEARCH_CLAIM = re.compile(
 )
 REMINDER_INTENT = re.compile(
     r"\b(?:remind me|(?:set|create|make|add)\s+(?:me\s+)?(?:a |an |the )?(?:reminder|timer|alarm)"
-    r"|start (?:a |the )?timer)\b",
+    r"|start (?:a |the )?timer"
+    r"|(?:cancel|remove|delete|snooze|postpone|list|show|check)\s+(?:me\s+)?"
+    r"(?:my |the |a |all |that )?(?:scheduled )?(?:reminders?|timers?|alarms?))\b",
     re.IGNORECASE,
 )
+REMINDER_CONTROL = re.compile(
+    r"\b(?P<action>cancel|remove|delete|snooze|postpone|list|show|check)\s+(?:me\s+)?"
+    r"(?:my |the |a |all |that )?(?:scheduled )?(?:reminders?|timers?|alarms?)\b", re.I)
+
+
+def _requested_reminder_action(text):
+    match = REMINDER_CONTROL.search(text)
+    if not match:
+        return "set"
+    verb = match.group("action").lower()
+    return "cancel" if verb in {"cancel", "remove", "delete"} else "snooze" if verb in {"snooze", "postpone"} else "list"
+
+
 WEATHER_INTENT = re.compile(
     r"\b(?:what(?:'s| is) the weather|(?:check|show|tell me|give me)\b.{0,40}\bweather"
     r"|weather (?:in|now|today)|"
@@ -227,12 +245,7 @@ class BlobOrchestrator:
 
     def _build_skills_text(self) -> str:
         """Format registered skills for the system prompt."""
-        lines = []
-        for name, skill in self.skill_registry.skills.items():
-            if name == "camera":
-                continue  # Camera commands require explicit user text, never an LLM tool call.
-            lines.append(f"- **{name}**: {skill.description}")
-        return "\n".join(lines) if lines else "No tools available."
+        return self.skill_registry.prompt_text()
 
     @staticmethod
     def _current_clock_context() -> str:
@@ -453,6 +466,11 @@ class BlobOrchestrator:
             self._message_lock = asyncio.Lock()
         return self._message_lock
 
+    def _document_library(self):
+        if not hasattr(self, "_documents"):
+            self._documents = DocumentLibrary(getattr(getattr(self, "config", None), "documents_dir_path", None))
+        return self._documents
+
     def _uses_attachment_context(self, text):
         """Use dropped files for conversation while preserving explicit controls and tools."""
         stripped = text.strip()
@@ -476,6 +494,11 @@ class BlobOrchestrator:
         # File drops and terminal messages share one ordered conversation.
         async with self._conversation_lock():
             stripped = user_msg.text.strip()
+            if stripped and stripped.split(maxsplit=1)[0].lower() in {"/skills", "/reminders"}:
+                result = await self._await_with_progress(
+                    handle_skill_command(self.skill_registry, stripped), 3.0, "WAITING")
+                self._remember_recent_turn(stripped, result.output)
+                return await self._send_direct_response(result.output, result.emote_suggestion)
             if stripped and stripped.split(maxsplit=1)[0].lower() == "/files":
                 return await self._handle_files_command(stripped)
             explicit = list(getattr(user_msg, "attachments", ()))
@@ -483,6 +506,26 @@ class BlobOrchestrator:
             if paths and (explicit or self._uses_attachment_context(stripped)):
                 return await self._handle_attachment_message(blob_service_pb2.UserMessage(
                     text=user_msg.text, attachments=paths))
+            if not paths and self._uses_attachment_context(stripped):
+                library = self._document_library()
+                try:
+                    saved = await asyncio.to_thread(library.find, stripped)
+                    if saved:
+                        paths = await asyncio.to_thread(library.reopen, saved)
+                        print("\nBlob: Reopening saved files: " + ", ".join(record["name"] for record in saved) +
+                              ". Selected content is sent to your AI provider for analysis.\n")
+                        return await self._handle_attachment_message(blob_service_pb2.UserMessage(
+                            text=user_msg.text, attachments=paths), activate=True)
+                    if DOCUMENT_REFERENCE.search(stripped):
+                        records = await asyncio.to_thread(library.records)
+                        if records:
+                            names = ", ".join(record["name"] for record in records)
+                            return await self._send_direct_response(
+                                f"I have saved documents: {names}. Which one do you mean? Name it or use /files saved and /files open <id>.",
+                                "CONFUSED")
+                except (DocumentError, OSError, sqlite3.Error) as exc:
+                    logger.warning("Document recall failed: %s", exc)
+                    return await self._send_direct_response(str(exc), "WORRIED")
             return await self._handle_text_message(user_msg)
 
     async def handle_attachment_drop(self, paths):
@@ -490,7 +533,17 @@ class BlobOrchestrator:
             incoming = [str(Path(path).expanduser().resolve()) for path in paths if path]
             if not incoming:
                 return await self._send_direct_response("No files were dropped.", "CONFUSED")
-            combined = list(dict.fromkeys([*getattr(self, "_active_attachments", ()), *incoming]))
+            library = self._document_library()
+            try:
+                # A newly dropped original replaces its saved copy in the active selection.
+                originals = {await asyncio.to_thread(library.original_path, path) for path in incoming}
+                retained = []
+                for path in getattr(self, "_active_attachments", ()):
+                    if await asyncio.to_thread(library.original_path, path) not in originals:
+                        retained.append(path)
+            except (DocumentError, OSError, sqlite3.Error):
+                retained = list(getattr(self, "_active_attachments", ()))
+            combined = list(dict.fromkeys([*retained, *incoming]))
             names = ", ".join(Path(path).name for path in incoming)
             print(f"\nBlob: Reading dropped files: {names}. Selected content is sent to your AI provider for analysis.\n")
             return await self._handle_attachment_message(blob_service_pb2.UserMessage(
@@ -500,9 +553,40 @@ class BlobOrchestrator:
     async def _handle_files_command(self, command):
         parts = command.lower().split()
         paths = list(getattr(self, "_active_attachments", ()))
+        library = self._document_library()
+        try:
+            if parts == ["/files", "saved"]:
+                records = await asyncio.to_thread(library.records)
+                listing = "\n".join(f"{record['id']}  {record['name']}" for record in records)
+                return await self._send_direct_response(
+                    ("Saved documents:\n" + listing if records else "No saved documents yet. Drop a PDF or image onto Blob.") +
+                    "\nUse /files open <id> to analyze one or /files forget <id|all> to delete saved copies.", "IDLE")
+            if len(parts) == 3 and parts[:2] == ["/files", "open"]:
+                records = await asyncio.to_thread(library.records)
+                selected = [record for record in records if record["id"] == parts[2]]
+                if not selected:
+                    raise DocumentError("No saved document with that ID. Use /files saved to list IDs.")
+                reopened = await asyncio.to_thread(library.reopen, selected)
+                print("\nBlob: Reopening " + selected[0]["name"] +
+                      ". Selected content is sent to your AI provider for analysis.\n")
+                return await self._handle_attachment_message(blob_service_pb2.UserMessage(
+                    text="Give a brief overview of this saved document.", attachments=reopened), activate=True)
+            if len(parts) == 3 and parts[:2] == ["/files", "forget"]:
+                removed = await asyncio.to_thread(library.forget, parts[2])
+                deleted_paths = {str(library.path_for(record)) for record in removed} | {
+                    record["original_path"] for record in removed}
+                self._active_attachments = [path for path in paths if str(Path(path).resolve()) not in deleted_paths]
+                # Discard prior document excerpts and answers from the live context too.
+                getattr(self, "_recent_turns", []).clear()
+                names = ", ".join(record["name"] for record in removed)
+                return await self._send_direct_response(f"Deleted saved copies of {names}. Original files are untouched.", "IDLE")
+        except (DocumentError, OSError, sqlite3.Error) as exc:
+            logger.warning("Saved document command failed: %s", exc)
+            return await self._send_direct_response(str(exc), "WORRIED")
         if parts == ["/files", "clear"]:
             self._active_attachments = []
-            return await self._send_direct_response("Detached all files. Drop more onto Blob whenever you need them.", "IDLE")
+            return await self._send_direct_response(
+                "Detached all files. Saved copies remain available; use /files saved to list them.", "IDLE")
         if len(parts) == 3 and parts[:2] == ["/files", "remove"]:
             try:
                 index = int(parts[2]) - 1
@@ -514,7 +598,8 @@ class BlobOrchestrator:
             self._active_attachments = paths
             return await self._send_direct_response(f"Detached {Path(removed).name}.", "IDLE")
         if parts != ["/files"]:
-            return await self._send_direct_response("Use /files, /files clear, or /files remove <number>.", "CONFUSED")
+            return await self._send_direct_response(
+                "Use /files, /files clear, /files remove <number>, /files saved, /files open <id>, or /files forget <id|all>.", "CONFUSED")
         if not paths:
             return await self._send_direct_response("No files attached. Drop a PDF or image onto Blob to analyze it here.", "IDLE")
         listing = "\n".join(f"{index}. {Path(path).name}" for index, path in enumerate(paths, 1))
@@ -566,6 +651,13 @@ class BlobOrchestrator:
         if bounded is None:
             return await self._send_direct_response(
                 "These attachments exceed my current context limit. Send fewer files or ask about a specific PDF page.", "CONFUSED")
+        try:
+            saved = await asyncio.to_thread(self._document_library().remember, attached.sources)
+            if saved and activate:
+                print("Blob: Saved local source copies for future conversations. Use /files saved to manage them.\n")
+        except (DocumentError, OSError, sqlite3.Error) as exc:
+            logger.warning("Document save failed: %s", exc)
+            print(f"Blob: These files are usable now but could not be saved for restart: {exc}\n")
         await self.dispatch_emote("THINKING")
         try:
             response, _ = await self._await_with_progress(
@@ -585,7 +677,7 @@ class BlobOrchestrator:
         response = self.guardrails.filter_output(response).strip()
         if not response:
             return await self._send_direct_response("I couldn't read those files reliably. Try a clearer image or a specific page.", "CONFUSED")
-        # Documents and analysis stay in this session, outside automatic personal memory.
+        # Answers stay in session context; saved source files remain separate from personal facts.
         self._remember_recent_turn(question + "\n[Attached: " + ", ".join(attached.names) + "]", response)
         return await self._send_direct_response(response, emote)
 
@@ -639,7 +731,7 @@ class BlobOrchestrator:
             try:
                 await self.dispatch_emote("WORKING")
                 screen_result = await self._await_with_progress(
-                    skill.async_execute({}), 3.0, "WAITING")
+                    self.skill_registry.execute("screen_capture", {}, source="terminal"), 3.0, "WAITING")
             except Exception:
                 logger.exception("Screen capture failed")
                 return await self._send_direct_response("Screen capture failed. Check the backend logs.", "WORRIED")
@@ -740,6 +832,16 @@ class BlobOrchestrator:
                 return await self._send_direct_response(
                     "To use the camera, say 'scan my camera' or enter /camera scan.", "CONFUSED"
                 )
+            if tool_name == "reminder":
+                action = _requested_reminder_action(stripped)
+                allowed_actions = {action, "list"} if action in {"cancel", "snooze"} else {action}
+                if required_tool != "reminder" or tool_args.get("action", "set") not in allowed_actions:
+                    messages.append({"role": "assistant", "content": response_text})
+                    messages.append({"role": "user", "content":
+                        "[Observation] That reminder action was not requested and was not executed. "
+                        + (f"The requested reminder action is {action}." if required_tool == "reminder" else
+                           "Answer the user without changing reminders.")})
+                    continue
             if tool_name == "file_search" and not FILE_REQUEST.search(stripped):
                 messages.append({"role": "assistant", "content": response_text})
                 messages.append({"role": "user", "content":
@@ -776,17 +878,17 @@ class BlobOrchestrator:
                     # the model's parsed arguments.
                     tool_args = {**tool_args, "location": location_match.group(1).strip(" ,.!?")}
             
-            logger.info(f"Executing skill: {tool_name} with args: {tool_args}")
+            logger.info("Executing skill: %s", tool_name)
             await self.dispatch_emote("WORKING")
             
             try:
                 result = await self._await_with_progress(
-                    skill.async_execute(tool_args), 3.0, "WAITING")
+                    self.skill_registry.execute(tool_name, tool_args), 3.0, "WAITING")
                 if tool_name == "file_search":
                     file_search_ran = True
                 outcome = "executed successfully" if result.success else "failed"
                 observation = f"[Observation] Tool '{tool_name}' {outcome}.\nResult: {result.output}"
-                logger.info(f"Skill result: {result.output[:200]}")
+                logger.info("Skill %s success=%s output_bytes=%d", tool_name, result.success, len(result.output.encode("utf-8")))
                 
                 # If it's a screen capture, update the stored context
                 if tool_name == "screen_capture":
@@ -802,6 +904,12 @@ class BlobOrchestrator:
                 if result.emote_suggestion != "IDLE":
                     await self.dispatch_emote(result.emote_suggestion)
                 if tool_name == required_tool:
+                    if (tool_name == "reminder" and result.success and tool_args.get("action") == "list" and
+                            _requested_reminder_action(stripped) in {"cancel", "snooze"}):
+                        # Let the model use the confirmed IDs for the requested change.
+                        messages.append({"role": "assistant", "content": response_text})
+                        messages.append({"role": "user", "content": observation})
+                        continue
                     # The tool's own result is authoritative. Avoid a second model
                     # pass that could turn a failure into a claimed success.
                     final_response = result.output
@@ -870,7 +978,10 @@ class BlobOrchestrator:
             emote_str = "CONFUSED"
         if required_tool and direct_tool_emote is None:
             if required_tool == "reminder":
-                final_response = "I haven't set a reminder. Tell me what to remind you about and when."
+                if _requested_reminder_action(stripped) != "set":
+                    final_response = "I couldn't complete that reminder request. Use /reminders to list IDs or /reminders help for commands."
+                else:
+                    final_response = "I haven't set a reminder. Tell me what to remind you about and when."
             else:
                 final_response = "I couldn't get a current weather result. Please try again."
             emote_str = "WORRIED"
@@ -942,7 +1053,7 @@ class BlobOrchestrator:
             success = False
         else:
             try:
-                result = await skill.async_execute({"action": action, "name": name})
+                result = await self.skill_registry.execute("camera", {"action": action, "name": name}, source="terminal")
                 result_text, success = result.output, result.success
             except Exception:
                 logger.exception("Camera command failed")

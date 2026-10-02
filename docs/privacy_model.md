@@ -14,18 +14,28 @@ analysis in the backend terminal and shares PDF text excerpts and, when a vision
 model is available, resized images or selected PDF page images with Nebius.
 The backend prints this before analysis. Follow-up questions in the terminal
 reuse the attached files and can send new excerpts or images to the provider.
-PDF extraction, rendering, and fallback OCR happen locally. Blob does not copy,
-move, or modify original files, and image payloads omit original metadata.
+PDF extraction, rendering, and fallback OCR happen locally. Blob saves exact
+source copies in `~/.blob/documents/` (or `BLOB_DOCUMENTS_DIR_PATH`) and does not
+move or modify originals. Private copies retain their source metadata locally;
+image payloads sent to the provider omit original metadata.
 
 Attachment contents and answers are kept outside automatic episodic storage and
 personal memory consolidation. Recent questions, filenames, and replies remain
 in session context. `/files` lists the current files, `/files remove <number>`
 detaches one, and `/files clear` detaches all files. Exiting the backend clears
-the file selection and session context. Detaching a file stops sending it on
-subsequent questions; earlier questions and answers remain in recent session
-context. The screen privacy shield controls
+the active selection and session context, while saved source copies and a local
+SQLite index of filenames, original paths, checksums, and bounded source excerpts
+survive. Questions matching saved filenames or excerpts can reopen sources and
+send selected content to the provider; Blob prints a notice when reopening.
+`/files saved` lists IDs, `/files open <id>` explicitly reopens one, and
+`/files forget <id|all>` deletes saved copies and indexed excerpts, detaches
+those files, and clears recent conversation context. It leaves originals intact.
+Detaching keeps the saved copy available for a later relevant question. Stored
+sources and the index use mode 0600 inside private directories (0700), with a
+20-file / 200 MB limit. These are local plaintext files, not encrypted storage.
+The screen privacy shield controls
 screen capture and memory storage; explicitly selected attachments can still be
-sent while it is active.
+sent and saved to the document library while it is active.
 
 ## Screen capture
 
@@ -74,8 +84,32 @@ episodes remain in the local archive until the database is removed.
 
 Dropped skill files are validated and copied to `~/.blob/skills/` by default.
 Their commands run without a shell, with an executable allowlist, a 10 second
-timeout, and a 4,000 character output cap. This is a command policy rather
+timeout, and an 8,000 byte output cap applied while reading output. Built-in
+command tools use the same policy. Git mutation and external execution options,
+unsafe find actions, and clock setting are rejected. This is a command policy rather
 than an operating system sandbox. A skill with read or network permissions can
 still access data allowed to the Blob process, so install only trusted files.
 When the LLM calls a skill, its text output is sent to Nebius as a tool
 observation and may also be summarized into local conversation memory.
+
+`/skills` and `/reminders` commands run locally without calling Nebius. Their
+results can appear in recent session context for subsequent chat. The last 30
+skill runs retain only the tool name, status, duration, and invocation source;
+raw arguments and results are not included in this execution history.
+
+## Scheduled reminders
+
+Reminder messages, IDs, due times, and repeat intervals are stored locally in
+`~/.blob/reminders.sqlite3` (or `BLOB_REMINDERS_DB_PATH`), separately from ChromaDB.
+The database file is private (`0600`); newly created parent directories use
+`0700`. Direct `/reminders` commands do not send their contents to the provider.
+Natural-language reminder requests use the normal cloud chat path. Reminders
+are created or changed only on an explicit request. Cancelling one deletes its
+record; completed one-time reminders are removed rather than archived.
+
+Blob cannot notify while its backend is closed. On startup it delivers overdue
+reminders once, with their original due time, and advances repeating reminders
+past missed intervals. A due record is removed or advanced before notification
+to prevent duplicate delivery; a process crash between that commit and printing
+can lose that notification. Stop Blob and remove the reminder database to erase
+all reminder records.

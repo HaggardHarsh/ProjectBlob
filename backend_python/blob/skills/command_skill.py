@@ -6,34 +6,33 @@ import subprocess
 
 from blob.skills.base import SkillInterface, SkillResult
 from blob.skills.validator import SkillDefinition, ToolDefinition
-
-
-def _allowed(argv: list[str], permissions: frozenset[str]) -> bool:
-    executable = argv[0]
-    if executable in {"find", "grep", "ls", "cat", "head", "tail"}:
-        if "filesystem.read" not in permissions:
-            return False
-        if executable == "find" and any(arg in {"-exec", "-execdir", "-ok", "-okdir", "-delete", "-fprint", "-fprintf", "-fls"} for arg in argv[1:]):
-            return False
-        return True
-    if executable == "git":
-        if "shell.execute" not in permissions or len(argv) < 2:
-            return False
-        if any(arg in {"-c", "--ext-diff", "--output"} or arg.startswith(("--ext-diff=", "--output=")) for arg in argv[2:]):
-            return False
-        return argv[1] in {"status", "log", "branch", "diff"} or (argv[1:3] == ["stash", "list"])
-    if executable == "curl":
-        return ("network.http" in permissions and len(argv) in {2, 3}
-                and argv[-1].startswith("https://") and all(arg in {"-s", "--silent"} for arg in argv[1:-1]))
-    if executable in {"echo", "date", "df", "free", "uname"}:
-        return "shell.execute" in permissions
-    return False
+from blob.skills.contracts import object_schema, validate_arguments
+from blob.skills.command_policy import allowed_command as _allowed, command_argv
+from blob.skills.process import run_command
 
 
 class CommandSkill(SkillInterface):
     def __init__(self, definition: SkillDefinition, tool: ToolDefinition):
         self.definition = definition
         self.tool = tool
+
+    @property
+    def permissions(self):
+        return self.definition.permissions
+
+    @property
+    def argument_schema(self):
+        properties = {}
+        for argument in self.tool.arguments:
+            rule = {"type": argument.type, "description": argument.description}
+            if not argument.required:
+                rule["default"] = argument.default
+            for key, value in (("enum", argument.enum), ("minimum", argument.minimum),
+                               ("maximum", argument.maximum)):
+                if value is not None:
+                    rule[key] = list(value) if key == "enum" else value
+            properties[argument.name] = rule
+        return object_schema(properties, [a.name for a in self.tool.arguments if a.required])
 
     @property
     def name(self) -> str:
@@ -49,11 +48,10 @@ class CommandSkill(SkillInterface):
         return list(self.definition.triggers)
 
     def execute(self, args: dict) -> SkillResult:
-        if not isinstance(args, dict):
-            return SkillResult("Tool arguments must be an object.", False, self.definition.emote_on_failure)
-        declared = {argument.name for argument in self.tool.arguments}
-        if set(args) - declared:
-            return SkillResult("Unknown tool arguments.", False, self.definition.emote_on_failure)
+        try:
+            args = validate_arguments(self.argument_schema, args)
+        except ValueError as exc:
+            return SkillResult(str(exc), False, self.definition.emote_on_failure)
         values = {}
         for argument in self.tool.arguments:
             value = args.get(argument.name, argument.default)
@@ -67,12 +65,10 @@ class CommandSkill(SkillInterface):
         if not _allowed(argv, self.definition.permissions):
             return SkillResult("This command is not allowed by the skill permissions or command policy.", False, self.definition.emote_on_failure)
         try:
-            result = subprocess.run(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=10, check=False)
+            result = run_command(command_argv(argv))
         except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
             return SkillResult(f"Command failed: {exc}", False, self.definition.emote_on_failure)
-        output = result.stdout[:4000]
-        if len(result.stdout) > 4000:
-            output += "\n...[truncated]"
+        output = result.stdout
         if result.returncode != 0:
             return SkillResult(output or f"Command exited with status {result.returncode}.", False, self.definition.emote_on_failure)
         output = self.definition.response_template.format_map({**values, "result": output or "(no output)"})

@@ -279,6 +279,22 @@ available vision model for attachment requests; `BLOB_VISION_MODEL` can override
 or disable discovery. With no vision model, local OCR supplies text only.
 Attachment analysis stays outside episodic storage and memory consolidation.
 
+`DocumentLibrary` saves the exact validated bytes read by `AttachmentReader` in
+private directories and indexes filenames and bounded source excerpts in SQLite.
+It holds up to 20 documents / 200 MB under `BLOB_DOCUMENTS_DIR_PATH`, defaulting
+to `~/.blob/documents/`. Replacing a source at the same original path updates its
+record and removes the superseded copy; quotas never silently evict older files.
+When no files are active, relevant terminal questions search the saved index by
+filename and excerpt words and reopen matching sources for fresh analysis. Cached
+sources keep original filenames for citations and are checked against stored
+size and SHA-256 before reopening. Full files remain available for new page
+requests even when earlier excerpts omitted them. Search is lexical and limited
+to indexed excerpts, not a full-document semantic index. Ambiguous references
+offer saved choices; `/files saved`, `/files open <id>`, and `/files forget <id|all>`
+provide explicit controls. Answers remain in session context rather than becoming
+document evidence or user-stated personal facts. Earlier versions stored no
+document copies, so their old sessions cannot be migrated.
+
 ### Screen Context Flow
 
 ```
@@ -304,6 +320,31 @@ BackendEvent → Frontend → Animation
 
 ### Skill Pill Ingestion Flow
 
+The runtime loads both built-ins and installed tools into `SkillRegistry`.
+`prompt_text()` exposes their argument contracts to the existing ReAct loop;
+camera operations stay in the explicit command path. All execution goes through
+`SkillRegistry.execute()`, which validates arguments, applies a deadline, bounds
+the result, and retains operational metadata in a 30-entry session history.
+`/skills` and `/reminders` use this same registry without a cloud model call.
+
+Reminders use a private SQLite store and one asynchronous worker. Creation is
+committed before success is returned. Startup reloads pending due times; shutdown
+cancels the worker and closes the database without deleting pending reminders.
+Recurring notifications advance to the next future interval after downtime.
+
+```mermaid
+flowchart LR
+    Chat[Terminal chat] --> Loop[ReAct loop]
+    Loop --> Registry[Skill registry]
+    Commands["/skills and /reminders"] --> Registry
+    Registry --> Validate[Validate arguments]
+    Validate --> Execute[Execute with deadline]
+    Execute --> Result[Bound result and record status]
+    Execute --> Reminders[Reminder store]
+    Reminders --> Worker[Reminder worker]
+    Worker --> Notify[Terminal notification and Blob emote]
+```
+
 ```
 User drags .skill.yaml onto Blob
     ↓
@@ -318,13 +359,13 @@ SkillValidator.validate(file)
 ┌─ Invalid  →  SkillAcknowledgment { success: false, error }
 │                 →  CONFUSED emote
 │
-└─ Valid    →  SkillRegistry.register(skill)
-                  →  HermesAgent.register_tool(skill.tools)
+└─ Valid    →  SkillRegistry.install_file(skill)
+                  →  Persist validated YAML; expose tool contracts
                   →  SkillAcknowledgment { success: true }
-                  →  EATING emote + ColorShift(skill.color)
+                  →  EATING emote
     ↓
 Frontend plays eating animation
-Frontend tints Blob with skill color (2 seconds)
+Skill color metadata remains informational
 ```
 
 ---

@@ -1,10 +1,17 @@
 import threading
 
 from blob.skills.base import SkillInterface, SkillResult
+from blob.skills.contracts import object_schema
 from blob.vision.camera import CameraError
 
 
 class CameraSkill(SkillInterface):
+    argument_schema = object_schema({
+        "action": {"type": "string", "enum": ["status", "scan", "enroll", "forget", "list"], "default": "scan"},
+        "name": {"type": "string", "maxLength": 100, "default": ""}})
+    permissions = ("camera.capture",)
+    timeout_seconds = 45
+    model_callable = False
     def __init__(self, vision):
         self.vision = vision
         self._lock = threading.Lock()

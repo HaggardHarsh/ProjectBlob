@@ -6,6 +6,8 @@ import shlex
 from string import Formatter
 
 import yaml
+from blob.skills.contracts import object_schema, validate_arguments
+from blob.skills.command_policy import allowed_command
 
 
 ALLOWED_PERMISSIONS = frozenset({"filesystem.read", "shell.execute", "network.http"})
@@ -17,7 +19,12 @@ VALID_EMOTES = frozenset({"IDLE", "HAPPY", "TIRED", "EXCITED", "THINKING", "OFFE
 class ToolArgument:
     name: str
     required: bool = False
-    default: str = ""
+    default: object = ""
+    type: str = "string"
+    description: str = ""
+    enum: tuple | None = None
+    minimum: float | None = None
+    maximum: float | None = None
 
 
 @dataclass(frozen=True)
@@ -100,7 +107,37 @@ class SkillValidator:
                 if not re.fullmatch(r"[a-z][a-z0-9_]*", arg_name) or arg_name in arg_names:
                     raise ValueError(f"Tool {tool_name} has a duplicate or invalid argument name.")
                 arg_names.add(arg_name)
-                arguments.append(ToolArgument(arg_name, bool(raw_arg.get("required", False)), str(raw_arg.get("default", ""))))
+                required = raw_arg.get("required", False)
+                kind = raw_arg.get("type", "string")
+                if type(required) is not bool or not isinstance(kind, str) or kind not in {"string", "number", "integer", "boolean"}:
+                    raise ValueError(f"Tool {tool_name} argument {arg_name} has an invalid type or required flag.")
+                enum = raw_arg.get("enum")
+                if enum is not None and (not isinstance(enum, list) or not enum):
+                    raise ValueError(f"Tool {tool_name} argument {arg_name} enum must be a nonempty list.")
+                minimum, maximum = raw_arg.get("minimum"), raw_arg.get("maximum")
+                if any(value is not None and type(value) not in {int, float} for value in (minimum, maximum)):
+                    raise ValueError(f"Tool {tool_name} argument {arg_name} bounds must be numbers.")
+                for value in (minimum, maximum):
+                    if value is not None:
+                        validate_arguments(object_schema({"bound": {"type": "number"}}), {"bound": value})
+                if minimum is not None and maximum is not None and minimum > maximum:
+                    raise ValueError(f"Tool {tool_name} argument {arg_name} has reversed bounds.")
+                default = raw_arg.get("default", {"string": "", "number": 0, "integer": 0, "boolean": False}[kind])
+                argument = ToolArgument(arg_name, required, default, kind, str(raw_arg.get("description", "")),
+                                        tuple(enum) if enum is not None else None, minimum, maximum)
+                rule = {"type": kind}
+                if enum is not None:
+                    for choice in enum:
+                        validate_arguments(object_schema({arg_name: rule}), {arg_name: choice})
+                if enum is not None:
+                    rule["enum"] = enum
+                if minimum is not None:
+                    rule["minimum"] = minimum
+                if maximum is not None:
+                    rule["maximum"] = maximum
+                if not required:
+                    validate_arguments(object_schema({arg_name: rule}), {arg_name: default})
+                arguments.append(argument)
             fields = set()
             for _, field, spec, conversion in Formatter().parse(command):
                 if field is not None:
@@ -109,6 +146,11 @@ class SkillValidator:
                     fields.add(field)
             if fields - arg_names:
                 raise ValueError(f"Tool {tool_name} refers to undeclared arguments: {', '.join(sorted(fields - arg_names))}.")
+            if any(field in tokens[0] for field in ("{", "}")):
+                raise ValueError(f"Tool {tool_name} must use a fixed executable.")
+            preview = [token.format_map({a.name: str(a.default) for a in arguments}) for token in tokens]
+            if not allowed_command(preview, permissions):
+                raise ValueError(f"Tool {tool_name} command is not allowed by the declared permissions or command policy.")
             tools.append(ToolDefinition(tool_name, str(tool_description or tool_name), command, tuple(arguments)))
         raw_triggers = data.get("triggers", [])
         if not isinstance(raw_triggers, list) or any(not isinstance(item, str) for item in raw_triggers):

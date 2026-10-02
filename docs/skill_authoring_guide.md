@@ -38,6 +38,45 @@ the tool. `response_template` can use `{result}` and arguments shared by all
 tools in the pill. Optional `triggers`, `version`, `author`, `color`, and `icon`
 fields can be included. Color and icon metadata are currently informational.
 
+## Inspect and execute
+
+`/skills` lists built-in and installed tools. `/skills <tool>` shows its argument
+contract and declared permissions. `/skills run <tool> <JSON object>` executes
+it directly without a model request; for example:
+
+```text
+/skills system_monitor.disk_usage
+/skills run system_monitor.disk_usage {"path":"/"}
+/skills history
+```
+
+The model sees these same argument contracts. Built-ins and YAML tools share
+validation, deadlines, bounded observations, and a 30-run session history.
+Unknown arguments and incorrect types fail before execution. Camera operations
+require explicit terminal commands and are excluded from model tool discovery.
+
+## Typed arguments
+
+Arguments default to `type: string`, keeping existing pills compatible. You can
+declare `string`, `integer`, `number`, or `boolean`, add a description and enum,
+and restrict numeric values with `minimum` and `maximum`:
+
+```yaml
+- name: minutes
+  description: Files modified within this many minutes
+  type: integer
+  required: false
+  default: 60
+  minimum: 1
+  maximum: 10080
+```
+
+Use the corresponding JSON type when calling a tool: `{"minutes":60}` is a
+number; `{"minutes":"60"}` is a string. Boolean flags and nonfinite numbers
+cannot stand in for numeric values. Defaults and enum choices are validated at
+installation. Command executables must be fixed, and declared permissions must
+allow the command before the pill can be installed.
+
 ## Command and permission rules
 
 Commands are split into argument tokens before substitutions are applied and
@@ -48,10 +87,24 @@ are unsupported.
 | Permission | Supported commands |
 |------------|--------------------|
 | `filesystem.read` | `find`, `grep`, `ls`, `cat`, `head`, `tail` |
-| `shell.execute` | `git status/log/branch/diff/stash list`, `echo`, `date`, `df`, `free`, `uname` |
+| `shell.execute` | `git status/log/diff/stash list`, branch listing, `echo`, date display, `df`, `free`, `uname`, Python version |
 | `network.http` | `curl -s https://…` |
 
-Commands have a 10 second timeout and output is capped at 4,000 characters.
+Commands have a 10 second deadline and retain at most 8,000 bytes of output;
+an omission marker identifies truncated results. Git optional index writes,
+external diff/text conversion helpers, signature helpers, and pagers are
+disabled or rejected. Branch modifications, output-file arguments, unsafe find
+actions, and clock setting are rejected. Curl ignores `.curlrc` configuration
+and uses HTTPS. These rules apply to both YAML and built-in command tools.
+
+Other tools default to a 15 second deadline; screen capture allows 120 seconds
+for the desktop portal, and camera operations allow 45 seconds. Cancelling
+an asynchronous tool cancels its awaited work. A Python function already
+running in a worker thread may finish afterward; command processes have their
+own deadline and are killed on timeout. Screen OCR keeps ownership of its
+captured image until the worker finishes and rechecks privacy before returning
+text. Completed outputs are limited to 8,000 UTF-8 bytes before model use.
+
 Blob validates files before loading them and rejects unsupported permissions,
 duplicate tool names, malformed templates, and files over 64 KiB. The runner
 restricts commands but is not an operating system sandbox. Install only files

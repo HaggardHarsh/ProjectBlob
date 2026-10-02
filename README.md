@@ -113,13 +113,17 @@ Chat at the backend's `Blob>` terminal prompt. The small desktop slime shows emo
 
 Drag PDFs or images onto the desktop Blob. It prints a brief analysis in the backend terminal, then keeps those files available for follow-up questions at `Blob>`. Ask "Explain page 12" or "Summarize pages 3-5" directly in the terminal. Dropping additional files adds them to the current session. Supported formats are PDF, PNG, JPEG, and WebP, with up to four attached files, at most 20 MB each and 50 MB combined. PDFs can contain up to 100 pages.
 
-Use `/files` to list attached files, `/files remove <number>` to detach one, or `/files clear` to detach all files and return to ordinary conversation. Explicit requests such as reminders, camera commands, and screen capture continue to work while files are attached. File selections last until detached or the backend restarts.
+Use `/files` to list attached files, `/files remove <number>` to detach one, or `/files clear` to detach all files. Explicit requests such as reminders, camera commands, and screen capture continue to work while files are attached. The active selection lasts until detached or the backend restarts.
+
+Blob also saves private local source copies in `~/.blob/documents/` (override with `BLOB_DOCUMENTS_DIR_PATH`). After a restart, ask about your exam timetable or name a saved document: Blob searches filenames and extracted excerpts, reopens relevant sources, and answers with page references. This also works if the original file moved or was deleted. Search uses bounded extracted text and filenames; text outside previous excerpts and visual details without OCR might require naming the file or opening it explicitly. The library holds up to 20 documents / 200 MB; storage failures are reported in the terminal and leave the current analysis usable. Files dropped before this persistence feature must be dropped again once.
+
+Use `/files saved` to list saved document IDs, `/files open <id>` to reopen one, and `/files forget <id>` or `/files forget all` to delete saved copies and clear recent conversation context. Original files remain untouched. Detaching a file keeps its saved copy; a later question about it can reopen it.
 
 The backend extracts PDF text locally and includes filenames and page numbers as source references. File analysis budgets excerpts, page labels, and images together within `BLOB_MAX_PROMPT_BYTES` (32,000 by default). Long documents and wide page ranges use relevant page excerpts; the supplied context identifies omitted pages and text. Image analysis discovers an available image-input model from your Nebius account. You can set `BLOB_VISION_MODEL` to an exact model ID or `off` to use local OCR only. Ordinary chat continues using `BLOB_MODEL_NAME`.
 
 Visual requests send resized images, including up to three selected PDF page images per document and four images total. When no vision model is available, Blob can read text in images and scanned PDFs using the optional `backend_python[ocr]` installation. OCR alone cannot describe objects, colors, or diagrams. Unreadable, damaged, password protected, and oversized files produce an error instead of an invented explanation.
 
-Dropping files and asking follow-up questions shares selected file content with your cloud AI provider. The backend prints this when a drop arrives. PDF parsing and OCR happen locally; original files are left in place. Document contents and attachment answers are not automatically saved as personal memories.
+Dropping files, opening saved files, and asking related questions shares selected file content with your cloud AI provider. The backend prints a notice on drops and reopening saved files. PDF parsing and OCR happen locally; original files are left in place. Source copies and extracted excerpts are stored separately from personal memory. Attachment answers are kept only in recent session context, so future recall uses the actual document rather than a potentially mistaken earlier answer.
 
 To run the backend test suite, install `backend_python[dev]` and run `python -m pytest backend_python/tests -q` from the repository root.
 
@@ -175,6 +179,42 @@ Current weather comes from wttr.in. Name a city to query that city; without one,
 ---
 
 ## Skill Pills
+
+### Skill hub and reminders
+
+Blob's skills share typed argument validation, execution deadlines, bounded output,
+and a session history of successful and failed runs. Use these terminal commands
+to inspect and run them directly, without sending a request to the cloud model:
+
+```text
+/skills
+/skills reminder
+/skills run git_status {}
+/skills history
+/reminders add 25 Take a study break
+/reminders at 2026-10-05T09:00:00+05:30 Get ready for HDL
+/reminders every 60 Drink water
+/reminders
+/reminders snooze <id> 10
+/reminders cancel <id>
+```
+
+Reminders survive backend restarts in `~/.blob/reminders.sqlite3`; override this
+with `BLOB_REMINDERS_DB_PATH`. They support timers, an exact date/time, and repeating
+intervals. A date/time without an offset uses the computer's local timezone.
+Blob must be running to notify you; overdue reminders appear on the next launch.
+Repeating reminders catch up once and resume their cadence. Cancelling a reminder
+removes its stored message. Natural requests such as "Remind me to revise HDL
+tomorrow at 9 am" and "Cancel my reminder to stretch" use the same runtime.
+Chat cannot create or change reminders unless you ask for that action.
+
+Command skills share a read-only command policy. Git branch creation, deletion,
+renaming, external diff helpers, and output-file options are rejected. Command
+output is bounded as it is read, and screen OCR runs in a worker so the event
+loop can keep delivering reminders. Skill execution history contains names,
+status, timing, and source, rather than raw arguments or file contents.
+
+### Install a skill
 
 Drop a `.skill.yaml` file onto Blob to teach it new abilities:
 

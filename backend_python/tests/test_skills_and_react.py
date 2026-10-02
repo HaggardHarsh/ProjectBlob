@@ -56,7 +56,7 @@ def test_weather_skill_uses_requested_city_and_reports_unknown_location(monkeypa
 
     def fake_urlopen(request, timeout):
         requested.append((request.full_url, timeout))
-        return SimpleNamespace(read=lambda: b"New York: Clear, 20 C")
+        return SimpleNamespace(read=lambda size: b"New York: Clear, 20 C")
 
     monkeypatch.setattr("blob.skills.builtin.weather.urllib.request.urlopen", fake_urlopen)
     result = WeatherSkill().execute({"location": "New York"})
@@ -66,7 +66,7 @@ def test_weather_skill_uses_requested_city_and_reports_unknown_location(monkeypa
     assert requested == [("https://wttr.in/New+York?format=3", 10)]
 
     monkeypatch.setattr("blob.skills.builtin.weather.urllib.request.urlopen",
-                        lambda request, timeout: SimpleNamespace(read=lambda: b"Unknown location"))
+                        lambda request, timeout: SimpleNamespace(read=lambda size: b"Unknown location"))
     assert not WeatherSkill().execute({"location": "NotARealCity"}).success
 
 

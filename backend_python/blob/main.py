@@ -77,7 +77,7 @@ async def main_async():
     skill_registry.register(ShellCommandSkill())
     
     # Reminder skill (needs dispatcher for async notifications)
-    reminder_skill = ReminderSkill()
+    reminder_skill = ReminderSkill(config.reminders_db_path)
     reminder_skill.set_dispatcher(event_dispatcher)
     skill_registry.register(reminder_skill)
     
@@ -103,6 +103,8 @@ async def main_async():
         config, vector_store, skill_registry, event_dispatcher,
         screen_sampler=screen_sampler
     )
+    reminder_skill.prompt_waiting = lambda: getattr(orchestrator, "_cli_waiting_for_input", False)
+    reminder_skill.start()
     
     server, servicer = await start_grpc_server(config, orchestrator, event_dispatcher)
     
@@ -113,6 +115,8 @@ async def main_async():
         print("\033[92m╚══════════════════════════════════════════════╝\033[0m")
         print("\033[90mType a message to chat. Ctrl+C to quit.\033[0m\n")
         print("\033[90mDrop PDFs or images onto Blob to analyze them here. /files lists them; /files clear detaches them.\033[0m\n")
+        print("\033[90mSaved files survive restarts. /files saved lists copies; /files forget <id|all> deletes them.\033[0m\n")
+        print("\033[90m/skills lists tools. /reminders lists reminders; /reminders help shows scheduling commands.\033[0m\n")
         while True:
             try:
                 orchestrator._cli_waiting_for_input = True
@@ -153,6 +157,7 @@ async def main_async():
     for task in tasks:
         task.cancel()
     await asyncio.gather(*tasks, return_exceptions=True)
+    await skill_registry.close()
     
     await servicer.close_streams()
     await server.stop(grace=5)

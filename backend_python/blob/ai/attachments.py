@@ -28,10 +28,18 @@ class AttachmentError(ValueError):
 
 
 @dataclass
+class AttachmentSource:
+    path: str
+    data: bytes
+    text: str
+
+
+@dataclass
 class AttachmentContext:
     parts: list[dict] = field(default_factory=list)
     names: list[str] = field(default_factory=list)
     has_images: bool = False
+    sources: list[AttachmentSource] = field(default_factory=list)
 
 
 def _excerpt(text: str, question: str, budget: int) -> str:
@@ -117,6 +125,8 @@ class AttachmentReader:
                 raise AttachmentError(f"I couldn't read {path.name}. It may be damaged or password protected.") from exc
             result.parts.extend(file_result.parts)
             result.has_images |= file_result.has_images
+            result.sources.append(AttachmentSource(str(path.resolve()), data,
+                "\n".join(part["text"] for part in file_result.parts if part["type"] == "text")))
             remaining_text -= _text_size(file_result.parts) + 1
         return result
 

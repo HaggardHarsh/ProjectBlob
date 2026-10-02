@@ -2,6 +2,7 @@ import abc
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from blob.skills.contracts import object_schema
 
 
 _skill_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="blob-skill")
@@ -15,6 +16,11 @@ class SkillResult:
 
 
 class SkillInterface(abc.ABC):
+    argument_schema = object_schema()
+    permissions = ()
+    timeout_seconds = 15
+    model_callable = True
+
     @property
     @abc.abstractmethod
     def name(self) -> str: pass

@@ -1,7 +1,10 @@
 import subprocess
 from blob.skills.base import SkillInterface, SkillResult
+from blob.skills.command_policy import command_argv
+from blob.skills.process import run_command
 
 class GitStatusSkill(SkillInterface):
+    permissions = ("filesystem.read", "shell.execute")
     @property
     def name(self): return "git_status"
     
@@ -13,7 +16,8 @@ class GitStatusSkill(SkillInterface):
     
     def execute(self, args):
         try:
-            out = subprocess.check_output(["git", "status"], stderr=subprocess.STDOUT).decode()
-            return SkillResult(output=out, success=True, emote_suggestion="THINKING")
-        except subprocess.CalledProcessError as e:
-            return SkillResult(output=e.output.decode(), success=False, emote_suggestion="CONFUSED")
+            result = run_command(command_argv(["git", "status"]))
+            return SkillResult(output=result.stdout, success=result.returncode == 0,
+                               emote_suggestion="THINKING" if result.returncode == 0 else "CONFUSED")
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return SkillResult(output=f"Git status failed: {exc}", success=False, emote_suggestion="WORRIED")
