@@ -29,7 +29,12 @@ STYLE_CACHE_TTL_SECONDS = 30
 MAX_MEMORY_DISTANCE = 1.35  # Calibrated for Chroma's default normalized MiniLM embeddings.
 STYLE_QUERY = "How does the user want Blob to speak to them: friendly buddy, formal, professional, direct, or quiet?"
 EMOTE_NAMES = "IDLE|HAPPY|SAD|ANGRY|CONFUSED|THINKING|WORRIED|CELEBRATE|EXCITED|TIRED|OFFER_COFFEE|SHY|SLEEPING|EATING|PROUD|PLAYFUL|WORKING|DEEP_THINKING|LISTENING|SHOCKED|MELTING|ERROR|SUCCESS|WAITING"
-EMOTE_MARKER = re.compile(rf"<emote>\s*({EMOTE_NAMES})\s*</emote>|\(({EMOTE_NAMES})\)", re.IGNORECASE)
+EMOTE_ALIASES = {"AMUSED": "PLAYFUL"}
+EMOTE_MARKER = re.compile(
+    rf"<emote>\s*([^<]*?)\s*</emote>|\(({EMOTE_NAMES}|{'|'.join(EMOTE_ALIASES)})\)",
+    re.IGNORECASE | re.DOTALL)
+EMOTE_OPEN = re.compile(
+    r"<emote>.*$|</?emote\b[^>]*$|</?(?:e|em|emo|emot)\s*$", re.IGNORECASE | re.DOTALL)
 FACE_REQUEST = re.compile(
     r"(?:"
     r"(?:(?:can|could|would|will) you\s+)?(?:please\s+)?"
@@ -72,16 +77,26 @@ SCREEN_REQUEST = re.compile(
     r"|\bwhat does\b.{0,80}\bon\s+(?:my|the|this)\s+(?:screen|desktop|display)\b",
     re.IGNORECASE,
 )
+SCREEN_REFERENCE = re.compile(
+    r"\b(?:my|the|this|current)\s+(?:screen|desktop|display)\b", re.IGNORECASE)
+SCREEN_CORRECTION = re.compile(
+    r"^\s*(?:no|nope|nah|actually|i (?:mean|meant))\b"
+    r"|\b(?:i (?:mean|meant)|not (?:the|that|an?)(?:\s+attached)?\s+(?:pdf|document|file|timetable))\b",
+    re.IGNORECASE)
 SCREEN_CAPTURE_FOLLOWUP = re.compile(
     r"\b(?:capture(?: it)?|take (?:a )?screenshot|screenshot|go ahead|just do it|do it now)\b",
     re.IGNORECASE,
 )
 SCREEN_CAPTURE_DENIAL = re.compile(
-    r"\b(?:don't|do not|never)\s+(?!(?:need|require)\b)"
+    r"\b(?:don['’]t|do not|never)\s+(?!(?:need|require)\b)"
     r"(?:(?:please|want|you|to|me|my|the|a)\s+){0,4}"
     r"(?:capture|record|screenshot|look at|see|view|read|share|take (?:a )?screenshot|do (?:it|that))\b"
-    r"|\b(?:don't|do not)\s+need\s+(?:(?:you\s+)?to\s+"
-    r"(?:capture|record|look at|see|view|read)|(?:a\s+)?(?:screenshot|screen capture))\b",
+    r"|\b(?:don['’]t|do not)\s+need\s+(?:(?:you\s+)?to\s+"
+    r"(?:capture|record|look at|see|view|read)|(?:a\s+)?(?:screenshot|screen capture))\b"
+    r"|\bno\s+(?:more\s+)?(?:screenshots?|screen capture|captur(?:e|ing)(?:\s+of)?|recording)\b"
+    r"|\b(?:don['’]t|do not)\s+(?:want|need)\b.{0,35}\b(?:screen|desktop|display)\b"
+    r".{0,25}\b(?:captured|recorded|shared|read)\b"
+    r"|\bnot\s+(?:my|the|this)\s+(?:screen|desktop|display)\b",
     re.IGNORECASE,
 )
 SCREEN_PROCEDURE_QUESTION = re.compile(
@@ -90,12 +105,16 @@ SCREEN_PROCEDURE_QUESTION = re.compile(
     re.IGNORECASE,
 )
 FALSE_SCREEN_PERMISSION_DENIAL = re.compile(
-    r"\b(?:can't|cannot|unable to|need(?: your)? permission)\b.{0,100}"
-    r"\b(?:capture|see|view|read|access)\b.{0,60}\b(?:screen|desktop|display)\b",
+    r"\b(?:can['’]t|cannot|unable to|need(?: your)? permission)\b.{0,100}"
+    r"\b(?:capture|see|view|read|access|peek|look)\b.{0,60}\b(?:screen|desktop|display)\b"
+    r"|\b(?:don['’]t|do not)\s+have\s+access\b.{0,60}\b(?:screen|desktop|display)\b",
     re.IGNORECASE,
 )
 STUDY_HELP_REQUEST = re.compile(
-    r"\b(?:study|studying|learn|learning|understand|explain|teach|help(?: me)?(?: with)?)\b",
+    r"\b(?:study|studying|learn|learning|understand|explain|teach|help(?: me)?(?: with)?"
+    r"|simplify|simpler|hard|difficult|confusing|confused)\b"
+    r"|\b(?:dumb|break)\b.{0,40}\bdown\b"
+    r"|\bmake\b.{0,40}\b(?:simple|easy|easier)\b",
     re.IGNORECASE,
 )
 FILE_REQUEST = re.compile(
@@ -189,6 +208,7 @@ def _strip_reasoning(text: str) -> str:
 def _visible_preview(text: str) -> str:
     text = _strip_reasoning(text)
     text = EMOTE_MARKER.sub("", text)
+    text = EMOTE_OPEN.sub("", text)
     # A stream chunk may stop in the middle of a control tag.
     return re.sub(r"<[^>]*$", "", text).rstrip()
 
@@ -206,14 +226,15 @@ def _wants_screen_capture(text: str, recent_turns) -> bool:
     """Treat a screen question or its immediate go-ahead as a capture request."""
     if SCREEN_CAPTURE_DENIAL.search(text) or SCREEN_PROCEDURE_QUESTION.search(text):
         return False
-    if SCREEN_REQUEST.search(text) or text.casefold() in {"/screen", "/screenshot"}:
+    if (SCREEN_REQUEST.search(text) or text.casefold() in {"/screen", "/screenshot"} or
+            (SCREEN_REFERENCE.search(text) and
+             (STUDY_HELP_REQUEST.search(text) or SCREEN_CORRECTION.search(text)))):
         return True
     if not SCREEN_CAPTURE_FOLLOWUP.search(text):
         return False
     previous_user = next((item["content"] for item in reversed(recent_turns)
                           if item["role"] == "user"), "")
-    return bool(SCREEN_REQUEST.search(previous_user) or
-                previous_user.strip().casefold() in {"/screen", "/screenshot"})
+    return _wants_screen_capture(previous_user.strip(), ())
 
 
 class BlobOrchestrator:
@@ -405,8 +426,21 @@ class BlobOrchestrator:
     def _extract_emote(self, text: str) -> tuple[str, str]:
         """Keep model mood markers for the slime, never for the chat text."""
         matches = list(EMOTE_MARKER.finditer(text))
-        emote = (matches[-1].group(1) or matches[-1].group(2)).upper() if matches else "IDLE"
-        return emote, EMOTE_MARKER.sub("", text).strip()
+        emote = (matches[-1].group(1) or matches[-1].group(2) or "IDLE").strip().upper() if matches else "IDLE"
+        emote = EMOTE_ALIASES.get(emote, emote)
+        if emote not in EMOTE_NAMES.split("|"):
+            emote = "IDLE"
+        return emote, EMOTE_OPEN.sub("", EMOTE_MARKER.sub("", text)).strip()
+
+    def _show_thinking(self):
+        """Display the same terminal placeholder for ordinary chat and documents."""
+        print("\r\033[K\033[90m(Thinking...)\033[0m", end="", flush=True)
+        self._thinking_placeholder_visible = True
+
+    def _clear_thinking(self):
+        if getattr(self, "_thinking_placeholder_visible", False):
+            print("\r\033[K", end="", flush=True)
+            self._thinking_placeholder_visible = False
 
     async def _generate_with_preview(self, messages: list[dict], system_prompt: str,
                                      allow_preview: bool = True, engine=None) -> tuple[str, str]:
@@ -433,6 +467,7 @@ class BlobOrchestrator:
                 safe = _visible_preview(response[:-32])
                 if len(safe) > len(preview):
                     if not preview_started:
+                        self._clear_thinking()
                         print("\r\033[K\033[96mBlob:\033[0m ", end="", flush=True)
                         preview_started = True
                     print(safe[len(preview):], end="", flush=True)
@@ -460,6 +495,9 @@ class BlobOrchestrator:
         finally:
             if not task.done():
                 task.cancel()
+                self._clear_thinking()
+            elif task.cancelled() or task.exception() is not None:
+                self._clear_thinking()
 
     def _conversation_lock(self):
         if not hasattr(self, "_message_lock"):
@@ -501,6 +539,10 @@ class BlobOrchestrator:
                 return await self._send_direct_response(result.output, result.emote_suggestion)
             if stripped and stripped.split(maxsplit=1)[0].lower() == "/files":
                 return await self._handle_files_command(stripped)
+            # An explicit screen request selects fresh screen evidence before
+            # attachment selection or saved-document search can claim the message.
+            if _wants_screen_capture(stripped, getattr(self, "_recent_turns", ())):
+                return await self._handle_text_message(user_msg)
             explicit = list(getattr(user_msg, "attachments", ()))
             paths = explicit or list(getattr(self, "_active_attachments", ()))
             if paths and (explicit or self._uses_attachment_context(stripped)):
@@ -608,6 +650,7 @@ class BlobOrchestrator:
 
     async def _handle_attachment_message(self, user_msg, *, activate=False):
         question = self.guardrails.sanitize_input(user_msg.text).strip() or "Explain these attached files."
+        self._show_thinking()
         await self.dispatch_emote("WORKING")
         configured = getattr(getattr(self, "config", None), "vision_model_name", "auto")
         engine = None
@@ -639,7 +682,9 @@ class BlobOrchestrator:
         self._last_camera_action = None
         if activate:
             self._active_attachments = list(user_msg.attachments)
+            self._clear_thinking()
             print("Blob: Files are available for follow-up questions. Use /files to list them or /files clear to detach.\n")
+            self._show_thinking()
         current = {"role": "user", "content": [{"type": "text", "text": question}, *attached.parts]}
         if not attached.has_images:
             current["content"] = "\n".join(part["text"] for part in current["content"])
@@ -654,10 +699,14 @@ class BlobOrchestrator:
         try:
             saved = await asyncio.to_thread(self._document_library().remember, attached.sources)
             if saved and activate:
+                self._clear_thinking()
                 print("Blob: Saved local source copies for future conversations. Use /files saved to manage them.\n")
+                self._show_thinking()
         except (DocumentError, OSError, sqlite3.Error) as exc:
             logger.warning("Document save failed: %s", exc)
+            self._clear_thinking()
             print(f"Blob: These files are usable now but could not be saved for restart: {exc}\n")
+            self._show_thinking()
         await self.dispatch_emote("THINKING")
         try:
             response, _ = await self._await_with_progress(
@@ -729,6 +778,7 @@ class BlobOrchestrator:
             if skill is None:
                 return await self._send_direct_response("Screen capture is unavailable.", "WORRIED")
             try:
+                self._show_thinking()
                 await self.dispatch_emote("WORKING")
                 screen_result = await self._await_with_progress(
                     self.skill_registry.execute("screen_capture", {}, source="terminal"), 3.0, "WAITING")
@@ -742,7 +792,7 @@ class BlobOrchestrator:
             self.last_screen_context = "Fresh screen capture is supplied as a separate observation."
         # Show the thinking state before local memory retrieval begins.
         await self.dispatch_emote("THINKING")
-        print("\033[90m(Thinking...)\033[0m", end="", flush=True)
+        self._show_thinking()
         self._grounded_user_evidence = []
         context = self._build_context(clean_text)
         sys_prompt = self._build_system_prompt()
@@ -758,15 +808,21 @@ class BlobOrchestrator:
         ]
         current_request = messages[-1]
         if screen_result is not None:
+            previous_user = next((item["content"] for item in reversed(getattr(self, "_recent_turns", ()))
+                                  if item["role"] == "user"), "")
+            study_requested = (STUDY_HELP_REQUEST.search(stripped) or
+                               (SCREEN_CORRECTION.search(stripped) and STUDY_HELP_REQUEST.search(previous_user)))
             study_guidance = (
                 "The user asked for study help. Start helping from the readable text: "
                 "if it contains a complete question or exercise, work through it; otherwise explain one relevant concept. "
                 "Ask a short follow-up only after giving useful help. Do not invent missing values, diagrams, or text. "
-                if STUDY_HELP_REQUEST.search(stripped) else ""
+                if study_requested else ""
             )
             messages.append({"role": "user", "content":
                 f"[Observation] A fresh screen capture succeeded. {screen_result.output}\n"
                 "Use the cleaned OCR text as visual evidence. The Blob chat terminal and its title are not a lesson topic. "
+                "This request is about the current screen, not an earlier attached or saved document. "
+                "Prior replies denying screen access are superseded by this successful capture. "
                 "Name a study topic only if its words appear in the cleaned OCR text. "
                 f"{study_guidance}"
                 "If the text is unclear, ask the user which part they mean. Do not search for files unless the user requested a file search. "
@@ -826,7 +882,7 @@ class BlobOrchestrator:
                 break
 
             # Clear any streamed preview before executing a tool.
-            print("\r\033[K\033[90m(Thinking...)\033[0m", end="", flush=True)
+            self._show_thinking()
 
             if tool_name == "camera":
                 return await self._send_direct_response(
@@ -1003,6 +1059,8 @@ class BlobOrchestrator:
         resp_event = blob_service_pb2.BackendEvent()
         resp_event.notification.text = final_response
         await self.event_dispatcher.broadcast(resp_event)
+
+        self._clear_thinking()
         
         if preview_text and final_response.startswith(preview_text):
             # The preview may have wrapped across terminal rows; append instead of redrawing it.
@@ -1018,6 +1076,7 @@ class BlobOrchestrator:
         return final_response
 
     async def _send_direct_response(self, text: str, emote: str):
+        self._clear_thinking()
         await self.dispatch_emote(emote)
         event = blob_service_pb2.BackendEvent()
         event.notification.text = text

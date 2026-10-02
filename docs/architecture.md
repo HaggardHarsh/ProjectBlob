@@ -298,25 +298,34 @@ document copies, so their old sessions cannot be migrated.
 ### Screen Context Flow
 
 ```
-Timer fires (every 30-60 seconds)
+User asks about the screen, requests simpler study help, corrects the source,
+or enters /screen or /screenshot
     ↓
-PrivacyShield.is_active()?  ──YES──►  SKIP
+Orchestrator selects the screen path before active attachments or saved recall
+    ↓
+SkillRegistry.execute("screen_capture", {}, source="terminal")
+    ↓
+Privacy checks → ScreenSampler.capture() → PIL Image (in-memory)
+    ↓
+Worker reads OCR, excludes Blob's chat terminal, and closes the image
+    ↓
+Capture or OCR failed? ──YES──► Report the actual reason; no PDF fallback
     ↓ NO
-ScreenSampler.capture()  →  PIL Image (480p, in-memory)
+Fresh active window title and OCR text become the latest model observation
     ↓
-OCRProcessor.extract(image)  →  text + confidence
-    ↓
-DELETE image from memory
-    ↓
-ContextAnalyzer.analyze(text)  →  WorkflowContext
-    ↓
-┌─ "Build Successful"  →  CELEBRATE emote
-├─ "Error/Exception"   →  WORRIED emote (offer help)
-├─ Coding > 2 hours    →  OFFER_COFFEE emote
-└─ No activity > 30min →  SLEEPING state
+Model explains the current material; previous PDFs and access denials are history
     ↓
 BackendEvent → Frontend → Animation
 ```
+
+Screen intent recognizes a screen reference and requests for help or simplification
+in either order, including "stuff on my screen ... dumb it down" and corrections
+such as "No, the screen, not the PDF." The entry point gives this intent priority
+even when a message carries attachment paths. An explicit refusal or a question
+about how capture works does not trigger a screenshot. Follow-up authorization
+uses the same intent detector. Regression tests combine these requests with
+active and saved timetables, detachment, real skill execution with test captures,
+and privacy, portal, and OCR failures.
 
 ### Skill Pill Ingestion Flow
 
