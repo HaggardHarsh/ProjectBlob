@@ -19,13 +19,19 @@ source copies in `~/.blob/documents/` (or `BLOB_DOCUMENTS_DIR_PATH`) and does no
 move or modify originals. Private copies retain their source metadata locally;
 image payloads sent to the provider omit original metadata.
 
-Attachment contents and answers are kept outside automatic episodic storage and
-personal memory consolidation. The user's own terminal messages are archived
+Attachment contents and answers are kept outside personal memory consolidation.
+Completed answers requested by the user are stored independently in
+`document_results.sqlite3` inside the memory directory, with the request, answer,
+source filenames/original paths/checksums, saved time, and the user context used.
+These are generated work, not user-authored personal facts. Automatic drop
+overviews are not stored as results. The user's own terminal messages are archived
 before analysis unless the privacy shield blocks memory storage. Explicit academic
 declarations are saved as exact quotes immediately; other user statements remain
 eligible for ordinary consolidation. File answers receive bounded recalled user
 statements alongside selected source evidence. PDF rows and inferred assistant
-claims cannot become personal facts. Recent questions, filenames, and replies
+claims cannot become personal facts. Discussing saved results can send their
+bounded text and recalled user statements to Nebius. `/results show <id>` reads
+a full stored answer locally without an API call. Recent questions, filenames, and replies
 also remain in session context. `/files` lists the current files, `/files remove <number>`
 detaches one, and `/files clear` detaches all files. Exiting the backend clears
 the active selection and session context, while saved source copies and a local
@@ -34,13 +40,17 @@ survive. Questions matching saved filenames or excerpts can reopen sources and
 send selected content to the provider; Blob prints a notice when reopening.
 `/files saved` lists IDs, `/files open <id>` explicitly reopens one, and
 `/files forget <id|all>` deletes saved copies and indexed excerpts, detaches
-those files, and clears recent conversation context. It leaves originals and
-separately archived user messages and personal facts intact.
+those files, and removes source-only overviews from recent context. It leaves
+originals, completed results, unrelated conversation, and separately archived
+user messages and personal facts intact. `/results forget <id|all>` deletes saved
+generated answers and their associated live conversation pairs without deleting
+source files or user facts. Results use a private SQLite file (0600), retain up
+to 100 answers / 2 MB, and are not encrypted.
 Detaching keeps the saved copy available for a later relevant question. Stored
 sources and the index use mode 0600 inside private directories (0700), with a
 20-file / 200 MB limit. These are local plaintext files, not encrypted storage.
 The screen privacy shield controls
-screen capture and memory storage; explicitly selected attachments can still be
+screen capture, personal memory storage, and automatic result storage; explicitly selected attachments can still be
 sent and saved to the document library while it is active.
 
 ## Screen capture

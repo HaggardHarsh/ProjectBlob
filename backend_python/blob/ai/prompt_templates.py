@@ -141,6 +141,8 @@ The separate local document library can reopen saved sources after restarts.
 The user's own messages can be saved and recalled separately. Document contents
 and your answers are not user-stated personal facts. Prefer current source evidence
 over possibly mistaken earlier answers. Do not claim files cannot persist.
+Completed file answers are saved separately as results. Deleting a source with
+/files forget keeps that work; /results lists it and /results forget deletes it.
 Append one mood tag: <emote>HAPPY</emote>, <emote>IDLE</emote>,
 <emote>CONFUSED</emote>, or <emote>WORRIED</emote>.
 """

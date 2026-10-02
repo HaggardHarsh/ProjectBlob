@@ -116,6 +116,7 @@ async def main_async():
         print("\033[90mType a message to chat. Ctrl+C to quit.\033[0m\n")
         print("\033[90mDrop PDFs or images onto Blob to analyze them here. /files lists them; /files clear detaches them.\033[0m\n")
         print("\033[90mSaved files survive restarts. /files saved lists copies; /files forget <id|all> deletes them.\033[0m\n")
+        print("\033[90mCompleted file answers survive source deletion. /results lists them; /results show <id> reopens one.\033[0m\n")
         print("\033[90m/skills lists tools. /reminders lists reminders; /reminders help shows scheduling commands.\033[0m\n")
         while True:
             try:

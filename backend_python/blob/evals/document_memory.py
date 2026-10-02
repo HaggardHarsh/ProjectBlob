@@ -187,15 +187,68 @@ async def run_evaluation(root, *, live=False, model=None, vision="off"):
             "vision": vision if live else "off", "results": outputs}
 
 
+async def run_saved_work_evaluation(root, *, live=False, model=None, vision="auto"):
+    """Make a timetable, delete both PDF copies, restart, then discuss the work."""
+    path = root / "synthetic_exam_schedule.pdf"
+    make_pdf(path)
+    seed = make_blob(root, live=False, model=model)
+    await seed.handle_user_message(blob_service_pb2.UserMessage(text=SUBJECTS))
+    await seed.handle_attachment_drop([str(path)])
+    blob = make_blob(root, live=live, model=model, vision=vision)
+    if not live:
+        async def timetable_reply(messages, system_prompt):
+            return SimpleNamespace(content="| Date | Subject | Time |\n|---|---|---|\n"
+                "| Monday 2026-10-05 | HDL | 9:30-10:30 am |\n"
+                "| Monday 2026-10-05 | IoT | 2:30-3:30 pm |\n"
+                "Source: synthetic_exam_schedule.pdf, page 2. <emote>IDLE</emote>")
+        blob.llm.generate_from_messages = timetable_reply
+    timetable = await blob.handle_user_message(blob_service_pb2.UserMessage(text="Make me a specialised exam timetable"))
+    records = blob._result_library().records()
+    passed = bool(records and any(item["answer"] == timetable and item["kind"] == "timetable" for item in records)
+                  and check_exam_answer(timetable, "ece"))
+    outputs = [{"case": "timetable_saved_separately", "passed": passed, "answer": timetable}]
+    print(f"EVAL timetable_saved_separately: {'PASS' if passed else 'FAIL'}", flush=True)
+    await blob.handle_user_message(blob_service_pb2.UserMessage(text="/files forget all"))
+    path.unlink()
+    restarted = make_blob(root, live=live, model=model, vision=vision)
+    replay = await restarted.handle_user_message(blob_service_pb2.UserMessage(text="Show my timetable"))
+    passed = replay == timetable and not restarted._document_library().records()
+    outputs.append({"case": "exact_replay_after_forget_and_restart", "passed": passed, "answer": replay})
+    print(f"EVAL exact_replay_after_forget_and_restart: {'PASS' if passed else 'FAIL'}", flush=True)
+    # Use another restart so the model cannot rely on the direct replay in RAM.
+    restarted = make_blob(root, live=live, model=model, vision=vision)
+    if not live:
+        restarted.llm.generate_from_messages = timetable_reply
+    answer = await restarted.handle_user_message(blob_service_pb2.UserMessage(text="What exam do I have on Monday?"))
+    passed = check_exam_answer(answer, "ece") and not restarted._document_library().records()
+    outputs.append({"case": "exam_followup_without_any_pdf", "passed": passed, "answer": answer})
+    print(f"EVAL exam_followup_without_any_pdf: {'PASS' if passed else 'FAIL'}", flush=True)
+    if live:
+        restarted = make_blob(root, live=True, model=model, vision=vision)
+        restarted._current_clock_context = lambda: "\n## Current local date and time\nSaturday, 2026-10-03 16:00 IST (+0530)\n"
+        answer = await restarted.handle_user_message(blob_service_pb2.UserMessage(
+            text="From the current local clock, how many hours and minutes until my HDL exam starts?"))
+        compact = answer.casefold().replace("**", "")
+        passed = bool(re.search(r"41\s*(?:hours?|hrs?).{0,25}30\s*(?:minutes?|mins?)|41[.]5\s*(?:hours?|hrs?)|"
+                               r"1\s*days?.{0,25}17\s*(?:hours?|hrs?).{0,25}30\s*(?:minutes?|mins?)|"
+                               r"1\s*days?.{0,25}17[.]5\s*(?:hours?|hrs?)", compact, re.S))
+        outputs.append({"case": "countdown_uses_new_clock_not_old_generated_answer", "passed": passed, "answer": answer})
+        print(f"EVAL countdown_uses_new_clock_not_old_generated_answer: {'PASS' if passed else 'FAIL'}", flush=True)
+    return {"mode": "live" if live else "offline", "model": blob.config.model_name,
+            "vision": vision if live else "off", "results": outputs}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--live", action="store_true")
     parser.add_argument("--model")
+    parser.add_argument("--saved-work", action="store_true", help="Check that completed work survives source deletion")
     parser.add_argument("--vision", default="auto", help="auto (normal attachment path), off, or an exact image model")
     parser.add_argument("--report", type=Path)
     args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix="blob-memory-eval-") as directory:
-        report = asyncio.run(run_evaluation(Path(directory), live=args.live, model=args.model, vision=args.vision))
+        evaluate = run_saved_work_evaluation if args.saved_work else run_evaluation
+        report = asyncio.run(evaluate(Path(directory), live=args.live, model=args.model, vision=args.vision))
     if args.report:
         args.report.parent.mkdir(parents=True, exist_ok=True)
         args.report.write_text(json.dumps(report, indent=2) + "\n")

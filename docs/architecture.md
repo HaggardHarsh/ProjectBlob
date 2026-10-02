@@ -311,9 +311,27 @@ size and SHA-256 before reopening. Full files remain available for new page
 requests even when earlier excerpts omitted them. Search is lexical and limited
 to indexed excerpts, not a full-document semantic index. Ambiguous references
 offer saved choices; `/files saved`, `/files open <id>`, and `/files forget <id|all>`
-provide explicit controls. Answers remain in session context rather than becoming
-document evidence or user-stated personal facts. Earlier versions stored no
+provide explicit controls. Answers do not become document evidence or user-stated
+personal facts. Earlier versions stored no
 document copies, so their old sessions cannot be migrated.
+
+`ResultLibrary` stores completed user-requested file answers in a separate private
+SQLite database inside `BLOB_MEMORY_DB_PATH`. Records keep the request, answer,
+source names/original paths/checksums, creation time, and user-context snapshot.
+They survive source deletion; automatic file-drop overviews are excluded, and
+privacy-shield checks pause result writes. Saving a new version of the same
+timetable updates that result, while unrelated answers remain separate. Storage
+quotas report failure rather than discarding existing work.
+
+`/files forget` only deletes source copies and removes their source-only recent
+overviews. It preserves completed results and unrelated conversation. `/results`
+lists saved work, `/results show <id>` replays the exact answer locally, and
+`/results forget <id|all>` deletes generated work and its associated live turns.
+With no relevant source, matching questions use saved-work context in a separate
+model path that does not claim fresh PDF access or execute tools. Fresh clocks
+replace old countdowns; current user declarations override earlier work. A
+changed source checksum prevents old work from taking precedence over a revised
+PDF. The source must be reattached for details absent from any retained answer.
 
 ### Screen Context Flow
 
