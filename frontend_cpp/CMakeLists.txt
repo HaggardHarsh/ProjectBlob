@@ -47,9 +47,6 @@ file(GLOB_RECURSE SRC_FILES
 
 # ─── Executable ───
 add_executable(blob_overlay ${SRC_FILES})
-file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/data/OpenSans-Regular.ttf"
-          "${CMAKE_CURRENT_SOURCE_DIR}/data/OpenSans-LICENSE.txt"
-     DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/data")
 
 target_link_libraries(blob_overlay
     SDL2::SDL2
@@ -91,9 +88,8 @@ target_link_libraries(blob_render_smoke SDL2::SDL2)
 add_test(NAME blob_render_smoke COMMAND blob_render_smoke)
 set_tests_properties(blob_render_smoke PROPERTIES ENVIRONMENT "SDL_VIDEODRIVER=dummy")
 
-add_executable(blob_chat_smoke
-    tests/chat_smoke.cpp src/ui/chat.cpp src/ui/text.cpp src/ipc/grpc_client.cpp)
-target_include_directories(blob_chat_smoke PRIVATE ${CMAKE_CURRENT_BINARY_DIR} src)
-target_link_libraries(blob_chat_smoke SDL2::SDL2 blob_protocol)
-add_test(NAME blob_chat_smoke COMMAND blob_chat_smoke)
-set_tests_properties(blob_chat_smoke PROPERTIES ENVIRONMENT "SDL_VIDEODRIVER=dummy")
+add_executable(blob_attachment_drop_smoke
+    tests/attachment_drop_smoke.cpp src/overlay/input.cpp src/ipc/grpc_client.cpp)
+target_include_directories(blob_attachment_drop_smoke PRIVATE ${CMAKE_CURRENT_BINARY_DIR} src)
+target_link_libraries(blob_attachment_drop_smoke SDL2::SDL2 blob_protocol)
+add_test(NAME blob_attachment_drop_smoke COMMAND blob_attachment_drop_smoke)

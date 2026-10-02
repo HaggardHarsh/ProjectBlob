@@ -8,20 +8,22 @@ from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 DESCRIPTOR: _descriptor.FileDescriptor
 
 class FrontendEvent(_message.Message):
-    __slots__ = ("timestamp_ms", "user_interaction", "skill_pill_drop", "overlay_state", "user_message", "heartbeat")
+    __slots__ = ("timestamp_ms", "user_interaction", "skill_pill_drop", "overlay_state", "user_message", "heartbeat", "attachment_drop")
     TIMESTAMP_MS_FIELD_NUMBER: _ClassVar[int]
     USER_INTERACTION_FIELD_NUMBER: _ClassVar[int]
     SKILL_PILL_DROP_FIELD_NUMBER: _ClassVar[int]
     OVERLAY_STATE_FIELD_NUMBER: _ClassVar[int]
     USER_MESSAGE_FIELD_NUMBER: _ClassVar[int]
     HEARTBEAT_FIELD_NUMBER: _ClassVar[int]
+    ATTACHMENT_DROP_FIELD_NUMBER: _ClassVar[int]
     timestamp_ms: int
     user_interaction: UserInteraction
     skill_pill_drop: SkillPillDrop
     overlay_state: OverlayStateChange
     user_message: UserMessage
     heartbeat: HeartbeatPing
-    def __init__(self, timestamp_ms: _Optional[int] = ..., user_interaction: _Optional[_Union[UserInteraction, _Mapping]] = ..., skill_pill_drop: _Optional[_Union[SkillPillDrop, _Mapping]] = ..., overlay_state: _Optional[_Union[OverlayStateChange, _Mapping]] = ..., user_message: _Optional[_Union[UserMessage, _Mapping]] = ..., heartbeat: _Optional[_Union[HeartbeatPing, _Mapping]] = ...) -> None: ...
+    attachment_drop: AttachmentDrop
+    def __init__(self, timestamp_ms: _Optional[int] = ..., user_interaction: _Optional[_Union[UserInteraction, _Mapping]] = ..., skill_pill_drop: _Optional[_Union[SkillPillDrop, _Mapping]] = ..., overlay_state: _Optional[_Union[OverlayStateChange, _Mapping]] = ..., user_message: _Optional[_Union[UserMessage, _Mapping]] = ..., heartbeat: _Optional[_Union[HeartbeatPing, _Mapping]] = ..., attachment_drop: _Optional[_Union[AttachmentDrop, _Mapping]] = ...) -> None: ...
 
 class UserInteraction(_message.Message):
     __slots__ = ("type", "x", "y", "velocity")
@@ -57,6 +59,12 @@ class SkillPillDrop(_message.Message):
     file_hash: bytes
     def __init__(self, file_path: _Optional[str] = ..., skill_name: _Optional[str] = ..., file_hash: _Optional[bytes] = ...) -> None: ...
 
+class AttachmentDrop(_message.Message):
+    __slots__ = ("file_paths",)
+    FILE_PATHS_FIELD_NUMBER: _ClassVar[int]
+    file_paths: _containers.RepeatedScalarFieldContainer[str]
+    def __init__(self, file_paths: _Optional[_Iterable[str]] = ...) -> None: ...
+
 class OverlayStateChange(_message.Message):
     __slots__ = ("is_visible", "is_minimized", "screen_width", "screen_height")
     IS_VISIBLE_FIELD_NUMBER: _ClassVar[int]
@@ -70,16 +78,14 @@ class OverlayStateChange(_message.Message):
     def __init__(self, is_visible: _Optional[bool] = ..., is_minimized: _Optional[bool] = ..., screen_width: _Optional[int] = ..., screen_height: _Optional[int] = ...) -> None: ...
 
 class UserMessage(_message.Message):
-    __slots__ = ("text", "attachments", "conversation_id", "request_id")
+    __slots__ = ("text", "attachments", "conversation_id")
     TEXT_FIELD_NUMBER: _ClassVar[int]
     ATTACHMENTS_FIELD_NUMBER: _ClassVar[int]
     CONVERSATION_ID_FIELD_NUMBER: _ClassVar[int]
-    REQUEST_ID_FIELD_NUMBER: _ClassVar[int]
     text: str
     attachments: _containers.RepeatedScalarFieldContainer[str]
     conversation_id: str
-    request_id: str
-    def __init__(self, text: _Optional[str] = ..., attachments: _Optional[_Iterable[str]] = ..., conversation_id: _Optional[str] = ..., request_id: _Optional[str] = ...) -> None: ...
+    def __init__(self, text: _Optional[str] = ..., attachments: _Optional[_Iterable[str]] = ..., conversation_id: _Optional[str] = ...) -> None: ...
 
 class HeartbeatPing(_message.Message):
     __slots__ = ("frontend_uptime_ms",)
@@ -88,7 +94,7 @@ class HeartbeatPing(_message.Message):
     def __init__(self, frontend_uptime_ms: _Optional[int] = ...) -> None: ...
 
 class BackendEvent(_message.Message):
-    __slots__ = ("timestamp_ms", "emote", "state", "notification", "skill_ack", "privacy", "color_shift", "heartbeat", "position_hint", "chat_reply")
+    __slots__ = ("timestamp_ms", "emote", "state", "notification", "skill_ack", "privacy", "color_shift", "heartbeat", "position_hint")
     TIMESTAMP_MS_FIELD_NUMBER: _ClassVar[int]
     EMOTE_FIELD_NUMBER: _ClassVar[int]
     STATE_FIELD_NUMBER: _ClassVar[int]
@@ -98,7 +104,6 @@ class BackendEvent(_message.Message):
     COLOR_SHIFT_FIELD_NUMBER: _ClassVar[int]
     HEARTBEAT_FIELD_NUMBER: _ClassVar[int]
     POSITION_HINT_FIELD_NUMBER: _ClassVar[int]
-    CHAT_REPLY_FIELD_NUMBER: _ClassVar[int]
     timestamp_ms: int
     emote: EmoteCommand
     state: StateCommand
@@ -108,18 +113,7 @@ class BackendEvent(_message.Message):
     color_shift: ColorShiftEvent
     heartbeat: HeartbeatPong
     position_hint: BlobPositionHint
-    chat_reply: ChatReply
-    def __init__(self, timestamp_ms: _Optional[int] = ..., emote: _Optional[_Union[EmoteCommand, _Mapping]] = ..., state: _Optional[_Union[StateCommand, _Mapping]] = ..., notification: _Optional[_Union[NotificationBubble, _Mapping]] = ..., skill_ack: _Optional[_Union[SkillAcknowledgment, _Mapping]] = ..., privacy: _Optional[_Union[PrivacyShieldEvent, _Mapping]] = ..., color_shift: _Optional[_Union[ColorShiftEvent, _Mapping]] = ..., heartbeat: _Optional[_Union[HeartbeatPong, _Mapping]] = ..., position_hint: _Optional[_Union[BlobPositionHint, _Mapping]] = ..., chat_reply: _Optional[_Union[ChatReply, _Mapping]] = ...) -> None: ...
-
-class ChatReply(_message.Message):
-    __slots__ = ("request_id", "text", "failed")
-    REQUEST_ID_FIELD_NUMBER: _ClassVar[int]
-    TEXT_FIELD_NUMBER: _ClassVar[int]
-    FAILED_FIELD_NUMBER: _ClassVar[int]
-    request_id: str
-    text: str
-    failed: bool
-    def __init__(self, request_id: _Optional[str] = ..., text: _Optional[str] = ..., failed: _Optional[bool] = ...) -> None: ...
+    def __init__(self, timestamp_ms: _Optional[int] = ..., emote: _Optional[_Union[EmoteCommand, _Mapping]] = ..., state: _Optional[_Union[StateCommand, _Mapping]] = ..., notification: _Optional[_Union[NotificationBubble, _Mapping]] = ..., skill_ack: _Optional[_Union[SkillAcknowledgment, _Mapping]] = ..., privacy: _Optional[_Union[PrivacyShieldEvent, _Mapping]] = ..., color_shift: _Optional[_Union[ColorShiftEvent, _Mapping]] = ..., heartbeat: _Optional[_Union[HeartbeatPong, _Mapping]] = ..., position_hint: _Optional[_Union[BlobPositionHint, _Mapping]] = ...) -> None: ...
 
 class EmoteCommand(_message.Message):
     __slots__ = ("emote", "intensity", "duration_ms", "trigger_reason", "secondary_emote", "blend")

@@ -112,9 +112,14 @@ async def main_async():
         print("\033[92m║   🟦 Project Blob — Rimuru AI Companion 🟦   ║\033[0m")
         print("\033[92m╚══════════════════════════════════════════════╝\033[0m")
         print("\033[90mType a message to chat. Ctrl+C to quit.\033[0m\n")
+        print("\033[90mDrop PDFs or images onto Blob to analyze them here. /files lists them; /files clear detaches them.\033[0m\n")
         while True:
             try:
-                line = await read_cli_line()
+                orchestrator._cli_waiting_for_input = True
+                try:
+                    line = await read_cli_line()
+                finally:
+                    orchestrator._cli_waiting_for_input = False
                 if line.strip():
                     from blob.ipc.blob_service_pb2 import UserMessage
                     msg = UserMessage(text=line.strip())

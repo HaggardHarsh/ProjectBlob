@@ -34,13 +34,17 @@ bool GrpcClient::enqueue(blob::FrontendEvent event) {
     return true;
 }
 
-bool GrpcClient::sendMessage(const std::string& text, const std::vector<std::string>& attachments,
-                             const std::string& request_id) {
-    if (text.empty() && attachments.empty()) return false;
+bool GrpcClient::sendMessage(const std::string& text) {
+    if (text.empty()) return false;
     blob::FrontendEvent event;
     event.mutable_user_message()->set_text(text);
-    for (const auto& path : attachments) event.mutable_user_message()->add_attachments(path);
-    event.mutable_user_message()->set_request_id(request_id);
+    return enqueue(std::move(event));
+}
+
+bool GrpcClient::attachFiles(const std::vector<std::string>& paths) {
+    if (paths.empty()) return false;
+    blob::FrontendEvent event;
+    for (const auto& path : paths) event.mutable_attachment_drop()->add_file_paths(path);
     return enqueue(std::move(event));
 }
 

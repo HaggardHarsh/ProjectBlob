@@ -1,19 +1,24 @@
 import base64
 from collections import deque
 from io import BytesIO
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+import asyncio
+import grpc
 from PIL import Image
 
 from blob.ai.attachments import AttachmentError, AttachmentReader
 from blob.ai.context_budget import IMAGE_BUDGET_BYTES, fit_messages, prompt_size_bytes
 from blob.ai.llm_engine import NebiusEngine
 from blob.ai.orchestrator import BlobOrchestrator
+from blob.ai.prompt_templates import SYSTEM_PROMPT
 from blob.config import BlobConfig
 from blob.ipc import blob_service_pb2
+from blob.ipc import blob_service_pb2_grpc
+from blob.ipc.event_dispatcher import EventDispatcher
+from blob.ipc.servicer import BlobServiceServicer
 
 
 def text_pdf(path, pages):
@@ -86,6 +91,47 @@ def test_images_resize_remove_metadata_and_respect_payload_budget(tmp_path):
     assert fit_messages([system, current], current, limit - 1) is None
 
 
+@pytest.mark.parametrize("vision", [False, True])
+def test_wide_page_ranges_fit_text_budget_and_keep_relevant_page_references(tmp_path, vision):
+    path = tmp_path / "日本語の教材.pdf"
+    text_pdf(path, ["General lesson content. " * 100] * 99 + ["Energy conservation. " * 100])
+    result = AttachmentReader().prepare([str(path)], "Explain energy on pages 1-100",
+                                        vision=vision, text_budget=2000, max_images=1)
+    evidence = joined(result)
+    assert len(evidence.encode("utf-8")) <= 2000
+    assert "日本語の教材.pdf, page 100" in evidence
+    assert "Energy conservation" in evidence
+    assert "Other pages omitted" in evidence
+    assert "[Excerpt; other text omitted]" in evidence
+    images = [part for part in result.parts if part["type"] == "image_url"]
+    assert len(images) == int(vision)
+
+
+def test_small_visual_budget_reserves_image_slot_for_standalone_image(tmp_path):
+    pdf, image = tmp_path / "lesson.pdf", tmp_path / "picture.png"
+    text_pdf(pdf, ["Lesson content"] * 6)
+    Image.new("RGB", (20, 20), "blue").save(image)
+    result = AttachmentReader().prepare([str(pdf), str(image)], "Explain these files",
+                                        vision=True, text_budget=2000, max_images=1)
+    assert len(joined(result).encode("utf-8")) <= 2000
+    assert "Visual layouts and diagrams were not analyzed" in joined(result)
+    assert "Page images supplied" not in joined(result)
+    assert result.parts[-2]["text"].strip() == "File: picture.png (image)"
+    assert result.parts[-1]["type"] == "image_url"
+    assert sum(part["type"] == "image_url" for part in result.parts) == 1
+
+
+def test_ocr_excerpts_include_labels_and_unicode_within_text_budget(tmp_path):
+    path = tmp_path / "図.png"
+    Image.new("RGB", (20, 20), "white").save(path)
+    reader = AttachmentReader(ocr=SimpleNamespace(extract_text=lambda image: "物理学の講義 " * 1000))
+    result = reader.prepare([str(path)], "Explain", vision=True, text_budget=700, max_images=0)
+    assert len(joined(result).encode("utf-8")) <= 700
+    assert "Local OCR only" in joined(result)
+    assert "[Excerpt; other text omitted]" in joined(result)
+    assert not result.has_images
+
+
 @pytest.mark.parametrize("case", ["missing", "unsupported", "corrupt", "oversize", "too_many", "bad_page", "too_many_pages"])
 def test_invalid_attachments_fail_before_model_use(tmp_path, case):
     path = tmp_path / "file.pdf"
@@ -119,21 +165,74 @@ def orchestrator():
 
 
 @pytest.mark.asyncio
-async def test_attachment_reply_correlates_to_submission_and_stays_out_of_personal_memory(tmp_path):
+@pytest.mark.parametrize("limit", [32000, 12000, 4096])
+async def test_dense_file_drop_and_followup_fit_configured_context_limit(tmp_path, limit):
+    paths = [tmp_path / f"lesson{index}.pdf" for index in range(4)]
+    for path in paths:
+        text_pdf(path, ["Detailed lesson about voltage and resistance. " * 120] * 6)
+    instance = orchestrator()
+    instance._max_prompt_bytes = limit
+    instance._build_system_prompt = lambda: SYSTEM_PROMPT.replace("{skills}", "No tools available.")
+    instance._recent_turns.extend({"role": role, "content": "Earlier discussion. " * 200}
+                                  for _ in range(6) for role in ("user", "assistant"))
+    vision = SimpleNamespace(generate_from_messages=AsyncMock(return_value=SimpleNamespace(
+        content="lesson0.pdf, page 1: a lesson about voltage. <emote>HAPPY</emote>")))
+    instance.llm.vision_engine.return_value = vision
+    if limit == 32000:
+        # The old general chat prompt plus otherwise valid files exceeded the default limit.
+        full = AttachmentReader().prepare([str(path) for path in paths], "Give an overview", vision=True)
+        assert prompt_size_bytes([{"role": "system", "content": instance._build_system_prompt()},
+                                  {"role": "user", "content": full.parts}]) > limit
+    reply = await instance.handle_attachment_drop([str(path) for path in paths])
+    assert "context limit" not in reply
+    assert instance._active_attachments == [str(path) for path in paths]
+    engine = vision if limit > 4096 else instance.llm
+    engine.generate_from_messages.assert_awaited_once()
+    messages = engine.generate_from_messages.call_args.args[0]
+    assert prompt_size_bytes(messages) <= limit
+    content = messages[-1]["content"]
+    evidence = content if isinstance(content, str) else "\n".join(p.get("text", "") for p in content)
+    assert all(path.name in evidence for path in paths)
+    if limit == 32000:
+        assert sum(p["type"] == "image_url" for p in content) == 4
+    await instance.handle_user_message(blob_service_pb2.UserMessage(text="Explain voltage on page 6"))
+    messages = engine.generate_from_messages.call_args.args[0]
+    assert engine.generate_from_messages.await_count == 2
+    assert prompt_size_bytes(messages) <= limit
+    content = messages[-1]["content"]
+    evidence = content if isinstance(content, str) else "\n".join(p.get("text", "") for p in content)
+    assert "lesson0.pdf, page 6" in evidence
+    assert "lesson0.pdf, page 1" not in evidence
+    instance.episodic.add_episode.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_overlong_attachment_question_requests_shorter_question_without_model_call(tmp_path):
+    path = tmp_path / "lesson.pdf"
+    text_pdf(path, ["Lesson content"])
+    instance = orchestrator()
+    instance._max_prompt_bytes = 4096
+    reply = await instance.handle_user_message(blob_service_pb2.UserMessage(
+        text="Long question " * 500, attachments=[str(path)]))
+    assert "shorter question" in reply
+    instance.llm.generate_from_messages.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_attachment_reply_prints_in_terminal_and_stays_out_of_personal_memory(tmp_path, capsys):
     path = tmp_path / "lesson.pdf"
     text_pdf(path, ["Ohms law: voltage equals current times resistance"])
     instance = orchestrator()
     reply = await instance.handle_user_message(blob_service_pb2.UserMessage(
-        text="Explain page 1", attachments=[str(path)], request_id="desktop-1"))
+        text="Explain page 1", attachments=[str(path)]))
     assert "Ohm's law" in reply and "(HAPPY)" not in reply
     messages = instance.llm.generate_from_messages.call_args.args[0]
     assert "voltage equals current" in messages[-1]["content"]
     instance.episodic.add_episode.assert_not_called()
     assert "lesson.pdf" in instance._recent_turns[0]["content"]
     events = [call.args[0] for call in instance.event_dispatcher.broadcast.call_args_list]
-    assert events[-1].chat_reply.request_id == "desktop-1"
-    assert events[-1].chat_reply.text == reply
-    assert instance._chat_replies[-1] == events[-1]
+    assert events[-1].notification.text == reply
+    assert f"Blob: {reply}" in capsys.readouterr().out
 
 
 @pytest.mark.asyncio
@@ -156,10 +255,120 @@ async def test_image_uses_vision_model_and_attachment_instructions_cannot_execut
 async def test_reader_failure_returns_actionable_reply_without_model_call(tmp_path):
     instance = orchestrator()
     reply = await instance.handle_user_message(blob_service_pb2.UserMessage(
-        text="Explain", attachments=[str(tmp_path / "missing.pdf")], request_id="bad-file"))
+        text="Explain", attachments=[str(tmp_path / "missing.pdf")]))
     assert "Select the file again" in reply
     instance.llm.generate_from_messages.assert_not_called()
-    assert instance._chat_replies[-1].chat_reply.request_id == "bad-file"
+    assert instance.event_dispatcher.broadcast.call_args.args[0].notification.text == reply
+
+
+@pytest.mark.asyncio
+async def test_dropped_files_remain_available_for_terminal_followups(tmp_path, capsys):
+    path = tmp_path / "lesson.pdf"
+    text_pdf(path, ["Ohms law", "Energy equals power times time"])
+    instance = orchestrator()
+    await instance.handle_attachment_drop([str(path)])
+    assert instance._active_attachments == [str(path)]
+    output = capsys.readouterr().out
+    assert "Reading dropped files: lesson.pdf" in output
+    assert "/files clear" in output
+    await instance.handle_user_message(blob_service_pb2.UserMessage(text="Explain page 2"))
+    evidence = instance.llm.generate_from_messages.call_args.args[0][-1]["content"]
+    assert "lesson.pdf, page 2" in evidence
+    assert "Energy equals power times time" in evidence
+    assert "Ohms law" not in evidence
+    assert instance.llm.generate_from_messages.await_count == 2
+    instance.episodic.add_episode.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_drops_add_unique_files_and_invalid_batches_preserve_existing_files(tmp_path):
+    paths = [tmp_path / f"lesson{index}.pdf" for index in range(5)]
+    for path in paths:
+        text_pdf(path, ["Sample text"])
+    instance = orchestrator()
+    await instance.handle_attachment_drop([str(paths[0])])
+    await instance.handle_attachment_drop([str(paths[0]), str(paths[1])])
+    assert instance._active_attachments == [str(path) for path in paths[:2]]
+    failed = await instance.handle_attachment_drop([str(path) for path in paths[2:]])
+    assert "up to 4 files" in failed
+    assert instance._active_attachments == [str(path) for path in paths[:2]]
+    corrupt = tmp_path / "corrupt.pdf"
+    corrupt.write_text("not a PDF")
+    assert "couldn't read" in await instance.handle_attachment_drop([str(corrupt)])
+    assert instance._active_attachments == [str(path) for path in paths[:2]]
+    assert instance.llm.generate_from_messages.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_terminal_can_list_remove_and_clear_files_without_model_calls(tmp_path):
+    instance = orchestrator()
+    instance._active_attachments = [str(tmp_path / "first.pdf"), str(tmp_path / "second.png")]
+    listing = await instance.handle_user_message(blob_service_pb2.UserMessage(text="/files"))
+    assert "1. first.pdf" in listing and "2. second.png" in listing
+    invalid = await instance.handle_user_message(blob_service_pb2.UserMessage(text="/files remove 3"))
+    assert "Use /files" in invalid
+    assert len(instance._active_attachments) == 2
+    removed = await instance.handle_user_message(blob_service_pb2.UserMessage(text="/files remove 1"))
+    assert "Detached first.pdf" in removed
+    assert instance._active_attachments == [str(tmp_path / "second.png")]
+    await instance.handle_user_message(blob_service_pb2.UserMessage(text="/files clear"))
+    assert instance._active_attachments == []
+    instance.llm.generate_from_messages.assert_not_called()
+    instance._handle_text_message = AsyncMock(return_value="Normal conversation")
+    assert await instance.handle_user_message(blob_service_pb2.UserMessage(text="Hello")) == "Normal conversation"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("text", ["/camera list", "Remind me to read this PDF in 10 minutes", "What day is today?",
+                                     "Read the image on my screen", "Make a sad face", "What is the weather in Delhi?"])
+async def test_active_files_preserve_normal_commands_and_explicit_tool_requests(text):
+    instance = orchestrator()
+    instance._active_attachments = ["/some/lesson.pdf"]
+    instance._handle_text_message = AsyncMock(return_value="Normal response")
+    instance._handle_attachment_message = AsyncMock()
+    message = blob_service_pb2.UserMessage(text=text)
+    assert await instance.handle_user_message(message) == "Normal response"
+    instance._handle_text_message.assert_awaited_once_with(message)
+    instance._handle_attachment_message.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_grpc_drop_triggers_terminal_analysis_and_followup_reads_same_document(tmp_path, capsys):
+    path = tmp_path / "lesson.pdf"
+    text_pdf(path, ["Voltage equals current times resistance", "Power equals voltage times current"])
+    instance = orchestrator()
+    instance.event_dispatcher = EventDispatcher()
+    instance._cli_waiting_for_input = True
+    servicer = BlobServiceServicer(instance.event_dispatcher, instance)
+    server = grpc.aio.server()
+    blob_service_pb2_grpc.add_BlobServiceServicer_to_server(servicer, server)
+    port = server.add_insecure_port("127.0.0.1:0")
+    await server.start()
+    channel = grpc.aio.insecure_channel(f"127.0.0.1:{port}")
+    hold = asyncio.Event()
+
+    async def requests():
+        event = blob_service_pb2.FrontendEvent()
+        event.attachment_drop.file_paths.append(str(path))
+        yield event
+        await hold.wait()
+
+    try:
+        call = blob_service_pb2_grpc.BlobServiceStub(channel).EventStream(requests())
+        reply = await asyncio.wait_for(call.read(), timeout=3)
+        assert reply.notification.text.startswith("lesson.pdf, page 1")
+        assert instance._active_attachments == [str(path)]
+        output = capsys.readouterr().out
+        assert "Reading dropped files" in output
+        assert "Blob> " in output
+        await instance.handle_user_message(blob_service_pb2.UserMessage(text="Explain page 2"))
+        evidence = instance.llm.generate_from_messages.call_args.args[0][-1]["content"]
+        assert "Power equals voltage times current" in evidence
+        assert "lesson.pdf, page 2" in evidence
+    finally:
+        await servicer.close_streams()
+        await channel.close()
+        await server.stop(grace=1)
 
 
 @pytest.mark.asyncio

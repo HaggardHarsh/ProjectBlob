@@ -31,8 +31,6 @@ class BlobServiceServicer(blob_service_pb2_grpc.BlobServiceServicer):
         self._stream_queues[client_id] = queue
         self._streams_closed.clear()
         self.dispatcher.register_client(client_id, queue)
-        for reply in getattr(self.orchestrator, "_chat_replies", ()):
-            queue.put_nowait(reply)
         shield = self.orchestrator.screen_sampler.privacy_shield if getattr(self.orchestrator, "screen_sampler", None) else None
         if shield:
             initial = blob_service_pb2.BackendEvent()
@@ -69,6 +67,8 @@ class BlobServiceServicer(blob_service_pb2_grpc.BlobServiceServicer):
     async def handle_frontend_event(self, event):
         if event.HasField('user_message'):
             asyncio.create_task(self._process_user_message(event.user_message))
+        elif event.HasField('attachment_drop'):
+            asyncio.create_task(self._process_attachment_drop(list(event.attachment_drop.file_paths)))
         elif event.HasField('skill_pill_drop'):
             request = event.skill_pill_drop
             response = blob_service_pb2.BackendEvent()
@@ -105,12 +105,17 @@ class BlobServiceServicer(blob_service_pb2_grpc.BlobServiceServicer):
             response = blob_service_pb2.BackendEvent()
             response.notification.text = "Blob could not process that message. Check the backend logs."
             await self.dispatcher.broadcast(response)
-            if message.request_id:
-                reply = blob_service_pb2.BackendEvent()
-                reply.chat_reply.request_id = message.request_id
-                reply.chat_reply.text = response.notification.text
-                reply.chat_reply.failed = True
-                await self.dispatcher.broadcast(reply)
+
+    async def _process_attachment_drop(self, paths):
+        try:
+            await self.orchestrator.handle_attachment_drop(paths)
+        except Exception:
+            logger.exception("Could not process dropped files")
+            await self.orchestrator._send_direct_response(
+                "I couldn't analyze the dropped files. Try again or check the backend logs.", "ERROR")
+        finally:
+            if getattr(self.orchestrator, "_cli_waiting_for_input", False):
+                print("Blob> ", end="", flush=True)
 
     async def RegisterSkill(self, request, context):
         try:

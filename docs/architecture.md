@@ -3,7 +3,7 @@
 > Technical architecture documentation for Project Blob
 
 The C++ overlay renders a small expressive slime and receives emotes over gRPC.
-Conversation uses the desktop chat panel or Python backend terminal. The backend loads
+Conversation uses the Python backend terminal. The backend loads
 declarative skill pills; an OS-level agent sandbox remains planned.
 
 ---
@@ -52,8 +52,8 @@ Project Blob is a two-process desktop application:
 Communication uses **gRPC bidirectional streaming** over `localhost:50051` by
 default. The address is configurable and can also be a Unix domain socket.
 
-- **Frontend → Backend**: User messages with selected local attachment paths and request IDs, user interactions, skill pill drops, heartbeats
-- **Backend → Frontend**: Correlated chat replies, emote commands, skill acknowledgments, privacy shield events
+- **Frontend → Backend**: Dropped attachment paths, user interactions, skill pill drops, heartbeats
+- **Backend → Frontend**: Emote commands, notifications, skill acknowledgments, privacy shield events
 
 See [`proto/blob_service.proto`](../proto/blob_service.proto) for the full protocol definition.
 
@@ -231,7 +231,7 @@ The diagram below describes a possible local GPU and cloud routing design. It is
 ```
 User types message
     ↓
-Desktop chat panel or Python backend terminal → BlobOrchestrator
+Python backend terminal → BlobOrchestrator
     ↓
 GuardrailsEngine.sanitize_input()
     ↓
@@ -247,20 +247,24 @@ EpisodicMemory.capture(interaction)
     ↓
 Orchestrator extracts the emote tag
     ↓
-Response prints in the terminal; emotes and a correlated ChatReply are broadcast
+Response prints in the terminal; emotes and notifications are broadcast
     ↓
 gRPC EventStream → Frontend
     ↓
-Renderer draws Blob's facial expression; the chat panel displays the reply
+Renderer draws Blob's facial expression
 ```
 
 ### Attachment flow
 
-The SDL chat panel sends `UserMessage.attachments` as local file paths over the
-existing gRPC stream. `request_id` pairs each submission with a `ChatReply`, so
-unrelated notifications cannot finish an outstanding question. Completed replies
-are retained in a bounded backend session cache and replayed when a frontend
-reconnects. Desktop and terminal requests are processed in order.
+The SDL overlay groups each drag-and-drop operation into one `AttachmentDrop`
+event and forwards its local file paths over the existing gRPC stream. Skill
+files keep their separate installation flow. The orchestrator validates and
+analyzes the dropped files, prints an overview in the terminal, and retains the
+selected paths for subsequent terminal questions. Drops add unique files to the
+current selection; invalid batches leave the previous selection intact.
+`/files`, `/files remove <number>`, and `/files clear` manage that selection.
+File drops and terminal messages share a lock so their context changes occur in
+order. Explicit control and tool requests keep their ordinary handling.
 
 `AttachmentReader` validates file counts, types, sizes, page counts, and decoded
 image dimensions. PDFium text extraction and rendering run in a worker thread,

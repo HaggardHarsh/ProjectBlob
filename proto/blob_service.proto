@@ -29,6 +29,7 @@ message FrontendEvent {
     OverlayStateChange overlay_state = 3;
     UserMessage user_message = 4;
     HeartbeatPing heartbeat = 5;
+    AttachmentDrop attachment_drop = 6;
   }
 }
 
@@ -52,6 +53,10 @@ message SkillPillDrop {
   bytes file_hash = 3;    // SHA-256 for integrity verification
 }
 
+message AttachmentDrop {
+  repeated string file_paths = 1;  // user-selected files dropped onto the overlay
+}
+
 message OverlayStateChange {
   bool is_visible = 1;
   bool is_minimized = 2;
@@ -63,7 +68,7 @@ message UserMessage {
   string text = 1;
   repeated string attachments = 2;  // local file paths
   string conversation_id = 3;      // for multi-turn context
-  string request_id = 4;           // correlates a desktop submission with its reply
+  reserved 4;
 }
 
 message HeartbeatPing {
@@ -75,6 +80,7 @@ message HeartbeatPing {
 // ─────────────────────────────────────────────────────────────────────
 message BackendEvent {
   uint64 timestamp_ms = 15;
+  reserved 9;
 
   oneof event {
     EmoteCommand emote = 1;
@@ -85,14 +91,7 @@ message BackendEvent {
     ColorShiftEvent color_shift = 6;
     HeartbeatPong heartbeat = 7;
     BlobPositionHint position_hint = 8;
-    ChatReply chat_reply = 9;
   }
-}
-
-message ChatReply {
-  string request_id = 1;
-  string text = 2;
-  bool failed = 3;
 }
 
 message EmoteCommand {
