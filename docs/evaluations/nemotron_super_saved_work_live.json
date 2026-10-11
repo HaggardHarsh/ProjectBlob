@@ -1,0 +1,27 @@
+{
+  "mode": "live",
+  "model": "nvidia/nemotron-3-super-120b-a12b",
+  "vision": "zai-org/GLM-5.3-Flash",
+  "results": [
+    {
+      "case": "timetable_saved_separately",
+      "passed": true,
+      "answer": "Here's your timetable, filtered to just your subjects (from synthetic_exam_schedule.pdf):\n\n**Monday 05.10.2026** (page 2)\n- 9:30\u201310:30 am \u2014 Digital Design with HDL (ECE 201)\n- 2:30\u20133:30 pm \u2014 Internet of Things (ECE 211)\n\n**Tuesday** (page 3)\n- Probability, Aptitude \u2014 no date or times given in the file\n\n**Wednesday** (page 3)\n- Signals \u2014 no date or times given\n\n**Thursday** (page 3)\n- Analog and Drone Technology \u2014 no date or times given\n\nI left out Digital Electronics and Discrete Mathematics since they're not on your list.\n\nOne odd thing, though: today is Sunday, 11 Oct 2026, and the file's Monday date (05.10.2026) was 6 days ago \u2014 so HDL and IoT would already be over. If Tuesday\u2013Thursday are the same week (6\u20138 Oct), those are past too. But the file never dates those three days, so I can't be sure. Can you confirm the real dates (and times) for Probability, Aptitude, Signals, and Analog & Drone Tech? If they're in a different week, I'll happily rebuild it."
+    },
+    {
+      "case": "exact_replay_after_forget_and_restart",
+      "passed": true,
+      "answer": "Here's your timetable, filtered to just your subjects (from synthetic_exam_schedule.pdf):\n\n**Monday 05.10.2026** (page 2)\n- 9:30\u201310:30 am \u2014 Digital Design with HDL (ECE 201)\n- 2:30\u20133:30 pm \u2014 Internet of Things (ECE 211)\n\n**Tuesday** (page 3)\n- Probability, Aptitude \u2014 no date or times given in the file\n\n**Wednesday** (page 3)\n- Signals \u2014 no date or times given\n\n**Thursday** (page 3)\n- Analog and Drone Technology \u2014 no date or times given\n\nI left out Digital Electronics and Discrete Mathematics since they're not on your list.\n\nOne odd thing, though: today is Sunday, 11 Oct 2026, and the file's Monday date (05.10.2026) was 6 days ago \u2014 so HDL and IoT would already be over. If Tuesday\u2013Thursday are the same week (6\u20138 Oct), those are past too. But the file never dates those three days, so I can't be sure. Can you confirm the real dates (and times) for Probability, Aptitude, Signals, and Analog & Drone Tech? If they're in a different week, I'll happily rebuild it."
+    },
+    {
+      "case": "exam_followup_without_any_pdf",
+      "passed": true,
+      "answer": "On Monday\u202f(05\u2011Oct\u20112026) you have:\n\n- **Digital Design with HDL (ECE\u202f201)** \u2013 9:30\u202fAM\u202fto\u202f10:30\u202fAM  \n- **Internet of Things (ECE\u202f211)** \u2013 2:30\u202fPM\u202fto\u202f3:30\u202fPM"
+    },
+    {
+      "case": "countdown_uses_new_clock_not_old_generated_answer",
+      "passed": true,
+      "answer": "Your HDL exam starts on\u202fMonday\u202f5\u202fOctober\u202f2026 at\u202f09:30\u202fIST.  \nFrom the current time (Saturday\u202f3\u202fOctober\u202f2026\u202f16:00\u202fIST) there are **41\u202fhours\u202f30\u202fminutes** until the exam begins."
+    }
+  ]
+}

@@ -41,7 +41,17 @@ async def run_client(*, message=None, status=False):
                 return 1
 
         waiting = deque(maxlen=30)
+        reply_echoes = deque(maxlen=30)
         busy = False
+
+        def consume_reply_echo(text):
+            # The notification stream and unary response can arrive in either order.
+            # Consume one echo per reply, including after the input prompt returns.
+            try:
+                reply_echoes.remove(text)
+            except ValueError:
+                return False
+            return True
 
         async def heartbeats():
             while True:
@@ -61,11 +71,15 @@ async def run_client(*, message=None, status=False):
                             disconnected = False
                         delay = 1
                         if event.HasField("notification"):
+                            if consume_reply_echo(event.notification.text):
+                                continue
                             if busy:
                                 waiting.append(event.notification.text)
                             else:
                                 print("\nBlob: " + event.notification.text + "\nBlob> ", end="", flush=True)
                 except grpc.aio.AioRpcError as exc:
+                    # Disconnected streams do not replay missed notifications.
+                    reply_echoes.clear()
                     if not disconnected:
                         print(f"\nBlob backend disconnected ({exc.code().name}); reconnecting.\nBlob> ", end="", flush=True)
                     disconnected = True
@@ -94,10 +108,12 @@ async def run_client(*, message=None, status=False):
                 except grpc.aio.AioRpcError as exc:
                     print(f"Backend request failed ({exc.code().name}). It may have run; check before retrying an action.")
                 finally:
+                    if answer is not None:
+                        reply_echoes.append(answer)
                     busy = False
                     while waiting:
                         notification = waiting.popleft()
-                        if notification != answer:
+                        if not consume_reply_echo(notification):
                             print("\nBlob: " + notification)
         finally:
             watcher.cancel()

@@ -2,12 +2,18 @@ from blob.config import BlobConfig
 
 
 def test_chat_model_default_can_be_overridden(tmp_path, monkeypatch):
-    assert BlobConfig().model_name == "zai-org/GLM-5.3-Flash"
+    assert BlobConfig().model_name == "nvidia/nemotron-3-super-120b-a12b"
 
     monkeypatch.setenv("BLOB_MODEL_NAME", "nvidia/Nemotron-3_5-Lightning")
     config = BlobConfig.load(str(tmp_path / "missing.yaml"))
 
     assert config.model_name == "nvidia/Nemotron-3_5-Lightning"
+
+
+def test_super_uses_independent_glm_vision_default():
+    config = BlobConfig()
+    assert config.vision_model_name == "zai-org/GLM-5.3-Flash"
+    assert config.memory_model_name == "nvidia/Nemotron-3_5-Lightning"
 
 
 def test_prompt_byte_budget_can_be_overridden(tmp_path, monkeypatch):

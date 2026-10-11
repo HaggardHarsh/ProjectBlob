@@ -13,12 +13,12 @@ class BlobConfig(BaseModel):
     ipc_address: str = Field(default="localhost:50051")
     ipc_token_path: str = Field(default_factory=lambda: str(Path.home() / ".blob/ipc.token"))
     privacy_settings_path: str = Field(default_factory=lambda: str(Path.home() / ".blob/privacy.json"))
-    model_name: str = Field(default="zai-org/GLM-5.3-Flash")
+    model_name: str = Field(default="nvidia/nemotron-3-super-120b-a12b")
     memory_model_name: str = Field(default="nvidia/Nemotron-3_5-Lightning", min_length=1)
     nebius_api_key: str = Field(default=os.environ.get("NEBIUS_API_KEY", ""))
     nebius_base_url: str = Field(default="https://api.studio.nebius.ai/v1")
     max_prompt_bytes: int = Field(default=32000, ge=4096)
-    vision_model_name: str = "auto"  # Discover an available image-input model; "off" uses OCR only.
+    vision_model_name: str = "zai-org/GLM-5.3-Flash"  # Super is text-only; "auto" discovers, "off" uses OCR.
     memory_db_path: str = Field(default_factory=lambda: str(Path.home() / ".blob/memory/chromadb"))
     blacklist_path: str = Field(default_factory=lambda: str(Path(__file__).resolve().parents[1] / "data/blacklist.yaml"))
     personality_path: str = Field(default_factory=lambda: str(Path(__file__).resolve().parents[1] / "data/blob_personality.yaml"))

@@ -1,0 +1,42 @@
+{
+  "mode": "live",
+  "model": "nvidia/nemotron-3-super-120b-a12b",
+  "vision": "off",
+  "results": [
+    {
+      "case": "restart_before_consolidation",
+      "passed": true,
+      "answer": "On Monday you have two exams that match your subjects:\n\n- **HDL** \u2013 *Digital Design with HDL* (ECE\u202f201) from\u202f9:30\u202f\u2013\u202f10:30\u202fam  \n- **IoT** \u2013 *Internet of Things* (ECE\u202f211) from\u202f2:30\u202f\u2013\u202f3:30\u202fpm  \n\nThese are listed in **synthetic_exam_schedule.pdf, page\u202f2**. The other Monday exams shown (Digital Electronics and Discrete Mathematics) are not among your subjects, so they are omitted per your subject filter.",
+      "saved_context": "Current user statement: Dude my subjects are hdl,iot,probability,aptitude,signals,analog and drone tech."
+    },
+    {
+      "case": "new_subject_list_supersedes_old",
+      "passed": true,
+      "answer": "On Monday\u202f(05\u2011Oct\u20112026) you have two CSE exams:\n\n- **Digital Electronics** \u2013 CSE\u202f207, 9:30\u202f\u2013\u202f10:30\u202fam  \n- **Discrete Mathematics** \u2013 CSE\u202f203, 2:30\u202f\u2013\u202f3:30\u202fpm  \n\nThese entries come from *synthetic_exam_schedule.pdf*, page\u202f1.",
+      "saved_context": "Current user statement: My subjects are Digital Electronics and Discrete Mathematics.\nCurrent user statement: I am in CSE."
+    },
+    {
+      "case": "reassert_subjects_after_correction",
+      "passed": true,
+      "answer": "On Monday you have two ECE exams:\n\n- **ECE\u202f201 \u2013 Digital Design with HDL** (your \u201cHDL\u201d subject) from **9:30\u202f\u2013\u202f10:30\u202fam**.  \n- **ECE\u202f211 \u2013 Internet of Things** (your \u201cIoT\u201d subject) from **2:30\u202f\u2013\u202f3:30\u202fpm**.\n\nThese are listed for Monday\u202f05.10.2026 under the ECE column in the schedule.  \nSource: *synthetic_exam_schedule.pdf*, page\u202f2.",
+      "saved_context": "Current user statement: My subjects are now HDL and IoT.\nCurrent user statement: I am in ECE."
+    },
+    {
+      "case": "subjects_override_conflicting_branch",
+      "passed": true,
+      "answer": "On Monday you have two exams that match your current subjects (HDL and IoT):\n\n- **Digital Design with HDL** (ECE\u202f201) \u2013 9:30\u202f\u2013\u202f10:30\u202fam  \n- **Internet of Things** (ECE\u202f211) \u2013 2:30\u202f\u2013\u202f3:30\u202fpm  \n\nThese are listed in *synthetic_exam_schedule.pdf* on page\u202f2 for the Monday\u202f05.10.2026 ECE schedule.",
+      "saved_context": "Current user statement: I am in CSE.\nCurrent user statement: My subjects are now HDL and IoT."
+    },
+    {
+      "case": "no_monday_exam_for_current_subjects",
+      "passed": true,
+      "answer": "Based on your current subjects (Probability and Analog), there are no exams scheduled for Monday that match those subjects. The Monday CSE schedule shows Digital Electronics and Discrete Mathematics only\u3010synthetic_exam_schedule.pdf, page\u202f1\u3011.",
+      "saved_context": "Current user statement: My subjects are now Probability and Analog.\nCurrent user statement: I am in CSE."
+    },
+    {
+      "case": "no_profile_no_branch_guess",
+      "passed": true,
+      "answer": "I have the timetable, but I don't have a saved subject list or program that identifies your exams. Tell me your subjects or program once so I can match your rows and remember them after restart."
+    }
+  ]
+}

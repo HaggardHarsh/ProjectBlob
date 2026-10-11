@@ -181,7 +181,7 @@ async def main():
 
 ## Model serving
 
-The backend uses two Nebius model roles: `zai-org/GLM-5.3-Flash` for chat/document answers (`BLOB_MODEL_NAME`) and NVIDIA `nvidia/Nemotron-3_5-Lightning` for background memory consolidation (`BLOB_MEMORY_MODEL_NAME`). Each engine shares the same privacy controller. NVIDIA receives numbered user-authored statements and selects lasting or expiring memories; original quotes, source provenance, and `consolidation_model` are stored locally. Failed selections leave episodes pending for a later retry. Memory search and tool execution remain local. Manual privacy pause and cloud-off settings guard both routes. The NemoClaw/Hermes/OpenShell compatibility names elsewhere in older diagrams are not working integrations; the active task loop is in the orchestrator.
+The backend uses three Nebius model roles: NVIDIA `nvidia/nemotron-3-super-120b-a12b` for chat, tool planning, and text-only document answers (`BLOB_MODEL_NAME`); NVIDIA `nvidia/Nemotron-3_5-Lightning` for background memory consolidation (`BLOB_MEMORY_MODEL_NAME`); and `zai-org/GLM-5.3-Flash` for image inputs and rendered PDF pages (`BLOB_VISION_MODEL`). Super is text-only. Each engine shares the same privacy controller. Lightning receives numbered user-authored statements and selects lasting or expiring memories; original quotes, source provenance, and `consolidation_model` are stored locally. Failed selections leave episodes pending for a later retry. Memory search and tool execution remain local. Manual privacy pause and cloud-off settings guard all three routes. The NemoClaw/Hermes/OpenShell compatibility names elsewhere in older diagrams are not working integrations; the active task loop is in the orchestrator.
 
 ### Proposed GPU hosting
 

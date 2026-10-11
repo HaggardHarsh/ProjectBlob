@@ -44,8 +44,9 @@ Blob is a living desktop companion — a small blue slime with expressive eyes t
 | Component | Technology |
 |-----------|-----------|
 | **LLM** | [Nebius AI](https://studio.nebius.ai) — cloud API, no local GPU needed |
-| **Chat / document model** | `zai-org/GLM-5.3-Flash` via Nebius |
+| **Chat / text document model** | NVIDIA `nvidia/nemotron-3-super-120b-a12b` via Nebius |
 | **Memory model** | NVIDIA `nvidia/Nemotron-3_5-Lightning` via Nebius |
+| **Vision model** | `zai-org/GLM-5.3-Flash` via Nebius |
 | **Memory** | ChromaDB (local vector store) + relevance-gated recall |
 | **Camera** | Optional OpenCV face and full-body detection with local face enrollment |
 | **Frontend** | C++ · SDL2 renderer · optional X11 system tray |
@@ -173,7 +174,7 @@ Blob also saves private local source copies in `~/.blob/documents/` (override wi
 
 Use `/files saved` to list saved document IDs, `/files open <id>` to reopen one, and `/files forget <id>` or `/files forget all` to delete saved source copies. Original files remain untouched. Forgetting a source removes source-only overviews from the current conversation while preserving completed work and unrelated chat. Detaching a file keeps its saved copy; a later question about it can reopen it.
 
-The backend extracts PDF text locally and includes filenames and page numbers as source references. File analysis budgets excerpts, page labels, and images together within `BLOB_MAX_PROMPT_BYTES` (32,000 by default). Long documents and wide page ranges use relevant page excerpts; the supplied context identifies omitted pages and text. Image analysis reuses the chat model when the provider reports image-input support, otherwise discovers another available image model. You can set `BLOB_VISION_MODEL` to an exact model ID or `off` to use local OCR only. Ordinary chat continues using `BLOB_MODEL_NAME`.
+The backend extracts PDF text locally and includes filenames and page numbers as source references. File analysis budgets excerpts, page labels, and images together within `BLOB_MAX_PROMPT_BYTES` (32,000 by default). Long documents and wide page ranges use relevant page excerpts; the supplied context identifies omitted pages and text. Image inputs and rendered PDF pages use `zai-org/GLM-5.3-Flash` by default because the main Nemotron Super model is text-only. Set `BLOB_VISION_MODEL` to another exact model ID, `auto` for provider discovery, or `off` to use local OCR only. In auto mode, image analysis reuses the chat model when the provider reports image-input support. Ordinary chat and document requests without images use `BLOB_MODEL_NAME`.
 
 Visual requests send resized images, including up to three selected PDF page images per document and four images total. When no vision model is available, Blob can read text in images and scanned PDFs using the optional `backend_python[ocr]` installation. OCR alone cannot describe objects, colors, or diagrams. Unreadable, damaged, password protected, and oversized files produce an error instead of an invented explanation.
 
@@ -238,9 +239,9 @@ Add `--saved-work` to test making a timetable, deleting both PDF copies, restart
 
 Set `BLOB_PROFILE_LATENCY=1` when launching the backend to log how long local preparation and the model call take for each reply. Blob caches the fixed tone preference search between memory changes, so repeat messages avoid that extra lookup.
 
-Blob uses `zai-org/GLM-5.3-Flash` for chat and documents. It passed the synthetic document-memory evaluation, including subject corrections and conflicting program information, using PDF text and rendered page images. Set `BLOB_MODEL_NAME` in `.env` to select another Nebius chat model. If you select `nvidia/Nemotron-3_5-Lightning` for chat, Blob uses its faster non-reasoning chat mode unless `BLOB_CHAT_THINKING=1` is set.
+Blob uses NVIDIA `nvidia/nemotron-3-super-120b-a12b` for chat, tool planning, text-only document answers, and follow-ups on saved work. `zai-org/GLM-5.3-Flash` handles image inputs and rendered PDF pages. Set `BLOB_MODEL_NAME` and `BLOB_VISION_MODEL` in `.env` to override these roles. If you select `nvidia/Nemotron-3_5-Lightning` for chat, Blob uses its faster non-reasoning chat mode unless `BLOB_CHAT_THINKING=1` is set. Super uses the provider's normal reasoning mode.
 
-Background memory consolidation uses NVIDIA `nvidia/Nemotron-3_5-Lightning` through Nebius, independently of the chat model. It selects numbered user quotes for lasting or expiring memory; the backend stores the original wording and the model's identity locally. Set `BLOB_MEMORY_MODEL_NAME` to override this role. Both routes obey privacy pause and cloud-off controls. Failed memory requests stay pending for a later retry. Model calls use normal provider billing; latency and cost depend on the request.
+Background memory consolidation uses NVIDIA `nvidia/Nemotron-3_5-Lightning` through Nebius, independently of the chat model. It selects numbered user quotes for lasting or expiring memory; the backend stores the original wording and the model's identity locally. Set `BLOB_MEMORY_MODEL_NAME` to override this role. All model routes obey privacy pause and cloud-off controls. Failed memory requests stay pending for a later retry. Model calls use normal provider billing; latency and cost depend on the request.
 
 Run `venv/bin/python -m blob.evals.private_workflow --live --report /tmp/blob-private-workflow.json` for a complete synthetic workflow: NVIDIA memory selection, reopening stores, a personalized PDF study plan, exact replay after source deletion, and a reminder that persists and fires while privacy is paused and cloud access is off. Omit `--live` for the offline version. See [the workflow guide](docs/nvidia_workflow.md) for model roles, report details, and a demo sequence.
 

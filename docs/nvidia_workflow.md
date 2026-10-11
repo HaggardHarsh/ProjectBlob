@@ -1,20 +1,22 @@
 # NVIDIA memory and a private assistant workflow
 
-Blob uses NVIDIA Nemotron for a recurring task that makes persistent personal
-memory useful. The exact Nebius catalog ID is `nvidia/Nemotron-3_5-Lightning`.
-Chat and document answers continue using `zai-org/GLM-5.3-Flash`.
+Blob uses NVIDIA Nemotron Super for conversation, planning tools, text-only documents,
+and saved-work follow-ups. NVIDIA Nemotron Lightning selects persistent personal
+memories in the background. Image inputs and rendered PDF pages use GLM because
+Super is text-only.
 
 ```dotenv
-BLOB_MODEL_NAME=zai-org/GLM-5.3-Flash
+BLOB_MODEL_NAME=nvidia/nemotron-3-super-120b-a12b
 BLOB_MEMORY_MODEL_NAME=nvidia/Nemotron-3_5-Lightning
+BLOB_VISION_MODEL=zai-org/GLM-5.3-Flash
 ```
 
-Both use the existing `NEBIUS_API_KEY` and Nebius endpoint. Restart the backend
+All three use the existing `NEBIUS_API_KEY` and Nebius endpoint. Restart the backend
 after changing configuration. The background worker checks for unconsolidated
 episodes every 60 seconds. Clear academic declarations are also saved immediately,
 so they do not depend on waiting for consolidation.
 
-NVIDIA receives numbered sentences from the user's side of conversation episodes,
+Nemotron Lightning receives numbered sentences from the user's side of conversation episodes,
 with instructions to select lasting facts (`L1`) or expiring project/event facts
 (`M2`). Assistant replies are excluded from this request. The backend validates
 the codes and saves the original user wording, original source date, source episode,
@@ -23,9 +25,10 @@ fact. A failed request leaves the episodes pending for retry; there is no automa
 switch to another provider/model for this memory role.
 
 Storage, embedding search, result replay, and reminders run locally. When cloud
-access is enabled, selected statements go to NVIDIA through Nebius for consolidation,
-and messages plus selected context go to the chat model. Privacy pause and cloud-off
-settings block both model routes. This is hosted inference; the NVIDIA weights are
+access is enabled, selected statements go to Lightning through Nebius for consolidation,
+and messages plus selected context go to Super for chat. Selected images and PDF pages
+go to GLM for visual analysis. Privacy pause and cloud-off settings block all three
+model routes. This is hosted inference; the NVIDIA weights are
 not downloaded or run on the user's machine.
 
 ## Reproducible evaluation
@@ -61,6 +64,24 @@ assistant within the evaluation process. Separate daemon tests cover an actual
 process restart; logout, reboot, sleep/resume, and network outages still need desktop
 validation. The offline run uses scripted model responses and proves no live
 provider inference.
+
+## Nemotron Super validation
+
+The switch to Super was checked with synthetic data through the real Nebius API:
+
+- [Private workflow](evaluations/nemotron_super_workflow_live.json): 11/11 checks
+  passed, covering Lightning consolidation, persistent preferences, document work,
+  reminder execution, and privacy controls. The three Super calls took 6.1–7.5
+  seconds in this run; these measurements are not a general latency guarantee.
+- [Document memory](evaluations/nemotron_super_document_memory_live.json): 6/6
+  checks passed with vision disabled, exercising Super directly on extracted PDF
+  text. Attachment instructions explicitly make current subject lists the filter
+  for personal exam questions even when a branch label conflicts; missing matches
+  must not become a list of unrelated exams.
+- [Saved work and vision](evaluations/nemotron_super_saved_work_live.json): 4/4
+  checks passed using GLM for rendered PDF pages and Super for later text answers.
+  The checks include exact local replay after source deletion and a countdown
+  calculated from the new clock rather than a previous answer.
 
 ## Demo sequence
 

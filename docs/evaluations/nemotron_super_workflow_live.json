@@ -1,0 +1,171 @@
+{
+  "mode": "live",
+  "timestamp": "2026-10-11T17:15:40.623807+00:00",
+  "chat_model": "nvidia/nemotron-3-super-120b-a12b",
+  "memory_model": "nvidia/Nemotron-3_5-Lightning",
+  "vision": "off",
+  "inputs": "Synthetic only; temporary isolated stores. Reopen checks reconstruct the assistant in this process.",
+  "provider_calls": [
+    {
+      "role": "chat",
+      "model": "nvidia/nemotron-3-super-120b-a12b",
+      "served_model": "nvidia/nemotron-3-super-120b-a12b",
+      "seconds": 6.081,
+      "usage": {
+        "completion_tokens": 149,
+        "prompt_tokens": 2674,
+        "total_tokens": 2823,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 116,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cache_write_tokens": null,
+          "cached_tokens": 0,
+          "image_tokens": null,
+          "text_tokens": null,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2674
+      }
+    },
+    {
+      "role": "memory",
+      "model": "nvidia/Nemotron-3_5-Lightning",
+      "served_model": "nvidia/Nemotron-3_5-Lightning",
+      "seconds": 15.12,
+      "usage": {
+        "completion_tokens": 1422,
+        "prompt_tokens": 160,
+        "total_tokens": 1582,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 1416,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 160
+      }
+    },
+    {
+      "role": "chat",
+      "model": "nvidia/nemotron-3-super-120b-a12b",
+      "served_model": "nvidia/nemotron-3-super-120b-a12b",
+      "seconds": 7.512,
+      "usage": {
+        "completion_tokens": 486,
+        "prompt_tokens": 722,
+        "total_tokens": 1208,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 387,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cache_write_tokens": null,
+          "cached_tokens": 0,
+          "image_tokens": null,
+          "text_tokens": null,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 722
+      }
+    },
+    {
+      "role": "chat",
+      "model": "nvidia/nemotron-3-super-120b-a12b",
+      "served_model": "nvidia/nemotron-3-super-120b-a12b",
+      "seconds": 6.2,
+      "usage": {
+        "completion_tokens": 143,
+        "prompt_tokens": 2930,
+        "total_tokens": 3073,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 104,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cache_write_tokens": null,
+          "cached_tokens": 0,
+          "image_tokens": null,
+          "text_tokens": null,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2930
+      }
+    }
+  ],
+  "results": [
+    {
+      "case": "nvidia_classifies_grounded_long_and_middle_memories",
+      "passed": true,
+      "acknowledgement": "Got it! I\u2019ll keep your study plans to exactly three short numbered steps for Project Orion."
+    },
+    {
+      "case": "nvidia_provider_call_completed",
+      "passed": true
+    },
+    {
+      "case": "grounded_memories_survive_store_reopen",
+      "passed": true
+    },
+    {
+      "case": "document_plan_uses_saved_preferences_and_source",
+      "passed": true,
+      "answer": "1. Study HDL state machine concepts and IoT sensor fundamentals (study_brief.pdf, p.1).  \n2. Design a worked example that models an HDL state machine processing IoT sensor data (study_brief.pdf, p.1).  \n3. Create a short self\u2011test with questions covering the example and key concepts (study_brief.pdf, p.1).",
+      "saved_user_context": "Saved user statement: I am working on Project Orion.\nSaved user statement: I prefer study plans with exactly three short numbered steps.\nEarlier user statement: Using my saved study preferences, make a study plan for this Project Orion brief."
+    },
+    {
+      "case": "completed_plan_saved_locally",
+      "passed": true
+    },
+    {
+      "case": "exact_plan_replay_after_source_deletion_and_reopen",
+      "passed": true
+    },
+    {
+      "case": "natural_language_request_executes_reminder_skill",
+      "passed": true,
+      "answer": "\u2705 Reminder set [551a1d9831d2]! I'll remind you to 'Review your Project Orion study plan' at Sun, 2026-10-11 22:45:40 IST (+0530)."
+    },
+    {
+      "case": "reminder_survives_store_reopen",
+      "passed": true
+    },
+    {
+      "case": "cloud_off_blocks_chat_and_nvidia_consolidation",
+      "passed": true
+    },
+    {
+      "case": "privacy_pause_blocks_new_chat_and_memory",
+      "passed": true
+    },
+    {
+      "case": "local_reminder_delivers_while_paused_and_cloud_off",
+      "passed": true,
+      "notifications": [
+        "\u23f0 REMINDER [551a1d9831d2]: Review your Project Orion study plan"
+      ]
+    }
+  ]
+}
