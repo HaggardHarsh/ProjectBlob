@@ -3,6 +3,7 @@ import logging
 import re
 from PIL import Image, ImageDraw
 from blob.skills.base import SkillInterface, SkillResult, _skill_executor
+from blob.privacy.screen_filter import app_category, filter_screen_text
 
 logger = logging.getLogger(__name__)
 _BLOB_CHAT_LINE = re.compile(r"^\s*Blob\s*[>:]", re.IGNORECASE)
@@ -164,7 +165,11 @@ class ScreenCaptureSkill(SkillInterface):
                 "CONFUSED",
             )
 
-        output = f"Active Window: {window_title}\n\nExtracted Screen Text:\n{text}"
+        text = filter_screen_text(text)
+        if not text:
+            return SkillResult("Screen content was excluded by the local privacy filter.", False, "WORRIED")
+        safe_title = app_category(getattr(active_window, "process_name", "")).capitalize()
+        output = f"Active Window: {safe_title}\n\nExtracted Screen Text:\n{text}"
         if self.sampler.privacy_shield.is_capture_blocked():
             return SkillResult("Screen capture is blocked by the privacy shield.", False, "WORRIED")
         return SkillResult(output, True, "THINKING")

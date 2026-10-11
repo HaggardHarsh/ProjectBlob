@@ -65,6 +65,13 @@ continue. Listing and deletion commands remain usable; screen/camera operations 
 skill installation remain blocked. Resume with `/privacy resume`; a blacklisted
 active window can still keep the automatic screen shield active.
 
+`/awareness on|off|status|clear` controls automatic local screen observation. It is
+off until enabled explicitly. Activity briefs expire and do not become personal
+facts. Unknown or sensitive windows block capture; arbitrary titles and raw OCR
+are excluded from automatic cloud context. Native Wayland windows require the
+local GNOME bridge and a desktop login after installation. See
+[screen awareness](screen_awareness.md) for setup, content filtering, and limitations.
+
 The automatic window shield retains its narrower meaning: block screen capture
 and personal/result storage. Manual pause applies to the whole assistant. Existing
 data remains stored until explicitly deleted. An HTTP request already transmitted

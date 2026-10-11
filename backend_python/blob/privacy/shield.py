@@ -2,6 +2,7 @@ import asyncio
 import logging
 from blob.privacy.window_monitor import WindowMonitor
 from blob.privacy.blacklist import BlacklistManager
+from blob.privacy.screen_filter import sensitive_window
 
 logger = logging.getLogger(__name__)
 
@@ -13,8 +14,11 @@ class PrivacyShield:
         self.is_active = False
         self.event_dispatcher = event_dispatcher
         self.controls = controls
+        self.awareness = None
 
     async def _broadcast_state(self, active: bool, reason: str = ""):
+        if active and getattr(self, "awareness", None):
+            self.awareness.clear("Privacy shield active")
         if not self.event_dispatcher:
             return
         from blob.ipc import blob_service_pb2
@@ -30,18 +34,20 @@ class PrivacyShield:
         if self.is_active:
             return True
         window_info = self.monitor.get_active_window()
-        return bool(window_info and self.blacklist.is_blacklisted(window_info))
+        return (not window_info or not window_info.title or not window_info.process_name or
+                self.blacklist.is_blacklisted(window_info) or sensitive_window(window_info))
 
     async def run(self):
         while True:
             try:
                 window_info = self.monitor.get_active_window()
                 if ((getattr(self, "controls", None) and self.controls.paused) or
-                        (window_info and self.blacklist.is_blacklisted(window_info))):
+                        not window_info or not window_info.title or not window_info.process_name or
+                        self.blacklist.is_blacklisted(window_info) or sensitive_window(window_info)):
                     if not self.is_active:
                         self.is_active = True
-                        logger.info(f"Privacy Shield ACTIVE: {window_info.title}")
-                        await self._broadcast_state(True, "Sensitive window active")
+                        logger.info("Privacy Shield ACTIVE")
+                        await self._broadcast_state(True, "Sensitive or unverified window")
                 else:
                     if self.is_active:
                         self.is_active = False

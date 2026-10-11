@@ -1,0 +1,7 @@
+{
+  "uuid": "blob-awareness@projectblob",
+  "name": "Blob Screen Awareness",
+  "description": "Provide Blob with local active-window captures; no network or screenshot history.",
+  "shell-version": ["45", "46", "47", "48", "49", "50"],
+  "version": 1
+}

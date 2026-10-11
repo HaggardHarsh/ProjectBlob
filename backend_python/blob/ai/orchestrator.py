@@ -13,6 +13,7 @@ from pathlib import Path
 from contextlib import nullcontext
 from blob.privacy.controls import PrivacyBlocked
 from blob.privacy.commands import handle_control_command
+from blob.privacy.screen_filter import app_category
 from blob.ai.llm_engine import NebiusEngine
 from blob.ai.attachments import AttachmentReader, AttachmentError, MAX_IMAGES
 from blob.ipc import blob_service_pb2
@@ -132,6 +133,11 @@ FILE_SEARCH_CLAIM = re.compile(
     r"|\b(?:search|find|found)\b.{0,100}\b(?:file|document|pdf)\b",
     re.IGNORECASE,
 )
+AMBIENT_REFERENCE = re.compile(
+    r"\bwhat am I (?:doing|working on|studying|reading)(?: (?:right )?now)?[?.!]*$"
+    r"|\b(?:help me with|explain|simplify|break down) (?:this|what I'm doing)[?.!]*$", re.I)
+CURRENT_ACTIVITY_REQUEST = re.compile(
+    r"\bwhat am I (?:doing|working on|studying|reading)(?: (?:right )?now)?[?.!]*$", re.I)
 REMINDER_INTENT = re.compile(
     r"\b(?:remind me|(?:set|create|make|add)\s+(?:me\s+)?(?:a |an |the )?(?:reminder|timer|alarm)"
     r"|start (?:a |the )?timer"
@@ -432,22 +438,23 @@ class BlobOrchestrator:
             user_only=not bool(ASSISTANT_HISTORY_REQUEST.search(clean_text)),
             recall_mode=historical,
         )
-        # Try to get active window title (lightweight, no screenshot)
+        # Only fixed app categories and the filtered activity brief enter prompts.
         active_window = "Unknown"
         shielded = bool(self.screen_sampler and self.screen_sampler.privacy_shield.is_capture_blocked())
         if shielded:
             self.last_screen_context = "No screen data captured yet."
         if self.screen_sampler and not shielded:
             try:
-                title = self.screen_sampler.get_active_window_title()
-                if title:
-                    active_window = title
+                window = self.screen_sampler.privacy_shield.monitor.get_active_window()
+                if window:
+                    active_window = app_category(window.process_name)
             except Exception:
                 pass
 
         return CONTEXT_TEMPLATE.format(
             active_window=active_window,
-            screen_context="Blocked by privacy shield" if shielded else self.last_screen_context,
+            screen_context=("Blocked by privacy shield" if shielded else
+                            self._ambient_context(clean_text) or self.last_screen_context),
             semantic_memories=fact_view,
             episodic_memories=episode_view,
         )
@@ -717,6 +724,11 @@ class BlobOrchestrator:
     async def handle_user_message(self, user_msg):
         controls = getattr(self, "controls", None)
         command = user_msg.text.strip().split(maxsplit=1)[0].lower() if user_msg.text.strip() else ""
+        if command == "/awareness":
+            awareness = getattr(self, "awareness", None)
+            text = (awareness.command(user_msg.text.strip(), self) if awareness else
+                    "Screen awareness is unavailable in this backend.")
+            return await self._send_direct_response(text, "IDLE")
         if controls and command in {"/privacy", "/memory"}:
             text = await handle_control_command(self, user_msg.text.strip())
             return await self._send_direct_response(text, "IDLE")
@@ -744,11 +756,19 @@ class BlobOrchestrator:
             raise
 
     def clear_private_context(self):
+        if getattr(self, "awareness", None):
+            self.awareness.clear()
         self._recent_turns.clear()
         self._style_facts_cache = None
         self._style_facts_revision = None
         self._grounded_user_evidence = []
         self.last_screen_context = "No screen data captured yet."
+
+    def _ambient_context(self, text):
+        awareness = getattr(self, "awareness", None)
+        if not awareness or SCREEN_CAPTURE_DENIAL.search(text):
+            return ""
+        return awareness.context()
 
     async def _handle_user_message(self, user_msg):
         # File drops and terminal messages share one ordered conversation.
@@ -763,9 +783,16 @@ class BlobOrchestrator:
                 return await self._handle_files_command(stripped)
             if stripped and stripped.split(maxsplit=1)[0].lower() == "/results":
                 return await self._handle_results_command(stripped)
+            if (getattr(self, "awareness", None) and CURRENT_ACTIVITY_REQUEST.search(stripped) and
+                    not self._ambient_context(stripped)):
+                return await self._send_direct_response(
+                    "I don't have a current activity observation. /awareness status shows whether observation is off, blocked, or unavailable.",
+                    "IDLE")
             # An explicit screen request selects fresh screen evidence before
             # attachment selection or saved-document search can claim the message.
             if _wants_screen_capture(stripped, getattr(self, "_recent_turns", ())):
+                return await self._handle_text_message(user_msg)
+            if (AMBIENT_REFERENCE.search(stripped) and self._ambient_context(stripped)):
                 return await self._handle_text_message(user_msg)
             explicit = list(getattr(user_msg, "attachments", ()))
             paths = explicit or list(getattr(self, "_active_attachments", ()))
@@ -1088,6 +1115,11 @@ class BlobOrchestrator:
         self._grounded_user_evidence = []
         context = self._build_context(clean_text)
         sys_prompt = self._build_system_prompt()
+        if (AMBIENT_REFERENCE.search(stripped) and STUDY_HELP_REQUEST.search(stripped) and
+                self._ambient_context(stripped)):
+            sys_prompt += ("\nThe user wants help with the observed material. Start with a short explanation "
+                           "of one recognized topic before asking a follow-up. You have topic labels, not "
+                           "the exact exercise: give a general explanation and do not invent its values or code.\n")
         preparation_seconds = time.perf_counter() - started_at
         model_seconds = 0.0
 

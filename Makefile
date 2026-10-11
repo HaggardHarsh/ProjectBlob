@@ -86,6 +86,9 @@ chat:
 desktop-install:
 	$(PYTHON) tools/install_desktop.py
 
+awareness-install:
+	$(PYTHON) tools/install_awareness.py
+
 # ─── Clean ───
 clean:
 	rm -rf $(FRONTEND_DIR)/build $(FRONTEND_DIR)/build-debug

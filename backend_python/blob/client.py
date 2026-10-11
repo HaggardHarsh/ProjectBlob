@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import sys
 from collections import deque
 from contextlib import suppress
 import grpc
@@ -87,6 +88,8 @@ async def run_client(*, message=None, status=False):
                 delay = min(delay * 2, 5)
 
         watcher = asyncio.create_task(notifications())
+        if sys.stdout.isatty():
+            print("\033[22;0t\033]0;Blob Chat\007", end="", flush=True)
         print("Connected chat client. Closing this terminal leaves Blob running. /quit disconnects.\n"
               "Messages and selected context use Nebius. /privacy shows local controls; /memory manages stored facts.")
         try:
@@ -116,6 +119,8 @@ async def run_client(*, message=None, status=False):
                         if not consume_reply_echo(notification):
                             print("\nBlob: " + notification)
         finally:
+            if sys.stdout.isatty():
+                print("\033[23;0t", end="", flush=True)
             watcher.cancel()
             with suppress(asyncio.CancelledError):
                 await watcher

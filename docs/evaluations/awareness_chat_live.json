@@ -1,0 +1,98 @@
+{
+  "mode": "live-chat-scripted-screen",
+  "chat_model": "nvidia/nemotron-3-super-120b-a12b",
+  "inputs": "Synthetic capture and scripted OCR only; no real screen. Temporary isolated stores.",
+  "provider_calls": [
+    {
+      "role": "chat",
+      "model": "nvidia/nemotron-3-super-120b-a12b",
+      "served_model": "nvidia/nemotron-3-super-120b-a12b",
+      "seconds": 2.533,
+      "usage": {
+        "completion_tokens": 169,
+        "prompt_tokens": 2804,
+        "total_tokens": 2973,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 128,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cache_write_tokens": null,
+          "cached_tokens": 0,
+          "image_tokens": null,
+          "text_tokens": null,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2804
+      }
+    },
+    {
+      "role": "chat",
+      "model": "nvidia/nemotron-3-super-120b-a12b",
+      "served_model": "nvidia/nemotron-3-super-120b-a12b",
+      "seconds": 1.811,
+      "usage": {
+        "completion_tokens": 208,
+        "prompt_tokens": 2920,
+        "total_tokens": 3128,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 60,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cache_write_tokens": null,
+          "cached_tokens": 0,
+          "image_tokens": null,
+          "text_tokens": null,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2920
+      }
+    }
+  ],
+  "results": [
+    {
+      "case": "automatic_local_brief_without_model_call",
+      "passed": true
+    },
+    {
+      "case": "super_recognizes_activity_without_user_declaration",
+      "passed": true,
+      "answer": "It looks like you\u2019re reading about voltage dividers and resistance in your browser\u2014probably studying or working on an electronics problem right now."
+    },
+    {
+      "case": "super_explains_observed_topic_without_capture_request",
+      "passed": true,
+      "answer": "Sure thing! A voltage divider is basically two resistors in series that split an input voltage into a smaller output voltage. The output voltage \\(V_{out}\\) is given by:\n\n\\[\nV_{out} = V_{in} \\times \\frac{R_2}{R_1 + R_2}\n\\]\n\nwhere \\(R_1\\) is the resistor connected to the input voltage and \\(R_2\\) is the resistor connected to ground. By choosing the right resistor values, you can get any fraction of the input voltage you need.\n\nDoes that match what you\u2019re looking at, or do you have a specific circuit or numbers you\u2019d like to work through?"
+    },
+    {
+      "case": "only_safe_brief_reaches_provider",
+      "passed": true
+    },
+    {
+      "case": "ambient_observation_never_invokes_a_tool",
+      "passed": true
+    },
+    {
+      "case": "observed_topic_not_saved_as_personal_fact",
+      "passed": true
+    },
+    {
+      "case": "private_window_discards_context_and_prevents_guessing",
+      "passed": true,
+      "answer": "I don't have a current activity observation. /awareness status shows whether observation is off, blocked, or unavailable."
+    }
+  ]
+}

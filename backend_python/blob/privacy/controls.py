@@ -19,16 +19,18 @@ class PrivacyControls:
         self.lock = threading.RLock()
         self.tasks = set()
         self.generation = 0
-        self.state = {"paused": False, "cloud_enabled": True, "approved_folders": [], "disabled_skills": []}
+        self.state = {"paused": False, "cloud_enabled": True, "approved_folders": [], "disabled_skills": [],
+                      "awareness_enabled": False}
         if self.path.exists():
             data = json.loads(self.path.read_text())
             if (not isinstance(data, dict) or type(data.get("paused")) is not bool or
                     type(data.get("cloud_enabled")) is not bool or
+                    ("awareness_enabled" in data and type(data["awareness_enabled"]) is not bool) or
                     any(not isinstance(data.get(key), list) or
                         any(not isinstance(item, str) for item in data[key])
                         for key in ("approved_folders", "disabled_skills"))):
                 raise ValueError("Invalid privacy settings; refusing to start. Repair the privacy JSON file.")
-            self.state.update({key: data[key] for key in self.state})
+            self.state.update({key: data[key] for key in self.state if key in data})
 
     @property
     def paused(self):

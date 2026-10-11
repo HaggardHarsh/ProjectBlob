@@ -10,6 +10,7 @@ from blob.ipc.server import start_grpc_server
 from blob.privacy.shield import PrivacyShield
 from blob.screen.sampler import ScreenSampler
 from blob.screen.ocr import OCRProcessor
+from blob.screen.awareness import ScreenAwareness
 from blob.memory.vector_store import VectorStore
 from blob.ai.orchestrator import BlobOrchestrator
 from blob.privacy.controls import PrivacyControls
@@ -108,10 +109,19 @@ async def main_async(*, daemon=False):
         config, vector_store, skill_registry, event_dispatcher,
         screen_sampler=screen_sampler, controls=controls
     )
+    awareness = ScreenAwareness(config, screen_sampler, ocr_processor, controls)
+    orchestrator.awareness = awareness
+    privacy_shield.awareness = awareness
     reminder_skill.prompt_waiting = lambda: getattr(orchestrator, "_cli_waiting_for_input", False)
     reminder_skill.start()
     
     server, servicer = await start_grpc_server(config, orchestrator, event_dispatcher)
+    if sys.platform == "linux" and os.environ.get("XDG_RUNTIME_DIR"):
+        from blob.screen.gnome_bridge import bridge_token
+        try:
+            bridge_token(create=True)
+        except (OSError, ValueError):
+            logger.warning("Screen bridge authentication unavailable; automatic capture remains blocked.")
     
     # Simple CLI debug input loop
     async def cli_input_loop():
@@ -143,7 +153,8 @@ async def main_async(*, daemon=False):
     # Start tasks
     tasks = [
         asyncio.create_task(privacy_shield.run()),
-        asyncio.create_task(orchestrator.semantic.consolidation_loop())
+        asyncio.create_task(orchestrator.semantic.consolidation_loop()),
+        asyncio.create_task(awareness.run()),
     ]
     if not daemon:
         tasks.append(asyncio.create_task(cli_input_loop()))

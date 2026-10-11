@@ -1,0 +1,47 @@
+{
+  "mode": "isolated-gnome-desktop",
+  "cloud_calls": 0,
+  "inputs": "Synthetic GTK windows only; separate session bus and virtual monitor.",
+  "results": [
+    {
+      "case": "native_wayland_window_detected",
+      "passed": true
+    },
+    {
+      "case": "unauthorized_capture_rejected",
+      "passed": true
+    },
+    {
+      "case": "active_window_capture_in_memory",
+      "passed": true
+    },
+    {
+      "case": "real_local_ocr_detects_voltage_divider",
+      "passed": true
+    },
+    {
+      "case": "summary_excludes_personal_and_exact_screen_text",
+      "passed": true
+    },
+    {
+      "case": "switch_to_blob_retains_recent_activity",
+      "passed": true
+    },
+    {
+      "case": "credential_screen_excluded_locally",
+      "passed": true
+    },
+    {
+      "case": "private_window_blocks_capture",
+      "passed": true
+    },
+    {
+      "case": "manual_pause_clears_context",
+      "passed": true
+    },
+    {
+      "case": "no_screenshot_files_saved",
+      "passed": true
+    }
+  ]
+}

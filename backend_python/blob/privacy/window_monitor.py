@@ -1,4 +1,5 @@
 import sys
+import os
 import subprocess
 import logging
 from dataclasses import dataclass
@@ -12,10 +13,19 @@ class WindowInfo:
     process_name: str
     pid: int
     bbox: Optional[Tuple[int, int, int, int]] = None # (left, top, right, bottom)
+    identity: str = ""
+    backend: str = "x11"
 
 class WindowMonitor:
     def get_active_window(self) -> Optional[WindowInfo]:
         if sys.platform == "linux":
+            if os.environ.get("WAYLAND_DISPLAY") or os.environ.get("XDG_SESSION_TYPE") == "wayland":
+                from blob.screen.gnome_bridge import window_state
+                state = window_state()
+                if not state:
+                    return None
+                return WindowInfo(state["title"], state["process_name"], state.get("pid", 0),
+                                  tuple(state.get("bbox", ())), state["id"], "gnome")
             return self._get_active_window_linux()
         elif sys.platform == "win32":
             return self._get_active_window_windows()
@@ -56,7 +66,8 @@ class WindowMonitor:
             
             bbox = (x, y, x + w, y + h) if w > 0 and h > 0 else None
             
-            return WindowInfo(title=title, process_name=process_name, pid=pid, bbox=bbox)
+            return WindowInfo(title=title, process_name=process_name, pid=pid, bbox=bbox,
+                              identity=win_id + ":" + title)
         except Exception as e:
             # logger.debug(f"Linux window fetch failed (is xdotool installed?): {e}")
             return None

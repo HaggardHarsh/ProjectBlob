@@ -28,7 +28,8 @@ class BlobConfig(BaseModel):
     skills_dir_path: str = Field(default_factory=lambda: str(Path.home() / ".blob/skills"))
     reminders_db_path: str = Field(default_factory=lambda: str(Path.home() / ".blob/reminders.sqlite3"))
     documents_dir_path: str = Field(default_factory=lambda: str(Path.home() / ".blob/documents"))
-    screen_sample_interval_sec: int = Field(default=30)
+    screen_sample_interval_sec: int = Field(default=30, ge=5, le=300)
+    screen_context_ttl_sec: int = Field(default=90, ge=10, le=300)
     screen_capture_mode: str = Field(default="active_window") # "full_screen" or "active_window"
     privacy_poll_interval_ms: int = Field(default=500)
     energy_decay_rate: float = Field(default=0.01)
@@ -60,6 +61,10 @@ class BlobConfig(BaseModel):
             data["vision_model_name"] = os.environ["BLOB_VISION_MODEL"]
         if "BLOB_CAMERA_ENABLED" in os.environ:
             data["camera_enabled"] = os.environ["BLOB_CAMERA_ENABLED"].lower() in {"1", "true", "yes", "on"}
+        for variable, field in (("BLOB_SCREEN_SAMPLE_INTERVAL_SEC", "screen_sample_interval_sec"),
+                                ("BLOB_SCREEN_CONTEXT_TTL_SEC", "screen_context_ttl_sec")):
+            if variable in os.environ:
+                data[field] = int(os.environ[variable])
         if "BLOB_CAMERA_DEVICE_INDEX" in os.environ:
             data["camera_device_index"] = int(os.environ["BLOB_CAMERA_DEVICE_INDEX"])
         if "BLOB_FACE_DB_PATH" in os.environ:

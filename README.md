@@ -15,6 +15,7 @@ Blob is a living desktop companion — a small blue slime with expressive eyes t
 
 **Key principles:**
 - **Privacy Controls** — Local memory and optional camera processing, with a window blacklist for screen capture.
+- **Automatic Screen Awareness** — Opt-in local active-window OCR, with a short-lived activity brief and sensitive-screen filtering. No background model calls or screenshot history.
 - **Persistent Memory** — Blob recalls conversations and consolidates durable user facts across sessions via ChromaDB.
 - **Living Personality** — A warm buddy by default, shown as a small, softly moving slime whose tiny eyes show its mood; Blob follows requests for a different tone.
 - **Expandable Skills** — Built-in tools plus validated `.skill.yaml` files loaded at startup or dropped on Blob.
@@ -218,7 +219,24 @@ Say "show me my screen" or use `/screen`. On Wayland, Blob asks the desktop scre
 pip install -e 'backend_python[ocr]'
 ```
 
-Restart Blob after installing OCR. Screen capture is on request only, including requests for help with material on the screen. Blob uses the active window title and extracted text to answer, rather than sending the full image to the cloud model. If capture or OCR fails, Blob reports that directly. File search runs only for an explicit request to find a file; it does not search the visible screen.
+Restart Blob after installing OCR. Explicit screen requests use one capture, including requests for help with material on the screen. Blob filters extracted text locally and supplies a generic app category rather than a document/window title; the full screenshot is not sent to the cloud. Sensitive content may cause the entire request to be excluded. If capture or OCR fails, Blob reports that directly. File search runs only for an explicit request to find a file; it does not search the visible screen.
+
+To let Blob recognize your activity without a capture request, use `/awareness on`.
+On GNOME Wayland, first run `make awareness-install` and log out/back in once to
+load the local GNOME extension. Automatic observation captures only the active
+window, waits two seconds after focus changes, and samples every 30 seconds.
+Local OCR and filtering produce a brief such as “Reading or studying in a browser.
+Detected topics: voltage divider, resistance.” Only fixed activity/topic labels
+enter normal chat; automatic observation never uploads screenshots or OCR excerpts.
+Try “What am I working on?” or “Help me with this.”
+
+The brief expires after 90 seconds and is cleared on sensitive/unverified windows,
+privacy pause, or awareness-off. Switching to the terminal titled **Blob Chat**
+keeps the recent brief until expiry. Use `/awareness status`, `/awareness off`, or
+`/awareness clear` to inspect or control it locally, including when cloud assistance
+is off. Observation is disabled on new installations until explicitly enabled;
+the setting persists across restarts. See [screen awareness](docs/screen_awareness.md)
+for supported desktops, privacy boundaries, and validation.
 
 Screen requests take priority over attached and saved documents. You can say "The stuff on my screen is hard; dumb it down for me" while an exam PDF is attached, or correct Blob with "No, the stuff on my screen, not the PDF." Each request captures the current screen again. There is no need to detach files first; an unsuccessful capture reports the actual problem instead of answering from an unrelated PDF.
 Blob also uses RapidOCR when it is installed locally; this can provide OCR without loading PyTorch.

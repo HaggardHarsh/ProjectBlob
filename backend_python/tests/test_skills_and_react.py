@@ -77,6 +77,8 @@ async def test_screen_capture_skill():
     mock_sampler = MagicMock()
     mock_sampler.get_active_window_title.return_value = "Test Terminal"
     mock_sampler.privacy_shield.is_capture_blocked.return_value = False
+    mock_sampler.privacy_shield.monitor.get_active_window.return_value = SimpleNamespace(
+        process_name="ptyxis", bbox=None)
     
     # Mock image capture returning a dummy PIL image or path
     mock_image = MagicMock()
