@@ -16,7 +16,7 @@ class GitStatusSkill(SkillInterface):
     
     def execute(self, args):
         try:
-            result = run_command(command_argv(["git", "status"]))
+            result = run_command(command_argv(["git", "status"]), controls=getattr(self, "controls", None))
             return SkillResult(output=result.stdout, success=result.returncode == 0,
                                emote_suggestion="THINKING" if result.returncode == 0 else "CONFUSED")
         except (OSError, subprocess.TimeoutExpired) as exc:

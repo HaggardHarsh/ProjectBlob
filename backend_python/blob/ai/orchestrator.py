@@ -10,6 +10,9 @@ import re
 import sqlite3
 import time
 from pathlib import Path
+from contextlib import nullcontext
+from blob.privacy.controls import PrivacyBlocked
+from blob.privacy.commands import handle_control_command
 from blob.ai.llm_engine import NebiusEngine
 from blob.ai.attachments import AttachmentReader, AttachmentError, MAX_IMAGES
 from blob.ipc import blob_service_pb2
@@ -240,18 +243,23 @@ def _wants_screen_capture(text: str, recent_turns) -> bool:
 
 
 class BlobOrchestrator:
-    def __init__(self, config, vector_store, skill_registry, event_dispatcher, screen_sampler=None):
+    def __init__(self, config, vector_store, skill_registry, event_dispatcher, screen_sampler=None, controls=None):
         self.config = config
+        self.controls = controls
         self.vector_store = vector_store
         vector_store.backfill_grounded_provenance()
         self.skill_registry = skill_registry
         self.event_dispatcher = event_dispatcher
         self.screen_sampler = screen_sampler
         self.guardrails = GuardrailsEngine(config)
-        self.llm = NebiusEngine(config.nebius_api_key, config.nebius_base_url, config.model_name)
+        self.llm = NebiusEngine(config.nebius_api_key, config.nebius_base_url, config.model_name, controls=controls)
         
         self.episodic = EpisodicMemory(vector_store)
-        self.semantic = SemanticMemory(vector_store, self.llm)
+        memory_model = getattr(config, "memory_model_name", None)
+        # Lightweight integrations without a complete BlobConfig keep their existing engine.
+        memory_llm = (NebiusEngine(config.nebius_api_key, config.nebius_base_url, memory_model, controls=controls)
+                      if isinstance(memory_model, str) else self.llm)
+        self.semantic = SemanticMemory(vector_store, memory_llm)
         self.semantic.backfill_explicit_statements()
         self._style_facts_cache = None
         self._style_facts_revision = None
@@ -304,6 +312,10 @@ class BlobOrchestrator:
             if callable(remember):
                 remember(text, episode_id)
 
+    def _thread_write(self, function):
+        controls = getattr(self, "controls", None)
+        return controls.deferred_write(function) if controls else function
+
     def _document_user_context(self, question):
         reader = getattr(getattr(self, "semantic", None), "document_context", None)
         return reader(question) if callable(reader) else ""
@@ -332,6 +344,8 @@ class BlobOrchestrator:
 
     def _remember_recent_turn(self, user_text: str, reply: str) -> None:
         """Keep direct tool results in this session without saving them as facts."""
+        if getattr(self, "controls", None) and self.controls.paused:
+            return
         if not hasattr(self, "_recent_turns"):
             self._recent_turns = deque(maxlen=12)
         self._recent_turns.extend((
@@ -575,7 +589,9 @@ class BlobOrchestrator:
         if sampler and sampler.privacy_shield.is_capture_blocked():
             return None
         try:
-            return await asyncio.to_thread(self._result_library().save,
+            save = self._result_library().save
+            save = self._thread_write(save)
+            return await asyncio.to_thread(save,
                 question, answer, sources, personal_context, **options)
         except (ResultError, OSError, sqlite3.Error) as exc:
             logger.warning("Generated result save failed: %s", exc)
@@ -631,7 +647,7 @@ class BlobOrchestrator:
         self._show_thinking()
         await self.dispatch_emote("THINKING")
         try:
-            await asyncio.to_thread(self._save_document_user_message, question)
+            await asyncio.to_thread(self._thread_write(self._save_document_user_message), question)
             personal_context = await asyncio.to_thread(self._document_user_context, question)
             system = ("You are Blob, the user's friendly desktop companion. Answer from the saved generated work below. "
                 "These are previously completed file answers, not user-stated facts or fresh source excerpts. "
@@ -699,6 +715,42 @@ class BlobOrchestrator:
         )
 
     async def handle_user_message(self, user_msg):
+        controls = getattr(self, "controls", None)
+        command = user_msg.text.strip().split(maxsplit=1)[0].lower() if user_msg.text.strip() else ""
+        if controls and command in {"/privacy", "/memory"}:
+            text = await handle_control_command(self, user_msg.text.strip())
+            return await self._send_direct_response(text, "IDLE")
+        # Listing/deletion and direct reminders remain available while paused.
+        local = command in {"/skills", "/reminders", "/files", "/results", "/camera"}
+        generation = controls.generation if controls else None
+        if controls and controls.paused:
+            parts = user_msg.text.strip().lower().split()
+            allowed = (command in {"/skills", "/reminders"} or
+                       (command == "/files" and (len(parts) == 1 or parts[1] in {"saved", "forget", "clear", "remove"})) or
+                       (command == "/results" and (len(parts) == 1 or parts[1] in {"show", "forget"})) or
+                       (command == "/camera" and len(parts) > 1 and parts[1] in {"list", "forget"}))
+            if not allowed:
+                return await self._send_direct_response("Privacy pause is active. Use /privacy resume to continue.", "IDLE")
+        try:
+            # Paused local controls do not need a tracked operation.
+            with controls.operation(cloud=not local) if controls and not controls.paused else nullcontext():
+                return await self._handle_user_message(user_msg)
+        except PrivacyBlocked as exc:
+            return await self._send_direct_response(str(exc), "IDLE")
+        except asyncio.CancelledError:
+            self._clear_thinking()
+            if controls and controls.generation != generation:
+                return "Request stopped because privacy settings changed."
+            raise
+
+    def clear_private_context(self):
+        self._recent_turns.clear()
+        self._style_facts_cache = None
+        self._style_facts_revision = None
+        self._grounded_user_evidence = []
+        self.last_screen_context = "No screen data captured yet."
+
+    async def _handle_user_message(self, user_msg):
         # File drops and terminal messages share one ordered conversation.
         async with self._conversation_lock():
             stripped = user_msg.text.strip()
@@ -756,6 +808,17 @@ class BlobOrchestrator:
             return await self._handle_text_message(user_msg)
 
     async def handle_attachment_drop(self, paths):
+        controls = getattr(self, "controls", None)
+        try:
+            with controls.operation(cloud=True) if controls else nullcontext():
+                return await self._handle_attachment_drop(paths)
+        except PrivacyBlocked as exc:
+            return await self._send_direct_response(str(exc), "IDLE")
+        except asyncio.CancelledError:
+            self._clear_thinking()
+            raise
+
+    async def _handle_attachment_drop(self, paths):
         async with self._conversation_lock():
             incoming = [str(Path(path).expanduser().resolve()) for path in paths if path]
             if not incoming:
@@ -840,7 +903,7 @@ class BlobOrchestrator:
         await self.dispatch_emote("WORKING")
         if user_authored:
             try:
-                await asyncio.to_thread(self._save_document_user_message, question)
+                await asyncio.to_thread(self._thread_write(self._save_document_user_message), question)
             except Exception:
                 logger.exception("Could not save document-chat user memory")
                 self._clear_thinking()
@@ -901,7 +964,9 @@ class BlobOrchestrator:
             return await self._send_direct_response(
                 "These attachments exceed my current context limit. Send fewer files or ask about a specific PDF page.", "CONFUSED")
         try:
-            saved = await asyncio.to_thread(self._document_library().remember, attached.sources)
+            remember = self._document_library().remember
+            remember = self._thread_write(remember)
+            saved = await asyncio.to_thread(remember, attached.sources)
             if saved and activate:
                 self._clear_thinking()
                 print("Blob: Saved local source copies for future conversations. Use /files saved to manage them.\n")

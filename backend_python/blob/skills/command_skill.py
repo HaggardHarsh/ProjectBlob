@@ -65,7 +65,7 @@ class CommandSkill(SkillInterface):
         if not _allowed(argv, self.definition.permissions):
             return SkillResult("This command is not allowed by the skill permissions or command policy.", False, self.definition.emote_on_failure)
         try:
-            result = run_command(command_argv(argv))
+            result = run_command(command_argv(argv), controls=getattr(self, "controls", None))
         except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
             return SkillResult(f"Command failed: {exc}", False, self.definition.emote_on_failure)
         output = result.stdout

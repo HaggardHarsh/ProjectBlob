@@ -13,7 +13,9 @@ from blob.memory.lifecycle import is_active, topic_key
 logger = logging.getLogger(__name__)
 
 class VectorStore:
-    def __init__(self, db_path: str, *, embedding_function=None):
+    def __init__(self, db_path: str, *, embedding_function=None, controls=None):
+        self.controls = controls
+        self.deletion_revision = 0
         path = Path(db_path).expanduser()
         path.mkdir(mode=0o700, parents=True, exist_ok=True)
         os.chmod(path, 0o700)
@@ -100,6 +102,11 @@ class VectorStore:
 
     def store(self, text: str, metadata: dict, collection: str = "episodic", memory_id: str | None = None,
               skip_existing: bool = False):
+        controls = getattr(self, "controls", None)
+        with controls.writing() if controls else nullcontext():
+            return self._store(text, metadata, collection, memory_id, skip_existing)
+
+    def _store(self, text, metadata, collection, memory_id, skip_existing):
         doc_id = memory_id or str(uuid.uuid4())
         col = self._collection(collection)
         if skip_existing and col.get(ids=[doc_id], include=[])["ids"]:
@@ -121,8 +128,10 @@ class VectorStore:
 
     def store_grounded(self, text: str, metadata: dict, collection: str, memory_id: str):
         """Store an exact user quote and supersede older facts on the same clear topic."""
-        with getattr(self, "_write_lock", nullcontext()):
-            return self._store_grounded(text, metadata, collection, memory_id)
+        controls = getattr(self, "controls", None)
+        with controls.writing() if controls else nullcontext():
+            with getattr(self, "_write_lock", nullcontext()):
+                return self._store_grounded(text, metadata, collection, memory_id)
 
     def _store_grounded(self, text: str, metadata: dict, collection: str, memory_id: str):
         if collection not in {"semantic", "middle"}:
@@ -247,3 +256,41 @@ class VectorStore:
             self.episodic_user.delete(ids=[memory_id])
         if collection in {"semantic", "middle"}:
             self.semantic_revision = getattr(self, "semantic_revision", 0) + 1
+
+    def forget_personal_memory(self, tier=None, memory_id=None):
+        """Remove source episodes as well, so consolidation cannot restore deleted facts."""
+        with self._write_lock:
+            self.deletion_revision += 1
+            if tier is None:
+                total = 0
+                for name in ("episodic", "middle", "semantic"):
+                    ids = self._collection(name).get(include=[])["ids"]
+                    total += len(ids)
+                    for start in range(0, len(ids), 100):
+                        self._collection(name).delete(ids=ids[start:start + 100])
+                indexed = self.episodic_user.get(include=[])["ids"]
+                for start in range(0, len(indexed), 100):
+                    self.episodic_user.delete(ids=indexed[start:start + 100])
+                self.semantic_revision += 1
+                return total
+            record = self._collection(tier).get(ids=[memory_id], include=["metadatas", "documents"])
+            if not record["ids"]:
+                return 0
+            episode_id = memory_id if tier == "episodic" else (record["metadatas"][0] or {}).get("source_episode_id")
+            source_ids = {episode_id} if episode_id else set()
+            if tier != "episodic":
+                # A repeated declaration may have several archived sources.
+                archives = self.episodic.get(include=["documents"])
+                quote = record["documents"][0]
+                source_ids.update(item_id for item_id, text in zip(archives["ids"], archives["documents"])
+                                  if quote in self._episode_user_text(text))
+            removed = {(tier, memory_id)}
+            for episode_id in source_ids:
+                if self.episodic.get(ids=[episode_id], include=[])["ids"]:
+                    removed.add(("episodic", episode_id))
+                for name in ("middle", "semantic"):
+                    linked = self._collection(name).get(where={"source_episode_id": episode_id}, include=[])["ids"]
+                    removed.update((name, item_id) for item_id in linked)
+            for name, item_id in removed:
+                self.delete(item_id, name)
+            return len(removed)

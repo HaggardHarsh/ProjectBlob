@@ -11,7 +11,10 @@ except ImportError:
 
 class BlobConfig(BaseModel):
     ipc_address: str = Field(default="localhost:50051")
+    ipc_token_path: str = Field(default_factory=lambda: str(Path.home() / ".blob/ipc.token"))
+    privacy_settings_path: str = Field(default_factory=lambda: str(Path.home() / ".blob/privacy.json"))
     model_name: str = Field(default="zai-org/GLM-5.3-Flash")
+    memory_model_name: str = Field(default="nvidia/Nemotron-3_5-Lightning", min_length=1)
     nebius_api_key: str = Field(default=os.environ.get("NEBIUS_API_KEY", ""))
     nebius_base_url: str = Field(default="https://api.studio.nebius.ai/v1")
     max_prompt_bytes: int = Field(default=32000, ge=4096)
@@ -45,6 +48,12 @@ class BlobConfig(BaseModel):
             data["memory_db_path"] = os.environ["BLOB_MEMORY_DB_PATH"]
         if "BLOB_MODEL_NAME" in os.environ:
             data["model_name"] = os.environ["BLOB_MODEL_NAME"]
+        if "BLOB_MEMORY_MODEL_NAME" in os.environ:
+            data["memory_model_name"] = os.environ["BLOB_MEMORY_MODEL_NAME"]
+        for variable, field in (("BLOB_IPC_ADDRESS", "ipc_address"), ("BLOB_IPC_TOKEN_PATH", "ipc_token_path"),
+                                ("BLOB_PRIVACY_SETTINGS_PATH", "privacy_settings_path")):
+            if variable in os.environ:
+                data[field] = os.environ[variable]
         if "BLOB_MAX_PROMPT_BYTES" in os.environ:
             data["max_prompt_bytes"] = int(os.environ["BLOB_MAX_PROMPT_BYTES"])
         if "BLOB_VISION_MODEL" in os.environ:

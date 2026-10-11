@@ -77,6 +77,15 @@ test-frontend:
 	@echo "═══ Running C++ Tests ═══"
 	cd $(FRONTEND_DIR)/build && ctest --output-on-failure
 
+run-daemon:
+	$(PYTHON) -m blob.main --daemon
+
+chat:
+	$(PYTHON) -m blob.client
+
+desktop-install:
+	$(PYTHON) tools/install_desktop.py
+
 # ─── Clean ───
 clean:
 	rm -rf $(FRONTEND_DIR)/build $(FRONTEND_DIR)/build-debug

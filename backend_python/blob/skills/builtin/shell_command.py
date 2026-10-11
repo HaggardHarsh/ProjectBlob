@@ -32,7 +32,7 @@ class ShellCommandSkill(SkillInterface):
             return SkillResult(f"Command '{cmd}' not allowed for safety.", False, "WORRIED")
             
         try:
-            result = run_command(command_argv(argv))
+            result = run_command(command_argv(argv), controls=getattr(self, "controls", None))
             return SkillResult(result.stdout, result.returncode == 0, "THINKING" if result.returncode == 0 else "WORRIED")
         except subprocess.TimeoutExpired:
             return SkillResult("Command timed out.", False, "WORRIED")

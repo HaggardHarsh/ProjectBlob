@@ -44,7 +44,8 @@ Blob is a living desktop companion — a small blue slime with expressive eyes t
 | Component | Technology |
 |-----------|-----------|
 | **LLM** | [Nebius AI](https://studio.nebius.ai) — cloud API, no local GPU needed |
-| **Model** | `zai-org/GLM-5.3-Flash` via Nebius |
+| **Chat / document model** | `zai-org/GLM-5.3-Flash` via Nebius |
+| **Memory model** | NVIDIA `nvidia/Nemotron-3_5-Lightning` via Nebius |
 | **Memory** | ChromaDB (local vector store) + relevance-gated recall |
 | **Camera** | Optional OpenCV face and full-body detection with local face enrollment |
 | **Frontend** | C++ · SDL2 renderer · optional X11 system tray |
@@ -107,7 +108,60 @@ make run-backend-only   # Terminal 1: Python AI backend + CLI chat
 make run-frontend       # Terminal 2: C++ slime overlay
 ```
 
-Chat at the backend's `Blob>` terminal prompt. The small desktop slime shows emotions and accepts dropped files. Drag it to move it; click, right-click, double-click, or click its optional X11 tray icon for a little jiggle. Drop a `.skill.yaml` file onto Blob to install it; the result appears in the terminal.
+Chat at the backend's `Blob>` terminal prompt. The small desktop slime shows emotions and accepts dropped files. Drag it to move it; click for a little jiggle. Right-click Blob or its optional X11 tray icon to toggle privacy pause. Double-click Blob or left-click its tray icon to open a reconnecting chat terminal. Drop a `.skill.yaml` file onto Blob to install it.
+
+### Always-on desktop mode and privacy controls
+
+After installing the backend and building the frontend, run `make desktop-install`.
+This installs per-user Linux services and desktop login startup, starts Blob, and
+restarts either component after a crash. Closing a chat terminal leaves the backend,
+overlay, and reminders running. Use the **Blob Chat** application launcher or
+`make chat` to reconnect. Without installing startup, `make run-daemon` starts an
+independent backend and `make chat` connects from another terminal.
+
+The daemon delivers replies and reminder notifications through authenticated local
+IPC. It does not archive printed chat in the system journal. A private local token
+protects every RPC; the server accepts only loopback or Unix-socket addresses.
+
+```text
+/privacy status
+/privacy pause
+/privacy resume
+/privacy cloud off
+/privacy cloud on
+/privacy allow /home/you/Documents/study
+/privacy folders
+/privacy revoke /home/you/Documents/study
+/privacy disable weather
+/privacy enable weather
+/memory
+/memory show middle <id>
+/memory forget middle <id>
+/memory forget all
+```
+
+Privacy pause persists across restarts and blocks new cloud requests, screen capture,
+camera work, and new memory/source/result writes. It cancels active chat requests and
+clears recalled conversation context. Local reminders continue; local listing and
+deletion commands remain available. Cloud-off mode permits direct local commands
+while blocking model inference. Content already sent to a provider cannot be recalled.
+
+File search starts with no approved folders. Command skills require approved folders
+and Linux Bubblewrap (`bwrap`); if isolation is unavailable they remain blocked.
+Commands receive read-only approved folders, a clean environment, and a private
+network namespace. Common credential directories, `.env` files, and repository Git
+configuration are masked. Explicitly dropped attachments are separate user selections
+and do not require broad folder approval. Cloud assistance still sends messages,
+recalled context, and selected file content to Nebius when enabled.
+
+Personal memory commands run locally. Forgetting a fact also removes archived source
+episodes containing its exact quote and their derived facts, preventing recreation
+on restart; this can remove other facts from those same episodes. `/memory forget all`
+clears personal memory and the current conversation context. Documents, generated
+results, reminders, and face enrollments retain their separate deletion controls.
+
+See [desktop lifecycle and privacy controls](docs/desktop_privacy.md) for service
+management, limits, and troubleshooting.
 
 ### PDF and image attachments
 
@@ -184,7 +238,11 @@ Add `--saved-work` to test making a timetable, deleting both PDF copies, restart
 
 Set `BLOB_PROFILE_LATENCY=1` when launching the backend to log how long local preparation and the model call take for each reply. Blob caches the fixed tone preference search between memory changes, so repeat messages avoid that extra lookup.
 
-Blob defaults to `zai-org/GLM-5.3-Flash`. It passed the synthetic document-memory evaluation, including subject corrections and conflicting program information, using PDF text and rendered page images. It has higher token prices than the previous Qwen3-30B default; latency and cost depend on the request. Set `BLOB_MODEL_NAME` in `.env` to select another Nebius model. If you select `nvidia/Nemotron-3_5-Lightning`, Blob uses its faster non-reasoning chat mode unless `BLOB_CHAT_THINKING=1` is set.
+Blob uses `zai-org/GLM-5.3-Flash` for chat and documents. It passed the synthetic document-memory evaluation, including subject corrections and conflicting program information, using PDF text and rendered page images. Set `BLOB_MODEL_NAME` in `.env` to select another Nebius chat model. If you select `nvidia/Nemotron-3_5-Lightning` for chat, Blob uses its faster non-reasoning chat mode unless `BLOB_CHAT_THINKING=1` is set.
+
+Background memory consolidation uses NVIDIA `nvidia/Nemotron-3_5-Lightning` through Nebius, independently of the chat model. It selects numbered user quotes for lasting or expiring memory; the backend stores the original wording and the model's identity locally. Set `BLOB_MEMORY_MODEL_NAME` to override this role. Both routes obey privacy pause and cloud-off controls. Failed memory requests stay pending for a later retry. Model calls use normal provider billing; latency and cost depend on the request.
+
+Run `venv/bin/python -m blob.evals.private_workflow --live --report /tmp/blob-private-workflow.json` for a complete synthetic workflow: NVIDIA memory selection, reopening stores, a personalized PDF study plan, exact replay after source deletion, and a reminder that persists and fires while privacy is paused and cloud access is off. Omit `--live` for the offline version. See [the workflow guide](docs/nvidia_workflow.md) for model roles, report details, and a demo sequence.
 
 Normal replies begin appearing in the `Blob>` terminal as Nebius streams them. Tool calls, reasoning tags, and emote tags stay hidden. Reminder and current-weather requests wait for a confirmed tool result; Blob shows that result directly and never reports an unexecuted reminder as set. If the provider does not support streaming, Blob falls back to a complete response.
 

@@ -7,8 +7,17 @@ import threading
 import time
 
 
-def run_command(argv, *, timeout=10, max_output_bytes=8000):
+def run_command(argv, *, timeout=10, max_output_bytes=8000, controls=None):
     started = time.monotonic()
+    if controls is not None:
+        from blob.privacy.sandbox import sandbox_command
+        generation = controls.generation
+        argv = sandbox_command(argv, controls)
+        if controls.generation != generation:
+            from blob.privacy.controls import PrivacyBlocked
+            raise PrivacyBlocked("Privacy settings changed before starting the command.")
+    if controls is not None:
+        controls.check()
     process = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                start_new_session=os.name == "posix")
     output = bytearray()
@@ -35,7 +44,13 @@ def run_command(argv, *, timeout=10, max_output_bytes=8000):
     reader = threading.Thread(target=read, name="blob-command-output", daemon=True)
     reader.start()
     try:
-        process.wait(timeout=max(0.001, timeout - (time.monotonic() - started)))
+        while process.poll() is None:
+            if controls is not None and (controls.paused or controls.generation != generation):
+                from blob.privacy.controls import PrivacyBlocked
+                raise PrivacyBlocked("Command stopped because privacy settings changed.")
+            if time.monotonic() - started >= timeout:
+                raise subprocess.TimeoutExpired(argv, timeout)
+            time.sleep(0.05)
         reader.join(timeout=max(0, timeout - (time.monotonic() - started)))
         if reader.is_alive():
             raise subprocess.TimeoutExpired(argv, timeout)

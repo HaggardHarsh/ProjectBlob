@@ -8,6 +8,7 @@ import shutil
 import sys
 import time
 import uuid
+from contextlib import nullcontext
 
 
 class CameraError(RuntimeError):
@@ -19,6 +20,11 @@ class CameraVision:
         self.enabled = config.camera_enabled
         self.device_index = config.camera_device_index
         self.face_db_path = Path(config.face_db_path).expanduser()
+        self.controls = None
+
+    def _check_privacy(self):
+        if self.controls:
+            self.controls.check()
 
     @staticmethod
     def _cv2():
@@ -29,6 +35,7 @@ class CameraVision:
         return cv2
 
     def _open(self, cv2):
+        self._check_privacy()
         if not self.enabled:
             raise CameraError("Camera access is disabled. Set BLOB_CAMERA_ENABLED=1 and restart Blob to enable it.")
         if self.device_index < 0:
@@ -62,6 +69,7 @@ class CameraVision:
             capture.release()
 
     def _require_enabled(self):
+        self._check_privacy()
         if not self.enabled:
             raise CameraError("Camera access is disabled. Set BLOB_CAMERA_ENABLED=1 and restart Blob to enable it.")
 
@@ -145,6 +153,7 @@ class CameraVision:
         try:
             # Let auto exposure settle before inspecting a frame.
             for _ in range(3):
+                self._check_privacy()
                 ok, frame = capture.read()
                 if not ok:
                     raise CameraError("The camera opened but did not return a frame.")
@@ -186,6 +195,7 @@ class CameraVision:
         try:
             detector = self._face_detector(cv2)
             for _ in range(45):
+                self._check_privacy()
                 ok, frame = capture.read()
                 if not ok:
                     break
@@ -201,16 +211,19 @@ class CameraVision:
         if len(samples) < 8:
             raise CameraError("Enrollment needs one clearly visible face for at least eight frames. Try better lighting and keep other people out of view.")
         person_id = uuid.uuid4().hex
+        self._check_privacy()
         person_dir = self.face_db_path / person_id
         person_dir.mkdir(mode=0o700, parents=True)
         try:
             for number, sample in enumerate(samples):
-                path = person_dir / f"{number:02d}.png"
-                if not cv2.imwrite(str(path), sample):
-                    raise CameraError("Could not save face template.")
-                os.chmod(path, 0o600)
-            people[person_id] = name
-            self._save_index(people)
+                with self.controls.writing() if self.controls else nullcontext():
+                    path = person_dir / f"{number:02d}.png"
+                    if not cv2.imwrite(str(path), sample):
+                        raise CameraError("Could not save face template.")
+                    os.chmod(path, 0o600)
+            with self.controls.writing() if self.controls else nullcontext():
+                people[person_id] = name
+                self._save_index(people)
         except Exception:
             shutil.rmtree(person_dir)
             raise

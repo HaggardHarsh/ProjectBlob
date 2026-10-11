@@ -7,6 +7,10 @@ Blob stores conversation memory in a local ChromaDB database. New installations 
 Nebius API: normal chat sends the user's message, recalled memories, and the
 current context to that service. Blob does not currently offer a local LLM mode.
 
+Manual privacy pause and cloud-off controls are separate from the automatic window
+blacklist. See [desktop privacy controls](desktop_privacy.md) for their behavior,
+folder permissions, personal memory deletion, and authenticated local IPC.
+
 ## User-selected attachments
 
 The overlay forwards only files you drop onto Blob. Dropping files triggers
@@ -102,9 +106,12 @@ Dropped skill files are validated and copied to `~/.blob/skills/` by default.
 Their commands run without a shell, with an executable allowlist, a 10 second
 timeout, and an 8,000 byte output cap applied while reading output. Built-in
 command tools use the same policy. Git mutation and external execution options,
-unsafe find actions, and clock setting are rejected. This is a command policy rather
-than an operating system sandbox. A skill with read or network permissions can
-still access data allowed to the Blob process, so install only trusted files.
+unsafe find actions, and clock setting are rejected. The registered runtime adds
+command isolation as described below. Install only trusted skill definitions.
+The running application additionally isolates command skills in a read-only
+Bubblewrap namespace with approved folders, no host networking, and a clean
+environment. Missing isolation blocks execution. Standalone internal Python helper
+classes are not an OS security boundary; use the registered runtime.
 When the LLM calls a skill, its text output is sent to Nebius as a tool
 observation and may also be summarized into local conversation memory.
 

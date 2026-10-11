@@ -10,6 +10,7 @@ public:
     ~SystemTray();
     void poll();
     bool takeActivated();
+    bool takePrivacyToggle();
     bool isAvailable() const;
 
 private:
@@ -21,4 +22,5 @@ private:
     unsigned long lastDockAttempt_ = 0;
 #endif
     bool activated_ = false;
+    bool privacyToggle_ = false;
 };

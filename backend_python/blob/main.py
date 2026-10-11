@@ -3,6 +3,7 @@ import argparse
 import logging
 import signal
 import sys
+import os
 from pathlib import Path
 from blob.config import BlobConfig
 from blob.ipc.server import start_grpc_server
@@ -11,6 +12,7 @@ from blob.screen.sampler import ScreenSampler
 from blob.screen.ocr import OCRProcessor
 from blob.memory.vector_store import VectorStore
 from blob.ai.orchestrator import BlobOrchestrator
+from blob.privacy.controls import PrivacyControls
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
@@ -51,10 +53,12 @@ async def read_cli_line():
     finally:
         loop.remove_reader(fd)
 
-async def main_async():
+async def main_async(*, daemon=False):
     config = BlobConfig.load()
+    controls = PrivacyControls(config.privacy_settings_path)
+    os.environ.setdefault("ANONYMIZED_TELEMETRY", "False")
     
-    vector_store = VectorStore(config.memory_db_path)
+    vector_store = VectorStore(config.memory_db_path, controls=controls)
     
     from blob.skills.registry import SkillRegistry
     from blob.skills.builtin.weather import WeatherSkill
@@ -70,7 +74,7 @@ async def main_async():
     event_dispatcher = EventDispatcher()
     
     # ── Build skill registry ─────────────────────────────────────────
-    skill_registry = SkillRegistry(config.skills_dir_path)
+    skill_registry = SkillRegistry(config.skills_dir_path, controls=controls)
     skill_registry.register(WeatherSkill())
     skill_registry.register(FileSearchSkill())
     skill_registry.register(GitStatusSkill())
@@ -82,7 +86,7 @@ async def main_async():
     skill_registry.register(reminder_skill)
     
     # ── Screen capture setup ─────────────────────────────────────────
-    privacy_shield = PrivacyShield(config, event_dispatcher)
+    privacy_shield = PrivacyShield(config, event_dispatcher, controls=controls)
     screen_sampler = ScreenSampler(config, privacy_shield)
     ocr_processor = OCRProcessor()
     
@@ -92,6 +96,7 @@ async def main_async():
     skill_registry.register(screen_capture_skill)
 
     camera_vision = CameraVision(config)
+    camera_vision.controls = controls
     skill_registry.register(CameraSkill(camera_vision))
 
     bundled_skills = Path(__file__).resolve().parents[2] / "skills"
@@ -101,7 +106,7 @@ async def main_async():
     # ── Orchestrator (with screen sampler) ───────────────────────────
     orchestrator = BlobOrchestrator(
         config, vector_store, skill_registry, event_dispatcher,
-        screen_sampler=screen_sampler
+        screen_sampler=screen_sampler, controls=controls
     )
     reminder_skill.prompt_waiting = lambda: getattr(orchestrator, "_cli_waiting_for_input", False)
     reminder_skill.start()
@@ -138,9 +143,10 @@ async def main_async():
     # Start tasks
     tasks = [
         asyncio.create_task(privacy_shield.run()),
-        asyncio.create_task(orchestrator.semantic.consolidation_loop()),
-        asyncio.create_task(cli_input_loop())
+        asyncio.create_task(orchestrator.semantic.consolidation_loop())
     ]
+    if not daemon:
+        tasks.append(asyncio.create_task(cli_input_loop()))
     
     stop_event = asyncio.Event()
     
@@ -167,6 +173,7 @@ async def main_async():
 def main():
     parser = argparse.ArgumentParser(description="Project Blob backend")
     parser.add_argument("--install-skill", metavar="FILE", help="Validate and install a .skill.yaml file")
+    parser.add_argument("--daemon", action="store_true", help="Run without terminal input; connect with blob-chat")
     args = parser.parse_args()
     if args.install_skill:
         from blob.skills.registry import SkillRegistry
@@ -174,7 +181,7 @@ def main():
         skill_id = SkillRegistry(config.skills_dir_path).install_file(args.install_skill)
         print(f"Installed skill: {skill_id}")
         return
-    asyncio.run(main_async())
+    asyncio.run(main_async(daemon=args.daemon))
 
 if __name__ == "__main__":
     main()

@@ -6,12 +6,13 @@ from blob.privacy.blacklist import BlacklistManager
 logger = logging.getLogger(__name__)
 
 class PrivacyShield:
-    def __init__(self, config, event_dispatcher=None):
+    def __init__(self, config, event_dispatcher=None, controls=None):
         self.config = config
         self.monitor = WindowMonitor()
         self.blacklist = BlacklistManager(config.blacklist_path)
         self.is_active = False
         self.event_dispatcher = event_dispatcher
+        self.controls = controls
 
     async def _broadcast_state(self, active: bool, reason: str = ""):
         if not self.event_dispatcher:
@@ -24,6 +25,8 @@ class PrivacyShield:
 
     def is_capture_blocked(self) -> bool:
         """Recheck the active window at capture time, not only at poll time."""
+        if getattr(self, "controls", None) and self.controls.paused:
+            return True
         if self.is_active:
             return True
         window_info = self.monitor.get_active_window()
@@ -33,7 +36,8 @@ class PrivacyShield:
         while True:
             try:
                 window_info = self.monitor.get_active_window()
-                if window_info and self.blacklist.is_blacklisted(window_info):
+                if ((getattr(self, "controls", None) and self.controls.paused) or
+                        (window_info and self.blacklist.is_blacklisted(window_info))):
                     if not self.is_active:
                         self.is_active = True
                         logger.info(f"Privacy Shield ACTIVE: {window_info.title}")

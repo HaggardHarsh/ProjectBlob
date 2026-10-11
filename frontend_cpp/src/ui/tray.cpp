@@ -75,7 +75,10 @@ void SystemTray::poll() {
         XEvent event{};
         XNextEvent(display_, &event);
         if (event.type == Expose && event.xexpose.window == icon_) drawIcon();
-        if (event.type == ButtonPress && event.xbutton.window == icon_) activated_ = true;
+        if (event.type == ButtonPress && event.xbutton.window == icon_) {
+            if (event.xbutton.button == Button3) privacyToggle_ = true;
+            else activated_ = true;
+        }
         if (event.type == DestroyNotify && event.xdestroywindow.window == icon_) icon_ = 0;
     }
     const unsigned long now = SDL_GetTicks();
@@ -89,6 +92,12 @@ void SystemTray::poll() {
 bool SystemTray::takeActivated() {
     const bool value = activated_;
     activated_ = false;
+    return value;
+}
+
+bool SystemTray::takePrivacyToggle() {
+    const bool value = privacyToggle_;
+    privacyToggle_ = false;
     return value;
 }
 

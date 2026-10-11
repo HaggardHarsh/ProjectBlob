@@ -107,6 +107,9 @@ class SemanticMemory:
 
     def backfill_explicit_statements(self):
         """Recover clear declarations from preexisting user-authored episode archives."""
+        controls = getattr(self.vector_store, "controls", None)
+        if controls and controls.paused:
+            return
         data = self.vector_store.episodic.get(include=["documents", "metadatas"])
         newest = {}
         for episode_id, text, metadata in zip(data["ids"], data["documents"], data["metadatas"]):
@@ -128,6 +131,11 @@ class SemanticMemory:
             self.remember_explicit_statements(sentence, episode_id, timestamp)
 
     async def summarize_and_store(self, episodes: list) -> bool:
+        controls = getattr(self.llm, "controls", None)
+        if controls and (controls.paused or not controls.cloud_enabled):
+            return False
+        deletion_revision = getattr(self.vector_store, "deletion_revision", 0)
+        privacy_generation = controls.generation if controls else None
         if not episodes:
             return True
         # The assistant's previous output is not evidence about the user.
@@ -153,6 +161,9 @@ class SemanticMemory:
         )
         try:
             msg = await self.llm.generate(prompt, "", "You extract factual user memories.")
+            if (getattr(self.vector_store, "deletion_revision", 0) != deletion_revision or
+                    (controls and (controls.generation != privacy_generation or controls.paused))):
+                return False
             summary = (msg.content or "").strip()
             if summary.upper() == "NONE":
                 return True
@@ -179,6 +190,9 @@ class SemanticMemory:
                     metadata = {"type": tier, "tier": "long" if tier == "semantic" else "middle",
                                 "timestamp": source_timestamp, "source_timestamp": source_timestamp,
                                 "pinned": tier == "semantic", "grounded": True}
+                    model = getattr(self.llm, "model_name", None)
+                    if isinstance(model, str):
+                        metadata["consolidation_model"] = model
                     if episode.get("id"):
                         metadata["source_episode_id"] = episode["id"]
                     if topic:
@@ -188,6 +202,11 @@ class SemanticMemory:
                                                   else middle_expiry(source, source_timestamp))
                     self.vector_store.store_grounded(source, metadata, tier, memory_id)
             return True
+        except asyncio.CancelledError:
+            # Privacy cancellation of the provider request must not kill this periodic worker.
+            if asyncio.current_task().cancelling():
+                raise
+            return False
         except Exception:
             logger.exception("Failed to consolidate user memories")
             return False

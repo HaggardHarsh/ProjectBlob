@@ -16,6 +16,15 @@ def test_prompt_byte_budget_can_be_overridden(tmp_path, monkeypatch):
     assert BlobConfig.load(str(tmp_path / "missing.yaml")).max_prompt_bytes == 12000
 
 
+def test_memory_model_has_independent_nvidia_default_and_override(tmp_path, monkeypatch):
+    assert BlobConfig().memory_model_name == "nvidia/Nemotron-3_5-Lightning"
+    monkeypatch.setenv("BLOB_MODEL_NAME", "chat-override")
+    monkeypatch.setenv("BLOB_MEMORY_MODEL_NAME", "memory-override")
+    config = BlobConfig.load(str(tmp_path / "missing.yaml"))
+    assert config.model_name == "chat-override"
+    assert config.memory_model_name == "memory-override"
+
+
 def test_reminder_database_path_can_be_overridden(tmp_path, monkeypatch):
     path = tmp_path / "reminders.sqlite3"
     monkeypatch.setenv("BLOB_REMINDERS_DB_PATH", str(path))

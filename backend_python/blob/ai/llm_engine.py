@@ -4,6 +4,8 @@ import os
 import re
 from openai import AsyncOpenAI
 import abc
+import asyncio
+from contextlib import nullcontext
 
 logger = logging.getLogger(__name__)
 
@@ -22,12 +24,20 @@ class LLMEngine(abc.ABC):
         pass
 
 class NebiusEngine(LLMEngine):
-    def __init__(self, api_key: str, base_url: str, model_name: str):
+    def __init__(self, api_key: str, base_url: str, model_name: str, *, controls=None):
         self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         self.model_name = model_name
         self._vision_model = None
         self._vision_checked = False
+        self.controls = controls
         self.chat_thinking_enabled = os.environ.get("BLOB_CHAT_THINKING", "").lower() in {"1", "true", "yes", "on"}
+
+    async def _create(self, **kwargs):
+        controls = getattr(self, "controls", None)
+        async def request():
+            with controls.operation(cloud=True) if controls else nullcontext():
+                return await self.client.chat.completions.create(**kwargs)
+        return await asyncio.create_task(request())
 
     def _chat_kwargs(self) -> dict:
         """Skip hidden reasoning for casual chat on Nemotron Lightning.
@@ -49,7 +59,9 @@ class NebiusEngine(LLMEngine):
         else:
             if not self._vision_checked:
                 try:
-                    catalog = await self.client.models.list(extra_query={"verbose": "true"})
+                    controls = getattr(self, "controls", None)
+                    with controls.operation(cloud=True) if controls else nullcontext():
+                        catalog = await self.client.models.list(extra_query={"verbose": "true"})
                     candidates = []
                     for item in catalog.data:
                         extra = item.model_extra or {}
@@ -73,6 +85,7 @@ class NebiusEngine(LLMEngine):
         engine.client = self.client
         engine.model_name = model
         engine.chat_thinking_enabled = self.chat_thinking_enabled
+        engine.controls = getattr(self, "controls", None)
         return engine
 
     async def generate(self, prompt: str, context: str, system_prompt: str, tools: list = None) -> any:
@@ -89,22 +102,28 @@ class NebiusEngine(LLMEngine):
         if tools:
             kwargs["tools"] = tools
 
-        resp = await self.client.chat.completions.create(**kwargs)
+        resp = await self._create(**kwargs)
         return resp.choices[0].message
 
     async def generate_from_messages_stream(self, messages: list[dict], system_prompt: str) -> AsyncIterator[str]:
         """Stream text from the same chat request used by the ReAct loop."""
         if not messages or messages[0].get("role") != "system":
             messages = [{"role": "system", "content": system_prompt}] + messages
-        stream = await self.client.chat.completions.create(
+        stream = await self._create(
             model=self.model_name,
             messages=messages,
             stream=True,
             **self._chat_kwargs(),
         )
-        async for chunk in stream:
-            if chunk.choices and chunk.choices[0].delta.content:
-                yield chunk.choices[0].delta.content
+        try:
+            async for chunk in stream:
+                if getattr(self, "controls", None):
+                    self.controls.check(cloud=True)
+                if chunk.choices and chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+        finally:
+            close = getattr(stream, "close", None) or stream.aclose
+            await close()
 
     async def generate_from_messages(self, messages: list[dict], system_prompt: str) -> any:
         """Generate a response from a full conversation message list.
@@ -117,7 +136,7 @@ class NebiusEngine(LLMEngine):
         if not messages or messages[0].get("role") != "system":
             messages = [{"role": "system", "content": system_prompt}] + messages
 
-        resp = await self.client.chat.completions.create(
+        resp = await self._create(
             model=self.model_name,
             messages=messages,
             **self._chat_kwargs(),
@@ -129,12 +148,18 @@ class NebiusEngine(LLMEngine):
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": f"Context:\n{context}\n\nPrompt:\n{prompt}"}
         ]
-        stream = await self.client.chat.completions.create(
+        stream = await self._create(
             model=self.model_name,
             messages=messages,
             stream=True,
             **self._chat_kwargs(),
         )
-        async for chunk in stream:
-            if chunk.choices[0].delta.content:
-                yield chunk.choices[0].delta.content
+        try:
+            async for chunk in stream:
+                if getattr(self, "controls", None):
+                    self.controls.check(cloud=True)
+                if chunk.choices and chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+        finally:
+            close = getattr(stream, "close", None) or stream.aclose
+            await close()

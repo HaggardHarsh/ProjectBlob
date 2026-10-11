@@ -3,8 +3,10 @@
 > Technical architecture documentation for Project Blob
 
 The C++ overlay renders a small expressive slime and receives emotes over gRPC.
-Conversation uses the Python backend terminal. The backend loads
-declarative skill pills; an OS-level agent sandbox remains planned.
+Conversation uses the Python backend terminal or an authenticated reconnecting
+client. The backend loads declarative skill pills; command tools use approved
+read-only folders in a Bubblewrap namespace. Linux user services handle login
+startup and crash recovery. See [desktop lifecycle](desktop_privacy.md).
 
 ---
 
@@ -179,11 +181,11 @@ async def main():
 
 ## Model serving
 
-The current backend calls the Nebius chat API with `Qwen/Qwen3-30B-A3B-Instruct-2507` by default. `BLOB_MODEL_NAME` can select another available model. Memory search and tool execution remain local to the backend.
+The backend uses two Nebius model roles: `zai-org/GLM-5.3-Flash` for chat/document answers (`BLOB_MODEL_NAME`) and NVIDIA `nvidia/Nemotron-3_5-Lightning` for background memory consolidation (`BLOB_MEMORY_MODEL_NAME`). Each engine shares the same privacy controller. NVIDIA receives numbered user-authored statements and selects lasting or expiring memories; original quotes, source provenance, and `consolidation_model` are stored locally. Failed selections leave episodes pending for a later retry. Memory search and tool execution remain local. Manual privacy pause and cloud-off settings guard both routes. The NemoClaw/Hermes/OpenShell compatibility names elsewhere in older diagrams are not working integrations; the active task loop is in the orchestrator.
 
-### Proposed NVIDIA integration
+### Proposed GPU hosting
 
-The diagram below describes a possible local GPU and cloud routing design. It is not the current chat path.
+The diagram below describes a possible local GPU and cloud routing design. The current NVIDIA integration is the hosted memory role described above.
 
 ```
 ┌─────────────────────────────────────────────┐

@@ -1,0 +1,150 @@
+{
+  "mode": "live",
+  "timestamp": "2026-10-11T14:22:08.275526+00:00",
+  "chat_model": "zai-org/GLM-5.3-Flash",
+  "memory_model": "nvidia/Nemotron-3_5-Lightning",
+  "vision": "off",
+  "inputs": "Synthetic only; temporary isolated stores. Reopen checks reconstruct the assistant in this process.",
+  "provider_calls": [
+    {
+      "role": "chat",
+      "model": "zai-org/GLM-5.3-Flash",
+      "served_model": "zai-org/GLM-5.3-Flash",
+      "seconds": 75.202,
+      "usage": {
+        "completion_tokens": 1175,
+        "prompt_tokens": 2569,
+        "total_tokens": 3744,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 1116,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2569,
+        "reasoning_tokens": 1116
+      }
+    },
+    {
+      "role": "memory",
+      "model": "nvidia/Nemotron-3_5-Lightning",
+      "served_model": "nvidia/Nemotron-3_5-Lightning",
+      "seconds": 6.538,
+      "usage": {
+        "completion_tokens": 1373,
+        "prompt_tokens": 160,
+        "total_tokens": 1533,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 1367,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 160
+      }
+    },
+    {
+      "role": "chat",
+      "model": "zai-org/GLM-5.3-Flash",
+      "served_model": "zai-org/GLM-5.3-Flash",
+      "seconds": 58.13,
+      "usage": {
+        "completion_tokens": 448,
+        "prompt_tokens": 680,
+        "total_tokens": 1128,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 252,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 680,
+        "reasoning_tokens": 252
+      }
+    },
+    {
+      "role": "chat",
+      "model": "zai-org/GLM-5.3-Flash",
+      "served_model": "zai-org/GLM-5.3-Flash",
+      "seconds": 41.341,
+      "usage": {
+        "completion_tokens": 340,
+        "prompt_tokens": 2891,
+        "total_tokens": 3231,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 306,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2891,
+        "reasoning_tokens": 306
+      }
+    }
+  ],
+  "results": [
+    {
+      "case": "nvidia_classifies_grounded_long_and_middle_memories",
+      "passed": true,
+      "acknowledgement": "Got it \u2014 study plans in exactly three short numbered steps, and Project Orion is the thing on your plate. What's it about? If I know the subject, I can make those three steps actually pull their weight when you want a plan."
+    },
+    {
+      "case": "nvidia_provider_call_completed",
+      "passed": true
+    },
+    {
+      "case": "grounded_memories_survive_store_reopen",
+      "passed": true
+    },
+    {
+      "case": "document_plan_uses_saved_preferences_and_source",
+      "passed": true,
+      "answer": "Here's your study plan for Project Orion, in exactly three short steps (per the brief in study_brief.pdf, page 1 \u2014 topics: HDL state machines and IoT sensors):\n\n1. **Study HDL state machines** \u2014 review FSM concepts (states, transitions, Moore vs. Mealy) and sketch a simple state diagram.\n2. **Study IoT sensors** \u2014 cover sensor types, interfacing, and how they feed data into embedded systems.\n3. **Worked example + self-test** \u2014 write one worked example (e.g., a traffic-light FSM in HDL using an IoT sensor input) and then make a short self-test with a few questions to check yourself.\n\nThat's three steps, matching the brief's two topics and its required deliverables (one worked example and a short self-test) from study_brief.pdf, page 1. Want me to help draft the worked example?",
+      "saved_user_context": "Saved user statement: I am working on Project Orion.\nSaved user statement: I prefer study plans with exactly three short numbered steps.\nEarlier user statement: Using my saved study preferences, make a study plan for this Project Orion brief."
+    },
+    {
+      "case": "completed_plan_saved_locally",
+      "passed": true
+    },
+    {
+      "case": "exact_plan_replay_after_source_deletion_and_reopen",
+      "passed": true
+    },
+    {
+      "case": "natural_language_request_executes_reminder_skill",
+      "passed": true,
+      "answer": "\u2705 Reminder set [a5d99606f63b]! I'll remind you to 'Review your Project Orion study plan' at Sun, 2026-10-11 19:52:08 IST (+0530)."
+    },
+    {
+      "case": "reminder_survives_store_reopen",
+      "passed": true
+    },
+    {
+      "case": "cloud_off_blocks_chat_and_nvidia_consolidation",
+      "passed": true
+    },
+    {
+      "case": "privacy_pause_blocks_new_chat_and_memory",
+      "passed": true
+    },
+    {
+      "case": "local_reminder_delivers_while_paused_and_cloud_off",
+      "passed": true,
+      "notifications": [
+        "\u23f0 REMINDER [a5d99606f63b]: Review your Project Orion study plan"
+      ]
+    }
+  ]
+}

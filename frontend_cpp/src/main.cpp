@@ -12,6 +12,27 @@
 #include "blob/physics.h"
 #include "blob/animation.h"
 #include "ui/tray.h"
+#ifdef __linux__
+#include <unistd.h>
+#include <sys/wait.h>
+#endif
+
+static void openChat() {
+#ifdef __linux__
+    const pid_t launcher = fork();
+    if (launcher == 0) {
+        const pid_t child = fork();
+        if (child == 0) {
+            const char* python = std::getenv("BLOB_CHAT_PYTHON");
+            if (!python) python = access("venv/bin/python", X_OK) == 0 ? "venv/bin/python" : "python3";
+            execlp(python, python, "-m", "blob.desktop", static_cast<char*>(nullptr));
+            _exit(127);
+        }
+        _exit(child < 0 ? 1 : 0);
+    }
+    if (launcher > 0) waitpid(launcher, nullptr, 0);
+#endif
+}
 
 static bool running = true;
 
@@ -47,6 +68,7 @@ int main(int argc, char* argv[]) {
     int width  = 132;
     int height = 116;
     std::string ipc_address = "localhost:50051";
+    if (const char* configured = std::getenv("BLOB_IPC_ADDRESS")) ipc_address = configured;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -86,6 +108,7 @@ int main(int argc, char* argv[]) {
     BlobExpression expression = BlobExpression::IDLE;
     Uint32 expressionUntil = 0;
     Uint32 speakingUntil = 0;
+    bool lastConnected = false;
 
     while (running) {
         Uint32 frameStart = SDL_GetTicks();
@@ -118,13 +141,14 @@ int main(int argc, char* argv[]) {
             else if (event.type == SDL_MOUSEBUTTONDOWN &&
                      event.button.windowID == SDL_GetWindowID(window.getSDLWindow()) &&
                      event.button.button == SDL_BUTTON_RIGHT) {
-                physics.jiggle();
+                grpc_client.togglePrivacy();
             }
             else if (event.type == SDL_MOUSEBUTTONDOWN &&
                      event.button.windowID == SDL_GetWindowID(window.getSDLWindow()) &&
                      event.button.button == SDL_BUTTON_LEFT && event.button.clicks >= 2) {
                 physics.jiggle();
                 window.stopDrag();
+                openChat();
             }
             else if (event.type == SDL_MOUSEBUTTONDOWN &&
                      event.button.windowID == SDL_GetWindowID(window.getSDLWindow()) &&
@@ -161,7 +185,8 @@ int main(int argc, char* argv[]) {
         }
 
         tray.poll();
-        if (tray.takeActivated()) physics.jiggle();
+        if (tray.takeActivated()) openChat();
+        if (tray.takePrivacyToggle()) grpc_client.togglePrivacy();
         while (auto event = grpc_client.pollEvent()) {
             if (event->has_skill_ack()) {
                 const auto& ack = event->skill_ack();
@@ -211,6 +236,12 @@ int main(int argc, char* argv[]) {
         }
 
         // ── Physics & animation ──
+        const bool connected = grpc_client.isConnected();
+        if (!connected && !privacyActive) state_machine.changeState(BlobState::SLEEPING);
+        else if (connected && !lastConnected && !privacyActive) state_machine.changeState(BlobState::IDLE);
+        SDL_SetWindowTitle(window.getSDLWindow(), privacyActive ? "Blob — privacy active" :
+            (connected ? "Blob — ready (right-click to pause; double-click for chat)" : "Blob — backend disconnected"));
+        lastConnected = connected;
         state_machine.update(dt);
         animation.update(dt);
         BlobPose pose = animation.pose();

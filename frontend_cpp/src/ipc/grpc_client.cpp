@@ -2,6 +2,17 @@
 
 #include <chrono>
 #include <utility>
+#include <fstream>
+#include <cstdlib>
+
+static void authorize(grpc::ClientContext& context) {
+    const char* configured = std::getenv("BLOB_IPC_TOKEN_PATH");
+    const char* home = std::getenv("HOME");
+    const std::string path = configured ? configured : (home ? std::string(home) + "/.blob/ipc.token" : "");
+    std::ifstream file(path);
+    std::string token;
+    if (file >> token) context.AddMetadata("x-blob-token", token);
+}
 
 using namespace std::chrono_literals;
 
@@ -55,12 +66,18 @@ bool GrpcClient::installSkill(const std::string& path) {
     return enqueue(std::move(event));
 }
 
+void GrpcClient::togglePrivacy() {
+    privacyToggle_ = true;
+    condition_.notify_all();
+}
+
 void GrpcClient::run() {
     while (running_) {
         if (!channel_->WaitForConnected(std::chrono::system_clock::now() + 1s)) continue;
         if (!running_) break;
 
         grpc::ClientContext context;
+        authorize(context);
         {
             std::lock_guard<std::mutex> lock(mutex_);
             activeContext_ = &context;
@@ -88,13 +105,22 @@ void GrpcClient::run() {
             bool hasEvent = false;
             {
                 std::unique_lock<std::mutex> lock(mutex_);
-                condition_.wait_for(lock, 5s, [&]() { return !running_ || !streamOpen || !outbound_.empty(); });
+                condition_.wait_for(lock, 5s, [&]() { return !running_ || !streamOpen || !outbound_.empty() || privacyToggle_; });
                 if (!running_ || !streamOpen) break;
                 if (!outbound_.empty()) {
                     event = std::move(outbound_.front());
                     outbound_.pop_front();
                     hasEvent = true;
                 }
+            }
+            if (privacyToggle_.exchange(false)) {
+                grpc::ClientContext controlContext;
+                authorize(controlContext);
+                controlContext.set_deadline(std::chrono::system_clock::now() + 2s);
+                blob::ConfigUpdate request;
+                (*request.mutable_settings())["privacy_paused"] = "toggle";
+                blob::ConfigUpdateResponse response;
+                stub_->UpdateConfig(&controlContext, request, &response);
             }
             if (!hasEvent) event.mutable_heartbeat()->set_frontend_uptime_ms(0);
             if (!stream->Write(event)) {

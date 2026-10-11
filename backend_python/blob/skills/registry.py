@@ -20,17 +20,20 @@ MAX_SKILL_BYTES = 64 * 1024
 
 
 class SkillRegistry:
-    def __init__(self, install_dir: str | Path | None = None):
+    def __init__(self, install_dir: str | Path | None = None, *, controls=None):
         self.skills = {}
         self.install_dir = Path(install_dir or Path.home() / ".blob/skills").expanduser()
         self._installed = {}
         self.validator = SkillValidator()
         self.history = deque(maxlen=30)
+        self.controls = controls
 
     def register(self, skill):
         if skill.name in self.skills:
             raise ValueError(f"Skill tool already registered: {skill.name}")
         self.skills[skill.name] = skill
+        if self.controls is not None:
+            skill.controls = self.controls
 
     def get_skill(self, name):
         return self.skills.get(name)
@@ -48,6 +51,8 @@ class SkillRegistry:
     def prompt_text(self):
         lines = []
         for name in sorted(self.skills):
+            if self.controls and name in self.controls.state["disabled_skills"]:
+                continue
             info = self.describe(name)
             if not info["model_callable"] or name == "camera":
                 continue
@@ -63,6 +68,12 @@ class SkillRegistry:
             if source not in {"model", "terminal"}:
                 raise ValueError("Unknown skill invocation source.")
             info = self.describe(name)
+            if self.controls:
+                if name in self.controls.state["disabled_skills"]:
+                    raise ValueError("This skill is disabled. Use /privacy enable <skill> to allow it.")
+                if (self.controls.paused and name != "reminder" and
+                        not (name == "camera" and args.get("action") in {"list", "forget"})):
+                    raise ValueError("Privacy pause is active. This skill is blocked.")
             if source == "model" and (not info["model_callable"] or name == "camera"):
                 raise ValueError("This skill requires an explicit terminal command.")
             values = validate_arguments(info["arguments"], args)
@@ -108,6 +119,8 @@ class SkillRegistry:
         except UnicodeDecodeError as exc:
             raise ValueError("Skill file must be UTF-8 text.") from exc
         new_tools = {f"{definition.slug}.{tool.name}": CommandSkill(definition, tool) for tool in definition.tools}
+        for tool in new_tools.values():
+            tool.controls = self.controls
         for name in new_tools:
             if name in self.skills and name not in self._installed.get(definition.slug, set()):
                 raise ValueError(f"Skill tool conflicts with an existing tool: {name}")
