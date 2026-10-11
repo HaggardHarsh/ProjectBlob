@@ -44,11 +44,12 @@ EMOTE_OPEN = re.compile(
 FACE_REQUEST = re.compile(
     r"(?:"
     r"(?:(?:can|could|would|will) you\s+)?(?:please\s+)?"
-    r"(?:make|do|show|give|put on)\s+(?:me\s+)?(?:(?:a|the|your)\s+)?"
-    r"|what about\s+(?:(?:a|the|your)\s+)?"
+    r"(?:make|do|show|give|put on)\s+(?:me\s+)?(?:(?:an?|the|your)\s+)?"
+    r"|what about\s+(?:(?:an?|the|your)\s+)?"
     r")"
-    r"(?P<mood>melting|melted|sad|happy)\s+(?:face|expression)"
-    r"(?:\s+for me)?(?:,?\s+please)?[?.!]*",
+    rf"(?P<mood>{EMOTE_NAMES.replace('_', '[ _]')}|MELTED|{'|'.join(EMOTE_ALIASES)})"
+    r"\s+(?:face|expression|emotion|mood|animation)"
+    r"(?:\s+for me)?(?:\s+again)?(?:,?\s+(?:blob|blobby))?(?:,?\s+please)?[?.!]*",
     re.IGNORECASE,
 )
 CAMERA_REQUEST = re.compile(
@@ -229,8 +230,8 @@ def _requested_face(text: str) -> str | None:
     match = FACE_REQUEST.fullmatch(text.strip())
     if match is None:
         return None
-    mood = match.group("mood").upper()
-    return "MELTING" if mood == "MELTED" else mood
+    mood = match.group("mood").upper().replace(" ", "_")
+    return "MELTING" if mood == "MELTED" else EMOTE_ALIASES.get(mood, mood)
 
 
 def _wants_screen_capture(text: str, recent_turns) -> bool:
@@ -733,7 +734,8 @@ class BlobOrchestrator:
             text = await handle_control_command(self, user_msg.text.strip())
             return await self._send_direct_response(text, "IDLE")
         # Listing/deletion and direct reminders remain available while paused.
-        local = command in {"/skills", "/reminders", "/files", "/results", "/camera"}
+        local = (command in {"/skills", "/reminders", "/files", "/results", "/camera"} or
+                 (not getattr(user_msg, "attachments", ()) and _requested_face(user_msg.text) is not None))
         generation = controls.generation if controls else None
         if controls and controls.paused:
             parts = user_msg.text.strip().lower().split()
@@ -1074,7 +1076,7 @@ class BlobOrchestrator:
             return await self._handle_camera_command("/camera scan", clean_text)
         requested_face = _requested_face(stripped)
         if requested_face is not None:
-            answer = f"Here's my {requested_face.lower()} face."
+            answer = f"Here's my {requested_face.lower().replace('_', ' ')} face."
             self._remember_turn(clean_text, answer)
             return await self._send_direct_response(answer, requested_face)
         if REMEMBER_ME_REQUEST.fullmatch(stripped):

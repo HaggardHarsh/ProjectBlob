@@ -15,6 +15,7 @@ from blob.ai.guardrails import unsupported_personal_event_claim
 from blob.ai.context_budget import prompt_size_bytes
 from blob.ai.llm_engine import NebiusEngine
 from blob.ipc import blob_service_pb2
+from blob.privacy.controls import PrivacyControls
 
 
 @pytest.mark.asyncio
@@ -631,14 +632,23 @@ async def test_oversized_latest_request_is_not_sent_or_saved():
     ("What about a happy face", "HAPPY", "Here's my happy face."),
     ("Show me your happy expression!", "HAPPY", "Here's my happy face."),
     ("Could you make a sad face for me, please?", "SAD", "Here's my sad face."),
+    ("do a melting emotion blobby", "MELTING", "Here's my melting face."),
+    ("Show me your melting animation again, Blob!", "MELTING", "Here's my melting face."),
+    ("make an angry expression", "ANGRY", "Here's my angry face."),
+    ("show your deep thinking mood", "DEEP_THINKING", "Here's my deep thinking face."),
+    ("Do a melted emotion, blobby, please!", "MELTING", "Here's my melting face."),
 ])
-async def test_face_request_uses_visible_emote_without_model(user_text, emote, answer):
+async def test_face_request_uses_visible_emote_without_model(tmp_path, user_text, emote, answer):
     orchestrator = BlobOrchestrator.__new__(BlobOrchestrator)
     orchestrator.guardrails = SimpleNamespace(sanitize_input=lambda text: text)
     orchestrator.screen_sampler = None
     orchestrator.episodic = SimpleNamespace(add_episode=MagicMock())
     orchestrator.event_dispatcher = SimpleNamespace(broadcast=AsyncMock())
     orchestrator.llm = SimpleNamespace(generate_from_messages=AsyncMock())
+    orchestrator.controls = PrivacyControls(tmp_path / "privacy.json")
+    orchestrator.controls.state["cloud_enabled"] = False
+    orchestrator._active_attachments = ["previous-lesson.pdf"]
+    orchestrator._handle_attachment_message = AsyncMock(side_effect=AssertionError("Emotion request reached attachment analysis"))
 
     result = await orchestrator.handle_user_message(SimpleNamespace(text=user_text))
 
@@ -648,6 +658,7 @@ async def test_face_request_uses_visible_emote_without_model(user_text, emote, a
     assert events[0].emote.emote == getattr(blob_service_pb2.EmoteCommand, emote)
     assert events[1].notification.text == answer
     orchestrator.llm.generate_from_messages.assert_not_awaited()
+    orchestrator._handle_attachment_message.assert_not_awaited()
     orchestrator.episodic.add_episode.assert_called_once_with(user_text, answer)
     assert list(orchestrator._recent_turns)[-2:] == [
         {"role": "user", "content": user_text},
@@ -660,6 +671,10 @@ async def test_face_request_uses_visible_emote_without_model(user_text, emote, a
     "What does a sad face mean?",
     "Can you make a happy face in CSS?",
     "Make a sad face and set a timer",
+    "Draw a melting emotion blobby in ASCII",
+    "Show me a melting animation in Python",
+    "Don't do a melting emotion blobby",
+    "What is a melting emotion?",
 ])
 def test_face_request_does_not_hijack_other_tasks(user_text):
     assert _requested_face(user_text) is None
