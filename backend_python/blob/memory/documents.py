@@ -16,8 +16,8 @@ MAX_SOURCE_BYTES = 20 * 1024 * 1024
 STOP_WORDS = frozenset("a an and are about again before blob can could did do does earlier explain for from give have how i in is it me my now of on please remember shared show tell that the this to was what when which with would you your time".split())
 ALIASES = {"exams": "exam", "timetables": "schedule", "timetable": "schedule", "schedules": "schedule",
            "pdfs": "pdf", "documents": "document", "attachments": "attachment", "pictures": "picture", "images": "image",
-           "files": "file", "pages": "page"}
-DOCUMENT_REFERENCE = re.compile(r"\b(?:pdfs?|documents?|attachments?|files?|timetables?|schedules?|images?|pictures?)\b", re.I)
+           "files": "file", "pages": "page", "photo": "image", "photos": "image"}
+DOCUMENT_REFERENCE = re.compile(r"\b(?:pdfs?|documents?|attachments?|files?|timetables?|schedules?|images?|pictures?|photos?)\b", re.I)
 
 
 class DocumentError(ValueError):

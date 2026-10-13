@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from io import BytesIO
 from pathlib import Path
 import re
+import shlex
 import threading
 import warnings
 
@@ -28,6 +29,44 @@ WEEKDAYS = frozenset("monday tuesday wednesday thursday friday saturday sunday".
 
 class AttachmentError(ValueError):
     pass
+
+
+def parse_selected_files(text):
+    """Parse leading terminal file selections; never interpret or execute shell syntax."""
+    remaining = text.lstrip()
+    paths = []
+    if re.match(r"^/[a-zA-Z][a-zA-Z_-]*(?:\s|$)", remaining):
+        return text, []
+    prefix = re.compile(r"^(?:[\"']?)(?:/|~/|\./|\.\./)")
+    suffix = re.compile(r"\.(?:pdf|png|jpe?g|webp)(?=\s|$)", re.I)
+    while len(paths) <= MAX_FILES and prefix.match(remaining):
+        lexer = shlex.shlex(remaining, posix=True)
+        lexer.whitespace_split = True
+        lexer.commenters = ""
+        try:
+            path = lexer.get_token()
+        except ValueError as exc:
+            raise AttachmentError("The selected file path has an unclosed quote. Quote the full path and try again.") from exc
+        consumed = lexer.instream.tell()
+        if Path(path).suffix.lower() not in SUPPORTED_IMAGES | {".pdf"} and not remaining.startswith(('"', "'")):
+            # Desktop pastes can contain unquoted spaces, as in 'Photo from ...jpeg'.
+            match = suffix.search(remaining)
+            if not match:
+                if not Path(path).suffix:
+                    break
+                paths.append(path)
+                remaining = remaining[consumed:].lstrip()
+                continue
+            raw = remaining[:match.end()]
+            path = re.sub(r"\\(.)", r"\1", raw)
+            consumed = match.end()
+        elif not Path(path).suffix:
+            break
+        paths.append(path)
+        remaining = remaining[consumed:].lstrip()
+    if not paths:
+        return text, []
+    return remaining or "Give a brief overview of these selected files.", paths
 
 
 @dataclass

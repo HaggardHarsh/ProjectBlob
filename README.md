@@ -169,6 +169,20 @@ management, limits, and troubleshooting.
 
 Drag PDFs or images onto the desktop Blob. It prints a brief analysis in the backend terminal, then keeps those files available for follow-up questions at `Blob>`. Ask "Explain page 12" or "Summarize pages 3-5" directly in the terminal. Dropping additional files adds them to the current session. Supported formats are PDF, PNG, JPEG, and WebP, with up to four attached files, at most 20 MB each and 50 MB combined. PDFs can contain up to 100 pages.
 
+You can also paste a file path at the beginning of a terminal message:
+
+```text
+"/home/you/Pictures/Photo from Tuesday.jpeg" Describe the people in this picture
+```
+
+Quoted paths, terminal-escaped spaces, and unquoted spaces before a supported file
+extension are accepted. Multiple leading paths select multiple files. The selected
+files stay available for follow-ups such as “What about the other person?” and
+“What are they wearing?” Ordinary chat and email drafts still use normal chat.
+Image descriptions use the configured vision model; a bare filename is not visual
+evidence. Blob can describe visible people, but does not guess their identities
+from faces or assume a pictured person is you from a remembered nickname.
+
 Use `/files` to list attached files, `/files remove <number>` to detach one, or `/files clear` to detach all files. Explicit requests such as reminders, camera commands, and screen capture continue to work while files are attached. The active selection lasts until detached or the backend restarts.
 
 Keeping files attached does not turn ordinary terminal chat into file analysis.
@@ -184,6 +198,12 @@ Use `/files saved` to list saved document IDs, `/files open <id>` to reopen one,
 The backend extracts PDF text locally and includes filenames and page numbers as source references. File analysis budgets excerpts, page labels, and images together within `BLOB_MAX_PROMPT_BYTES` (32,000 by default). Long documents and wide page ranges use relevant page excerpts; the supplied context identifies omitted pages and text. Image inputs and rendered PDF pages use `zai-org/GLM-5.3-Flash` by default because the main Nemotron Super model is text-only. Set `BLOB_VISION_MODEL` to another exact model ID, `auto` for provider discovery, or `off` to use local OCR only. In auto mode, image analysis reuses the chat model when the provider reports image-input support. Ordinary chat and document requests without images use `BLOB_MODEL_NAME`.
 
 Visual requests send resized images, including up to three selected PDF page images per document and four images total. When no vision model is available, Blob can read text in images and scanned PDFs using the optional `backend_python[ocr]` installation. OCR alone cannot describe objects, colors, or diagrams. Unreadable, damaged, password protected, and oversized files produce an error instead of an invented explanation.
+
+If an image request times out after 30 seconds, Blob retries the same bounded image
+context once with `openbmb/MiniCPM-V-4_5` through the same provider, with a 60-second
+deadline. Text-only requests keep their normal model. Set
+`BLOB_VISION_FALLBACK_MODEL=off` to disable this backup or set another exact vision
+model ID. Privacy pause and cloud-off stop both routes.
 
 Dropping files, opening saved files, and asking related questions shares selected file content with your cloud AI provider. The backend prints a notice on drops and reopening saved files. PDF parsing and OCR happen locally; original files are left in place. Source copies and extracted excerpts are stored separately from personal memory. Completed answers to your file questions are saved as generated results, with their original request, source names and checksums, and creation time. These are earlier generated work, not user-stated facts or independently verified document evidence. Automatic file-drop overviews are not saved as results.
 
@@ -212,6 +232,12 @@ Restart the backend, then say "Camera", ask Blob to open or scan your camera, or
 /camera list
 /camera forget Asha
 ```
+
+“Can you recognize me” also runs a real local camera scan, without a model call.
+An immediate “yes it is” or “try again” repeats the last camera check; an unrelated
+turn clears that retry context. The same requests work with cloud assistance off,
+while manual privacy pause still blocks camera access. Blob reports the camera
+tool's actual result rather than narrating an unexecuted attempt.
 
 Enrollment requires the person's consent and captures at least eight clear frames with one face visible. A scan reports face and full-body detections and matches enrolled faces by name. Recognition uses OpenCV's LBPH model; it can make mistakes, especially with poor light or a changed appearance, so it should not be used for authentication. The camera opens only for a request and is released afterward. Frames are not sent to the LLM or stored in chat memory. Enrollment stores cropped grayscale face samples under `~/.blob/faces/` (or `BLOB_FACE_DB_PATH`); `/camera forget <name>` deletes that person's samples.
 

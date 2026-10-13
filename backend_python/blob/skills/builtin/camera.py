@@ -48,6 +48,8 @@ class CameraSkill(SkillInterface):
                 if result["faces"] == 0:
                     output += (" No face was detected in that frame, so there was nothing to recognize. "
                                "Face the camera in good light and try again.")
+                elif result["unknown_faces"]:
+                    output += " To recognize a consenting person by name, enroll them with /camera enroll <name>."
             elif action == "enroll":
                 name = args.get("name", "")
                 count = self.vision.enroll(name)

@@ -5,7 +5,8 @@ from unittest.mock import AsyncMock, MagicMock
 import numpy as np
 import pytest
 
-from blob.ai.orchestrator import BlobOrchestrator
+from blob.ai.orchestrator import BlobOrchestrator, _requested_camera_action
+from blob.privacy.controls import PrivacyControls
 from blob.skills.base import SkillResult
 from blob.skills.builtin.camera import CameraSkill
 from blob.skills.registry import SkillRegistry
@@ -229,3 +230,101 @@ def test_camera_is_available_by_default_but_can_be_disabled():
 
     assert BlobConfig().camera_enabled is True
     assert BlobConfig(camera_enabled=False).camera_enabled is False
+
+
+def camera_chat(tmp_path, *, cloud_enabled=True):
+    skill = SimpleNamespace(name="camera", async_execute=AsyncMock(return_value=SkillResult(
+        "Camera opened successfully. Scan: 1 face(s). Recognized: none. Unknown faces: 1.", True, "HAPPY")))
+    controls = PrivacyControls(tmp_path / "privacy.json")
+    controls.update(cloud_enabled=cloud_enabled)
+    registry = SkillRegistry(tmp_path / "skills", controls=controls)
+    registry.register(skill)
+    orchestrator = BlobOrchestrator.__new__(BlobOrchestrator)
+    orchestrator.controls = controls
+    orchestrator.guardrails = SimpleNamespace(sanitize_input=lambda text: text, filter_output=lambda text: text)
+    orchestrator.skill_registry = registry
+    orchestrator.screen_sampler = None
+    orchestrator.event_dispatcher = SimpleNamespace(broadcast=AsyncMock())
+    orchestrator.dispatch_emote = AsyncMock()
+    orchestrator.episodic = SimpleNamespace(add_episode=MagicMock())
+    orchestrator._build_context = lambda text: "No relevant memories."
+    orchestrator._build_system_prompt = lambda: "System"
+    orchestrator.llm = SimpleNamespace(generate_from_messages=AsyncMock(return_value=SimpleNamespace(content="Okay.")))
+    return orchestrator, skill
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("text", ["Can you recognize me", "Could you recognise me?", "Recognize me please"])
+@pytest.mark.parametrize("cloud_enabled", [False, True])
+async def test_recognize_me_runs_local_camera_scan_even_with_files_and_cloud_off(tmp_path, text, cloud_enabled):
+    orchestrator, skill = camera_chat(tmp_path, cloud_enabled=cloud_enabled)
+    orchestrator._active_attachments = ["/some/exam_schedule.pdf"]
+    orchestrator._handle_attachment_message = AsyncMock(side_effect=AssertionError("Camera request analyzed a file"))
+    answer = await orchestrator.handle_user_message(SimpleNamespace(text=text))
+    assert answer.startswith("Camera opened successfully.")
+    skill.async_execute.assert_awaited_once_with({"action": "scan", "name": ""})
+    orchestrator.llm.generate_from_messages.assert_not_awaited()
+    orchestrator._handle_attachment_message.assert_not_awaited()
+    orchestrator.episodic.add_episode.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_yes_it_is_retries_only_immediately_after_real_camera_request(tmp_path):
+    orchestrator, skill = camera_chat(tmp_path)
+    await orchestrator.handle_user_message(SimpleNamespace(text="Can you recognize me"))
+    await orchestrator.handle_user_message(SimpleNamespace(text="yes it is"))
+    assert skill.async_execute.await_count == 2
+    # An unrelated local command must also break the camera follow-up context.
+    await orchestrator.handle_user_message(SimpleNamespace(text="/skills"))
+    await orchestrator.handle_user_message(SimpleNamespace(text="yes it is"))
+    assert skill.async_execute.await_count == 2
+    orchestrator.llm.generate_from_messages.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_recognition_request_respects_manual_pause(tmp_path):
+    orchestrator, skill = camera_chat(tmp_path)
+    orchestrator.controls.update(paused=True)
+    answer = await orchestrator.handle_user_message(SimpleNamespace(text="Can you recognize me"))
+    assert "Privacy pause is active" in answer
+    skill.async_execute.assert_not_awaited()
+    orchestrator.llm.generate_from_messages.assert_not_awaited()
+
+
+@pytest.mark.parametrize("text", [
+    "Don't recognize me",
+    "Don’t open my camera",
+    "Never scan my face",
+    "How do I recognize my face with camera?",
+    "Can you recognize me from our previous chats?",
+    "Can you recognize me in the attached photo?",
+])
+def test_denials_memory_and_photo_questions_are_not_live_camera_requests(text):
+    assert _requested_camera_action(text) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("claim", [
+    "I'll try to use the camera to see if I can recognize you.",
+    "I tried to access the camera, but I didn't get a clear view of your face.",
+    "I'm not seeing a clear face right now.",
+    "Attempting to access the camera…",
+])
+async def test_model_camera_claims_are_replaced_before_streamed_or_final_output(tmp_path, capsys, claim):
+    orchestrator, skill = camera_chat(tmp_path)
+    async def streamed(messages, system):
+        yield claim
+    orchestrator.llm.generate_from_messages_stream = streamed
+    answer = await orchestrator.handle_user_message(SimpleNamespace(text="How do I use my camera?"))
+    assert answer.startswith("I haven't opened or read the camera for this request.")
+    assert claim not in capsys.readouterr().out
+    skill.async_execute.assert_not_awaited()
+
+
+def test_unknown_face_reports_enrollment_instruction_without_enrolling():
+    vision = SimpleNamespace(scan=lambda: {"faces": 1, "full_bodies": 0, "recognized": [], "unknown_faces": 1},
+                             enroll=MagicMock())
+    result = CameraSkill(vision).execute({"action": "scan"})
+    assert result.success and "Unknown faces: 1" in result.output
+    assert "/camera enroll <name>" in result.output
+    vision.enroll.assert_not_called()

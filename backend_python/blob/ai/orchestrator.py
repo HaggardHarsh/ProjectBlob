@@ -15,7 +15,7 @@ from blob.privacy.controls import PrivacyBlocked
 from blob.privacy.commands import handle_control_command
 from blob.privacy.screen_filter import app_category
 from blob.ai.llm_engine import NebiusEngine
-from blob.ai.attachments import AttachmentReader, AttachmentError, MAX_IMAGES
+from blob.ai.attachments import AttachmentReader, AttachmentError, MAX_IMAGES, parse_selected_files
 from blob.ipc import blob_service_pb2
 from blob.ai.guardrails import GuardrailsEngine, PERSONAL_PLAN_TOPIC, unsupported_personal_event_claim
 from blob.ai.context_budget import DEFAULT_MAX_PROMPT_BYTES, IMAGE_BUDGET_BYTES, fit_messages, prompt_size_bytes
@@ -67,7 +67,7 @@ CAMERA_RETRY_EXPLICIT = re.compile(
 )
 CAMERA_RETRY_FOLLOWUP = re.compile(
     r"^(?:(?:no|okay|ok)[, ]+|please\s+|can you\s+)?"
-    r"(?:try|scan|check)(?:\s+it)?\s+again[?.!]*$",
+    r"(?:(?:try|scan|check)(?:\s+it)?\s+again|(?:yes|yeah|yep)[, ]+it is)[?.!]*$",
     re.IGNORECASE,
 )
 CAMERA_STATUS_REQUEST = re.compile(
@@ -75,6 +75,40 @@ CAMERA_STATUS_REQUEST = re.compile(
     r"|\bwhy\b.{0,60}\b(?:access|open|use)\b.{0,20}\b(?:camera|webcam)\b",
     re.IGNORECASE,
 )
+CAMERA_RECOGNITION_REQUEST = re.compile(
+    r"^\s*(?:(?:hey|please)[, ]+)?(?:(?:can|could|would|will) you\s+)?(?:please\s+)?"
+    r"(?:recognize|recognise|identify)\s+me(?:\s+(?:now|again))?(?:[, ]+please)?[?.!]*\s*$", re.I)
+CAMERA_DENIAL = re.compile(r"\b(?:don['’]t|do not|never)\b", re.I)
+CAMERA_TOPIC = re.compile(r"\b(?:camera|webcam)\b", re.I)
+UNVERIFIED_CAMERA_CLAIM = re.compile(
+    r"\bi(?:['’]m| am|['’]ve| have|['’]ll)?\s+(?:(?:currently|just|already|actually)\s+)?"
+    r"(?:try to|tried to|attempted to|trying to|will try to|will|did|have)?\s*"
+    r"(?:open(?:ed|ing)?|access(?:ed|ing)?|use[ds]?|using|scan(?:ned|ning)?|check(?:ed|ing)?)\b"
+    r".{0,80}\b(?:camera|webcam)\b"
+    r"|\bi(?:['’]m| am)\s+(?:(?:not|currently|now)\s+)*"
+    r"(?:seeing|detecting|recognizing|recognising)\b.{0,60}\b(?:face|you)\b"
+    r"|\battempting to (?:open|access|use|scan)\b.{0,60}\b(?:camera|webcam)\b", re.I)
+
+
+def _requested_camera_action(text, previous_action=None):
+    """Recognize direct hardware requests without treating memory/photo questions as scans."""
+    stripped = text.strip()
+    if CAMERA_DENIAL.search(stripped):
+        return None
+    if re.fullmatch(r"(?:camera|webcam)[.!?]*", stripped, re.I):
+        return "scan"
+    if CAMERA_STATUS_REQUEST.search(stripped):
+        return "status"
+    if previous_action in {"scan", "status"} and CAMERA_RETRY_FOLLOWUP.fullmatch(stripped):
+        return previous_action
+    if re.search(r"\b(?:how (?:do|can|to)|why (?:can['’]t|cannot|won['’]t))\b", stripped, re.I):
+        return None
+    if (CAMERA_RECOGNITION_REQUEST.fullmatch(stripped) or CAMERA_REQUEST.search(stripped) or
+            CAMERA_RETRY_EXPLICIT.search(stripped)):
+        return "scan"
+    return None
+
+
 SCREEN_REQUEST = re.compile(
     r"\b(?:what(?:'s| is) (?:happening|going on|on|visible)|show me|look at|check|read|describe|capture|see|share|view)\b"
     r".{0,45}\b(?:my |the |this )?(?:screen|desktop|display)\b"
@@ -135,7 +169,7 @@ FILE_SEARCH_CLAIM = re.compile(
     re.IGNORECASE,
 )
 ATTACHMENT_REFERENCE = re.compile(
-    r"\b(?:attached|attachments?|pdfs?|documents?|files?|images?|pictures?|diagrams?|chapters?|pages?"
+    r"\b(?:attached|attachments?|pdfs?|documents?|files?|images?|pictures?|photos?|diagrams?|chapters?|pages?"
     r"|timetables?|datesheets?|schedules?)\b|\.(?:png|jpe?g|webp)\b", re.I)
 EXAM_DOCUMENT_REQUEST = re.compile(
     r"\b(?:what(?:['’]s)?|which)\s+(?:(?:is|are|my|the|first|next|upcoming)\s+)*"
@@ -150,10 +184,20 @@ WRITING_SOURCE = re.compile(
     r"\b(?:attached|attachments?|pdfs?|documents?|files?|images?|pictures?|timetables?|datesheets?|schedule|pages?|notes)\b"
     r"|\babout\b.{0,40}\b(?:attached|uploaded|dropped)\b.{0,40}\b(?:pdf|document|file|image|picture)\b", re.I)
 DOCUMENT_FOLLOWUP = re.compile(
-    r"\b(?:explain|summari[sz]e|simplify|shorten|expand|translate|rewrite|break down)\s+"
+    r"\b(?:describe|explain|summari[sz]e|simplify|shorten|expand|translate|rewrite|break down)\s+"
     r"(?:this|that|it|these|those)\b"
     r"|\bmake\s+(?:this|that|it)\s+(?:simpler|shorter|clearer|longer|easier)\b"
     r"|\b(?:tell me more|more detail|what about|how (?:much time|many days|long))\b", re.I)
+IMAGE_FOLLOWUP = re.compile(
+    r"\b(?:other|another|first|second|left|right)\s+(?:person|people|one)\b"
+    r"|\b(?:he|she|they)\b.{0,40}\b(?:wearing|holding|doing)\b"
+    r"|\b(?:what colo[u]r|how many people|what do you see)\b", re.I)
+IMAGE_IDENTITY_REQUEST = re.compile(
+    r"\bwho(?:['’]s| is| are)\b|\b(?:identify|recognize|recognise|name)\b.{0,50}"
+    r"\b(?:person|people|faces?|me|him|her|them)\b", re.I)
+IMAGE_IDENTITY_REPLY = (
+    "I can't establish who the people are from their faces. I can describe their clothing, "
+    "positions, and what they're doing in this picture.")
 SAVED_TOPIC_REQUEST = re.compile(
     r"^\s*(?:(?:please|(?:can|could|would) you)\s+)?(?:explain|summari[sz]e|teach me)\b", re.I)
 AMBIENT_REFERENCE = re.compile(
@@ -575,11 +619,10 @@ class BlobOrchestrator:
         """Show a calmer state if model or tool work takes longer than expected."""
         task = asyncio.create_task(operation)
         try:
-            try:
-                return await asyncio.wait_for(asyncio.shield(task), delay)
-            except asyncio.TimeoutError:
+            done, _ = await asyncio.wait({task}, timeout=delay)
+            if not done:
                 await self.dispatch_emote(emote)
-                return await task
+            return await task
         finally:
             if not task.done():
                 task.cancel()
@@ -736,9 +779,7 @@ class BlobOrchestrator:
         if (
             WEATHER_INTENT.search(stripped) or
             (WEATHER_TOPIC.search(stripped) and FUTURE_WEATHER_TIME.search(stripped)) or
-            CAMERA_REQUEST.search(stripped) or CAMERA_STATUS_REQUEST.search(stripped) or
-            CAMERA_RETRY_EXPLICIT.search(stripped) or re.fullmatch(r"(?:camera|webcam)[.!?]*", stripped, re.I) or
-            (getattr(self, "_last_camera_action", None) and CAMERA_RETRY_FOLLOWUP.fullmatch(stripped)) or
+            _requested_camera_action(stripped, getattr(self, "_last_camera_action", None)) or
             FILE_REQUEST.search(stripped)
         ):
             return False
@@ -756,14 +797,29 @@ class BlobOrchestrator:
         document_turn = "[Attached: " in previous or "[Saved result: " in previous
         if document_turn and (DOCUMENT_FOLLOWUP.search(stripped) or EDIT_REQUEST.search(stripped)):
             return True
+        if document_turn and IMAGE_FOLLOWUP.search(stripped) and any(
+                Path(path).suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}
+                for path in getattr(self, "_active_attachments", ())):
+            return True
         # Topic-only questions can search saved excerpts after detaching/restarting;
         # the library still requires a match before any source reaches the model.
         return (not getattr(self, "_active_attachments", ()) and bool(SAVED_TOPIC_REQUEST.search(stripped)) and
                 not re.search(r"\b(?:this|that|it|these|those)\b", stripped, re.I))
 
     async def handle_user_message(self, user_msg):
+        if not getattr(user_msg, "attachments", ()):
+            try:
+                question, selected = parse_selected_files(user_msg.text)
+            except AttachmentError as exc:
+                return await self._send_direct_response(str(exc), "CONFUSED")
+            if selected:
+                user_msg = blob_service_pb2.UserMessage(text=question, attachments=selected,
+                    conversation_id=getattr(user_msg, "conversation_id", ""))
         controls = getattr(self, "controls", None)
         command = user_msg.text.strip().split(maxsplit=1)[0].lower() if user_msg.text.strip() else ""
+        camera_action = _requested_camera_action(user_msg.text, getattr(self, "_last_camera_action", None))
+        if command != "/camera" and camera_action is None:
+            self._last_camera_action = None
         if command == "/awareness":
             awareness = getattr(self, "awareness", None)
             text = (awareness.command(user_msg.text.strip(), self) if awareness else
@@ -774,7 +830,9 @@ class BlobOrchestrator:
             return await self._send_direct_response(text, "IDLE")
         # Listing/deletion and direct reminders remain available while paused.
         local = (command in {"/skills", "/reminders", "/files", "/results", "/camera"} or
-                 (not getattr(user_msg, "attachments", ()) and _requested_face(user_msg.text) is not None))
+                 (not getattr(user_msg, "attachments", ()) and (
+                     _requested_face(user_msg.text) is not None or
+                     camera_action is not None)))
         generation = controls.generation if controls else None
         if controls and controls.paused:
             parts = user_msg.text.strip().lower().split()
@@ -839,8 +897,18 @@ class BlobOrchestrator:
             paths = explicit or list(getattr(self, "_active_attachments", ()))
             use_document_context = self._uses_attachment_context(stripped)
             if paths and (explicit or use_document_context):
+                recent = list(getattr(self, "_recent_turns", ()))
+                identity_followup = (recent and recent[-1]["role"] == "assistant" and
+                    recent[-1]["content"] == IMAGE_IDENTITY_REPLY and
+                    re.match(r"^(?:what about|and)\b", stripped, re.I) and IMAGE_FOLLOWUP.search(stripped))
+                if all(Path(path).suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"} for path in paths) and (
+                        IMAGE_IDENTITY_REQUEST.search(stripped) or identity_followup):
+                    return await self._handle_image_identity_question(user_msg.text, paths, activate=bool(explicit))
+                if explicit:
+                    print("\nBlob: Reading selected files: " + ", ".join(Path(path).name for path in explicit) +
+                          ". Selected content is sent to your AI provider for analysis.\n")
                 return await self._handle_attachment_message(blob_service_pb2.UserMessage(
-                    text=user_msg.text, attachments=paths))
+                    text=user_msg.text, attachments=paths), activate=bool(explicit))
             if not paths and use_document_context:
                 library = self._document_library()
                 try:
@@ -966,6 +1034,50 @@ class BlobOrchestrator:
         return await self._send_direct_response(
             f"Files available for terminal follow-ups:\n{listing}\nUse /files remove <number> or /files clear to detach.", "IDLE")
 
+    async def _handle_image_identity_question(self, question, paths, *, activate=False):
+        """Validate the selection, retain it for descriptions, and avoid face-identity guesses."""
+        reader = getattr(self, "_attachment_reader", None)
+        if reader is None:
+            reader = self._attachment_reader = AttachmentReader()
+        try:
+            attached = await asyncio.to_thread(reader.prepare, paths, question, vision=True)
+        except AttachmentError as exc:
+            return await self._send_direct_response(str(exc), "CONFUSED")
+        if activate:
+            self._active_attachments = list(paths)
+        self._last_camera_action = None
+        try:
+            await asyncio.to_thread(self._thread_write(self._document_library().remember), attached.sources)
+        except (DocumentError, OSError, sqlite3.Error) as exc:
+            logger.warning("Image save failed: %s", exc)
+            print("Blob: This image is available now but could not be saved for restart.\n")
+        self._remember_recent_turn(question + "\n[Attached: " + ", ".join(attached.names) + "]", IMAGE_IDENTITY_REPLY)
+        return await self._send_direct_response(IMAGE_IDENTITY_REPLY, "IDLE")
+
+    async def _generate_attachment_answer(self, messages, system, engine, *, has_images):
+        backup_name = getattr(getattr(self, "config", None), "vision_fallback_model_name", "openbmb/MiniCPM-V-4_5")
+        can_failover = (has_images and backup_name.lower() != "off" and
+                        getattr(engine, "model_name", "") != backup_name)
+        try:
+            response, _ = await self._await_with_progress(asyncio.wait_for(
+                self._generate_with_preview(messages, system, allow_preview=False, engine=engine),
+                timeout=30 if can_failover else 120), 4.0, "DEEP_THINKING")
+            return response
+        except asyncio.TimeoutError:
+            if not can_failover:
+                raise
+        controls = getattr(self, "controls", None)
+        if controls:
+            controls.check(cloud=True)
+        logger.warning("Vision model %s timed out; trying backup %s", getattr(engine, "model_name", "unknown"), backup_name)
+        backup = await asyncio.wait_for(self.llm.vision_engine(backup_name), timeout=12)
+        if backup is None:
+            raise asyncio.TimeoutError("No backup vision model is available")
+        response, _ = await self._await_with_progress(asyncio.wait_for(
+            self._generate_with_preview(messages, system, allow_preview=False, engine=backup), timeout=60),
+            4.0, "DEEP_THINKING")
+        return response
+
     async def _handle_attachment_message(self, user_msg, *, activate=False, user_authored=True):
         question = self.guardrails.sanitize_input(user_msg.text).strip() or "Explain these attached files."
         self._show_thinking()
@@ -1047,10 +1159,9 @@ class BlobOrchestrator:
             self._show_thinking()
         await self.dispatch_emote("THINKING")
         try:
-            response, _ = await self._await_with_progress(
-                asyncio.wait_for(self._generate_with_preview(
-                    bounded, system, allow_preview=False, engine=engine), timeout=120),
-                4.0, "DEEP_THINKING")
+            response = await self._generate_attachment_answer(bounded, system, engine, has_images=attached.has_images)
+        except PrivacyBlocked:
+            raise
         except Exception:
             logger.exception("Attachment analysis failed")
             return await self._send_direct_response(
@@ -1103,17 +1214,13 @@ class BlobOrchestrator:
         self.last_screen_context = "No fresh screen capture for this request."
         if stripped and stripped.split(maxsplit=1)[0].lower() == "/camera":
             return await self._handle_camera_command(stripped, clean_text)
-        if re.fullmatch(r"(?:camera|webcam)[.!?]*", stripped, re.IGNORECASE):
-            return await self._handle_camera_command("/camera scan", clean_text)
-        if CAMERA_STATUS_REQUEST.search(stripped) and not re.search(r"\b(?:don't|do not|never)\b", stripped, re.IGNORECASE):
-            return await self._handle_camera_command("/camera status", clean_text)
-        if (previous_camera_action in {"scan", "status"} and
-                CAMERA_RETRY_FOLLOWUP.fullmatch(stripped)):
-            return await self._handle_camera_command(f"/camera {previous_camera_action}", clean_text)
-        if ((CAMERA_REQUEST.search(stripped) or CAMERA_RETRY_EXPLICIT.search(stripped)) and
-                not re.search(r"\b(?:don't|do not|never|how (?:do|can|to)|why (?:can't|cannot|won't))\b",
-                              stripped, re.IGNORECASE)):
-            return await self._handle_camera_command("/camera scan", clean_text)
+        camera_action = _requested_camera_action(stripped, previous_camera_action)
+        if camera_action is not None:
+            return await self._handle_camera_command(f"/camera {camera_action}", clean_text)
+        previous_user = next((item["content"] for item in reversed(getattr(self, "_recent_turns", ()))
+                              if item["role"] == "user"), "")
+        camera_discussion = bool(CAMERA_TOPIC.search(stripped) or CAMERA_TOPIC.search(previous_user) or
+                                 CAMERA_RECOGNITION_REQUEST.fullmatch(previous_user))
         requested_face = _requested_face(stripped)
         if requested_face is not None:
             answer = f"Here's my {requested_face.lower().replace('_', ' ')} face."
@@ -1201,7 +1308,7 @@ class BlobOrchestrator:
         prompt_overflow = False
         max_prompt_bytes = getattr(self, "_max_prompt_bytes", DEFAULT_MAX_PROMPT_BYTES)
         allow_preview = (required_tool is None and screen_result is None and
-                         not PERSONAL_PLAN_TOPIC.search(stripped))
+                         not PERSONAL_PLAN_TOPIC.search(stripped) and not camera_discussion)
         
         # ── ReAct Loop ──────────────────────────────────────────────────
         for iteration in range(MAX_REACT_ITERATIONS):
@@ -1383,6 +1490,10 @@ class BlobOrchestrator:
         
         # Apply output guardrails
         final_response = self.guardrails.filter_output(final_response)
+        if camera_discussion and UNVERIFIED_CAMERA_CLAIM.search(final_response):
+            final_response = ("I haven't opened or read the camera for this request. "
+                              "Use /camera status to check access or /camera scan for a fresh scan.")
+            emote_str = "CONFUSED"
         if (direct_tool_emote is None and screen_result is None and not file_search_ran and
                 unsupported_personal_event_claim(
                     final_response,
