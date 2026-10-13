@@ -25,6 +25,12 @@ Blob is a living desktop companion — a small blue slime with expressive eyes t
 
 ## Architecture
 
+The [Hermes runtime](docs/agent_runtime.md) uses native tool calls behind the same
+terminal and desktop interface. This installation selects it with
+`BLOB_AGENT_RUNTIME=hermes`; `classic` remains available for rollback and fresh
+installations without Hermes. `/agent` shows the active runtime and last tool receipts.
+OpenShell/NemoClaw deployment is a separate stage and is not currently active.
+
 ```
 ┌─────────────────────────────┐     gRPC (localhost:50051)     ┌─────────────────────────────┐
 │   C++ Frontend Overlay      │◄──────────────────────────────►│   Python AI Backend          │

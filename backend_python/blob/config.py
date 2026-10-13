@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Literal
 import yaml
 from pydantic import BaseModel, Field
 
@@ -20,6 +21,11 @@ class BlobConfig(BaseModel):
     max_prompt_bytes: int = Field(default=32000, ge=4096)
     vision_model_name: str = "zai-org/GLM-5.3-Flash"  # Super is text-only; "auto" discovers, "off" uses OCR.
     vision_fallback_model_name: str = "openbmb/MiniCPM-V-4_5"  # Same-provider backup; "off" disables failover.
+    agent_runtime: Literal["classic", "hermes"] = "classic"
+    hermes_python: str = Field(default_factory=lambda: str(Path(__file__).resolve().parents[2] / ".runtime/hermes-venv/bin/python"))
+    hermes_source_path: str = Field(default_factory=lambda: str(Path(__file__).resolve().parents[2] / ".runtime/hermes"))
+    agent_timeout_seconds: int = Field(default=120, ge=5, le=600)
+    agent_max_iterations: int = Field(default=12, ge=1, le=30)
     memory_db_path: str = Field(default_factory=lambda: str(Path.home() / ".blob/memory/chromadb"))
     blacklist_path: str = Field(default_factory=lambda: str(Path(__file__).resolve().parents[1] / "data/blacklist.yaml"))
     personality_path: str = Field(default_factory=lambda: str(Path(__file__).resolve().parents[1] / "data/blob_personality.yaml"))
@@ -62,6 +68,13 @@ class BlobConfig(BaseModel):
             data["vision_model_name"] = os.environ["BLOB_VISION_MODEL"]
         if "BLOB_VISION_FALLBACK_MODEL" in os.environ:
             data["vision_fallback_model_name"] = os.environ["BLOB_VISION_FALLBACK_MODEL"]
+        for variable, field in (("BLOB_AGENT_RUNTIME", "agent_runtime"),
+                                ("BLOB_HERMES_PYTHON", "hermes_python"),
+                                ("BLOB_HERMES_SOURCE", "hermes_source_path"),
+                                ("BLOB_AGENT_TIMEOUT_SECONDS", "agent_timeout_seconds"),
+                                ("BLOB_AGENT_MAX_ITERATIONS", "agent_max_iterations")):
+            if variable in os.environ:
+                data[field] = os.environ[variable]
         if "BLOB_CAMERA_ENABLED" in os.environ:
             data["camera_enabled"] = os.environ["BLOB_CAMERA_ENABLED"].lower() in {"1", "true", "yes", "on"}
         for variable, field in (("BLOB_SCREEN_SAMPLE_INTERVAL_SEC", "screen_sample_interval_sec"),

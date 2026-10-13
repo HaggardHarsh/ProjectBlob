@@ -25,13 +25,13 @@ dependencies = [
 [project.optional-dependencies]
 ocr = ["easyocr>=1.7.1"]
 vision = ["opencv-contrib-python>=4.8,<5"]
-openshell = ["openshell"]
 dev = ["pytest>=7.4.0", "pytest-asyncio>=0.21.0"]
 
 [project.scripts]
 blob-backend = "blob.main:main"
 blob-chat = "blob.client:main"
 blob-desktop = "blob.desktop:main"
+blob-agent = "blob.agents.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["blob*"]

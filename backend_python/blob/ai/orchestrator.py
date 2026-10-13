@@ -225,6 +225,20 @@ def _requested_reminder_action(text):
     return "cancel" if verb in {"cancel", "remove", "delete"} else "snooze" if verb in {"snooze", "postpone"} else "list"
 
 
+def _requested_reminder_actions(text):
+    """Retain every explicitly requested reminder operation for native turns."""
+    actions = set()
+    for match in REMINDER_INTENT.finditer(text):
+        control = REMINDER_CONTROL.fullmatch(match.group())
+        if control:
+            verb = control.group("action").lower()
+            actions.add("cancel" if verb in {"cancel", "remove", "delete"} else
+                        "snooze" if verb in {"snooze", "postpone"} else "list")
+        else:
+            actions.add("set")
+    return actions
+
+
 WEATHER_INTENT = re.compile(
     r"\b(?:what(?:'s| is) the weather|(?:check|show|tell me|give me)\b.{0,40}\bweather"
     r"|weather (?:in|now|today)|"
@@ -326,6 +340,10 @@ class BlobOrchestrator:
         self.screen_sampler = screen_sampler
         self.guardrails = GuardrailsEngine(config)
         self.llm = NebiusEngine(config.nebius_api_key, config.nebius_base_url, config.model_name, controls=controls)
+        self.agent_runtime = None
+        if getattr(config, "agent_runtime", "classic") == "hermes":
+            from blob.agents.hermes import HermesAgentWrapper
+            self.agent_runtime = HermesAgentWrapper(config, self.llm, controls=controls)
         
         self.episodic = EpisodicMemory(vector_store)
         memory_model = getattr(config, "memory_model_name", None)
@@ -820,6 +838,12 @@ class BlobOrchestrator:
         camera_action = _requested_camera_action(user_msg.text, getattr(self, "_last_camera_action", None))
         if command != "/camera" and camera_action is None:
             self._last_camera_action = None
+        if command == "/agent":
+            runtime = getattr(self, "agent_runtime", None)
+            status = {"runtime": "hermes" if runtime is not None else "classic",
+                      "model": getattr(self.config, "model_name", "configured model"),
+                      "last_run": runtime.last_run if runtime is not None else None}
+            return await self._send_direct_response(json.dumps(status, indent=2), "IDLE")
         if command == "/awareness":
             awareness = getattr(self, "awareness", None)
             text = (awareness.command(user_msg.text.strip(), self) if awareness else
@@ -1202,6 +1226,84 @@ class BlobOrchestrator:
         self._remember_recent_turn(question + "\n" + reference, response)
         return await self._send_direct_response(response, emote)
 
+    async def _handle_hermes_turn(self, messages, system_prompt, text, required_tool, camera_discussion):
+        """Candidate native-tool loop; local controls and sensors stay in Blob."""
+        from blob.agents.hermes import AgentRuntimeError
+        from blob.skills.base import SkillResult
+        native_prompt = re.sub(r"### How to Call a Tool.*?(?=## Emotes)",
+            "Use native function calls with the supplied argument schemas. Never emit text tool-call blocks.\n\n",
+            system_prompt, flags=re.S)
+        native_prompt = re.sub(r"(?m)^.*```tool_call.*\n?", "", native_prompt)
+        messages = [dict(item) for item in messages]
+        messages[0] = {"role": "system", "content": native_prompt}
+        tools, mapping = [], {}
+        permitted = {"weather", "git_status", "shell_command", "reminder"}
+        if FILE_REQUEST.search(text):
+            permitted.add("file_search")
+        for name in sorted(permitted & set(self.skill_registry.skills)):
+            info = self.skill_registry.describe(name)
+            controls = getattr(self, "controls", None)
+            if not info["model_callable"] or (controls and name in controls.state["disabled_skills"]):
+                continue
+            wire_name = "blob_" + name
+            mapping[wire_name] = name
+            tools.append({"name": wire_name, "description": info["description"],
+                          "parameters": info["arguments"]})
+        native_prompt = re.sub(r"You have access to the following tools \(skills\):.*?(?=Each tool)",
+            "You have these native tools:\n" + "\n".join(
+                tool["name"] + ": " + tool["description"] for tool in tools) + "\n\n",
+            native_prompt, flags=re.S)
+        messages[0]["content"] = native_prompt
+        reminder_created = False
+        successful = set()
+        reminder_actions = _requested_reminder_actions(text)
+        successful_reminder_actions = set()
+        async def execute(wire_name, args):
+            nonlocal reminder_created
+            name = mapping[wire_name]
+            if name == "reminder":
+                if args.get("action", "set") != "list" and (
+                        required_tool != "reminder" or args.get("action", "set") not in reminder_actions):
+                    return SkillResult("That reminder change was not requested and was not executed.", False, "CONFUSED")
+                if args.get("action", "set") == "set" and reminder_created:
+                    return SkillResult("A reminder was already created in this turn. Do not create a duplicate.", False, "CONFUSED")
+            result = await self.skill_registry.execute(name, args, source="model")
+            if result.success:
+                successful.add(name)
+                if name == "reminder":
+                    successful_reminder_actions.add(args.get("action", "set"))
+                reminder_created |= name == "reminder" and args.get("action", "set") == "set"
+            return result
+        async def event(kind, details):
+            emote = ("THINKING" if kind == "model" else "WORKING" if kind == "tool_start" else
+                     "SUCCESS" if details.get("success") else "WORRIED")
+            await self.dispatch_emote(emote)
+        try:
+            answer = await self._await_with_progress(
+                self.agent_runtime.run(messages, native_prompt, tools, execute, event), 4.0, "DEEP_THINKING")
+        except AgentRuntimeError as exc:
+            return await self._send_direct_response(str(exc), "WORRIED")
+        except (OSError, ValueError):
+            return await self._send_direct_response("Hermes is unavailable. Run blob-agent doctor.", "WORRIED")
+        answer = _strip_reasoning(answer)
+        emote, answer = self._extract_emote(answer)
+        answer = self.guardrails.filter_output(answer)
+        if camera_discussion and UNVERIFIED_CAMERA_CLAIM.search(answer):
+            answer = "I haven't opened or read the camera for this request. Use /camera scan for a fresh scan."
+            emote = "CONFUSED"
+        if unsupported_personal_event_claim(answer,
+                [(text, None)] + [(item["content"], None) for item in reversed(self._recent_turns)
+                                 if item["role"] == "user"] + getattr(self, "_grounded_user_evidence", [])):
+            answer, emote = "I don't have evidence for that plan. I shouldn't have stated it as fact.", "CONFUSED"
+        if required_tool and required_tool not in successful:
+            answer, emote = "I couldn't complete that tool request. Check /skills or /reminders for the current state.", "WORRIED"
+        elif required_tool == "reminder" and not reminder_actions.issubset(successful_reminder_actions):
+            answer, emote = "I couldn't complete all requested reminder actions. Use /reminders to inspect what completed before retrying.", "WORRIED"
+        if not answer.strip():
+            answer, emote = "Hermes returned no usable answer. Please try again.", "WORRIED"
+        self._remember_turn(text, answer)
+        return await self._send_direct_response(answer, emote)
+
     async def _handle_text_message(self, user_msg):
         """Main entry point: handles a user message with a ReAct loop."""
         started_at = time.perf_counter()
@@ -1310,6 +1412,10 @@ class BlobOrchestrator:
         allow_preview = (required_tool is None and screen_result is None and
                          not PERSONAL_PLAN_TOPIC.search(stripped) and not camera_discussion)
         
+        if getattr(self, "agent_runtime", None) is not None:
+            return await self._handle_hermes_turn(
+                messages, sys_prompt, clean_text, required_tool, camera_discussion)
+
         # ── ReAct Loop ──────────────────────────────────────────────────
         for iteration in range(MAX_REACT_ITERATIONS):
             logger.info(f"ReAct iteration {iteration + 1}/{MAX_REACT_ITERATIONS}")

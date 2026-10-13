@@ -1,0 +1,132 @@
+{
+  "scope": "synthetic conversation workflows; camera fixture; vision pipeline shared",
+  "reports": [
+    {
+      "runtime": "classic",
+      "live": true,
+      "passed": 7,
+      "total": 10,
+      "checks": [
+        {
+          "name": "identity_question_stays_local",
+          "passed": true,
+          "latency_ms": 6
+        },
+        {
+          "name": "draft_while_photo_selected",
+          "passed": true,
+          "latency_ms": 2787,
+          "answer": "Subject: Request for One-Day Extension on Synthetic Assignment\n\nDear Professor,\n\nI hope you are well. I am writing to kindly request a one\u2011day extension for the synthetic assignment currently due [insert original due date]. Due to unforeseen circumstances, I would benefit from a little extra time to ensure the work meets the expected standards.\n\nThank you for your understanding and consideration.\n\nSincerely,\n[Your Name]  \n[Your Course/Section, if applicable]"
+        },
+        {
+          "name": "photo_pixels_reach_vision",
+          "passed": true,
+          "latency_ms": 669,
+          "answer": "The image is split vertically into two equal halves. The left half is a solid red color, and the right half is a solid blue color. There are no other colors or patterns visible in the image."
+        },
+        {
+          "name": "photo_followup_retains_pixels",
+          "passed": true,
+          "latency_ms": 448,
+          "answer": "The right side of the image is a solid blue color. There are no other colors or patterns visible in the image."
+        },
+        {
+          "name": "camera_uses_local_sensor",
+          "passed": true,
+          "latency_ms": 0
+        },
+        {
+          "name": "cloud_off_blocks_model_but_preserves_camera",
+          "passed": true,
+          "latency_ms": 0
+        },
+        {
+          "name": "reminder_created_once",
+          "passed": false,
+          "latency_ms": 2043,
+          "answer": "I couldn't complete that reminder request. Use /reminders to list IDs or /reminders help for commands."
+        },
+        {
+          "name": "multi_step_reminder_verification",
+          "passed": false,
+          "actions": [],
+          "invocations": 0
+        },
+        {
+          "name": "reminder_survives_backend_recreation",
+          "passed": false
+        },
+        {
+          "name": "privacy_pause_blocks_camera_and_model",
+          "passed": true,
+          "latency_ms": 0
+        }
+      ]
+    },
+    {
+      "runtime": "hermes",
+      "live": true,
+      "passed": 10,
+      "total": 10,
+      "checks": [
+        {
+          "name": "identity_question_stays_local",
+          "passed": true,
+          "latency_ms": 2
+        },
+        {
+          "name": "draft_while_photo_selected",
+          "passed": true,
+          "latency_ms": 4296,
+          "answer": "Subject: Request for One-Day Extension on Synthetic Assignment  \n\nDear Professor,\n\nI hope you are well. I am writing to kindly request a one\u2011day extension for the synthetic assignment due [original due date]. Due to unforeseen circumstances, I would benefit from additional time to ensure the quality of my submission.\n\nPlease let me know if this extension is possible. Thank you for your understanding.\n\nBest regards,  \n[Your Name]  \n[Course Title / Section]  \n[Student ID]"
+        },
+        {
+          "name": "photo_pixels_reach_vision",
+          "passed": true,
+          "latency_ms": 989,
+          "answer": "The picture shows two solid color blocks. On the left, there's a bright red color, and on the right, a deep blue color. The red and blue are separated by a straight vertical line, dividing the image into two equal halves. There are no other visible elements or details in the image."
+        },
+        {
+          "name": "photo_followup_retains_pixels",
+          "passed": true,
+          "latency_ms": 1284,
+          "answer": "The right side of the picture is solid blue. The image is divided vertically into two equal parts, with the left side being red and the right side being blue. There are no additional elements or details visible on the right side."
+        },
+        {
+          "name": "camera_uses_local_sensor",
+          "passed": true,
+          "latency_ms": 0
+        },
+        {
+          "name": "cloud_off_blocks_model_but_preserves_camera",
+          "passed": true,
+          "latency_ms": 0
+        },
+        {
+          "name": "reminder_created_once",
+          "passed": true,
+          "latency_ms": 6848,
+          "answer": "Reminder set \u2705 \u2013 \u201cReview the synthetic runtime experiment\u201d scheduled for 18:45\u202fIST today (ID: a0c1f8b56847).\n\nHere\u2019s the current list:\n- a0c1f8b56847 \u2022 Tue, 2026-10-13 18:45:32 IST \u2022 Review the synthetic runtime experiment"
+        },
+        {
+          "name": "multi_step_reminder_verification",
+          "passed": true,
+          "actions": [
+            "set",
+            "list"
+          ],
+          "invocations": 2
+        },
+        {
+          "name": "reminder_survives_backend_recreation",
+          "passed": true
+        },
+        {
+          "name": "privacy_pause_blocks_camera_and_model",
+          "passed": true,
+          "latency_ms": 0
+        }
+      ]
+    }
+  ]
+}
