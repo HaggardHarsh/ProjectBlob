@@ -384,6 +384,104 @@ async def test_active_files_preserve_normal_commands_and_explicit_tool_requests(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("text", [
+    "Can you do things for me? Lets say I want you to go draft a mail for me? Can you do it?",
+    "Draft an email to my professor asking for an extension.",
+    "Write an email asking about my exam timetable.",
+    "Hello Blob",
+    "How are you?",
+    "I'm feeling anxious about my exams.",
+    "My courses are stressing me out.",
+    "Help me write a Python function to sort a list.",
+    "What is my favorite anime?",
+    "Find my exam PDF in my approved folders.",
+])
+async def test_attached_files_do_not_take_over_unrelated_terminal_chat(text):
+    instance = orchestrator()
+    instance._active_attachments = ["/some/exam_schedule.pdf"]
+    instance._recent_turns.extend([
+        {"role": "user", "content": "Summarize the PDF.\n[Attached: exam_schedule.pdf]"},
+        {"role": "assistant", "content": "Your exam is on Monday."},
+    ])
+    instance._handle_text_message = AsyncMock(return_value="Normal chat")
+    instance._handle_attachment_message = AsyncMock(side_effect=AssertionError("Unrelated chat used file analysis"))
+    message = blob_service_pb2.UserMessage(text=text)
+    assert await instance.handle_user_message(message) == "Normal chat"
+    instance._handle_text_message.assert_awaited_once_with(message)
+    instance._handle_attachment_message.assert_not_awaited()
+    assert instance._active_attachments == ["/some/exam_schedule.pdf"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("text", [
+    "Explain page 2",
+    "Summarize it",
+    "What about Tuesday?",
+    "What exam do I have on Monday?",
+    "Draft an email using the attached PDF.",
+    "Draft a mail about the attached PDF.",
+])
+async def test_document_requests_and_immediate_followups_still_use_attached_files(text):
+    instance = orchestrator()
+    instance._active_attachments = ["/some/exam_schedule.pdf"]
+    instance._recent_turns.extend([
+        {"role": "user", "content": "Summarize the PDF.\n[Attached: exam_schedule.pdf]"},
+        {"role": "assistant", "content": "Your exam is on Monday."},
+    ])
+    instance._handle_text_message = AsyncMock()
+    instance._handle_attachment_message = AsyncMock(return_value="Document answer")
+    assert await instance.handle_user_message(blob_service_pb2.UserMessage(text=text)) == "Document answer"
+    instance._handle_attachment_message.assert_awaited_once()
+    assert list(instance._handle_attachment_message.call_args.args[0].attachments) == instance._active_attachments
+    instance._handle_text_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("attached", [False, True])
+@pytest.mark.parametrize("text", ["Rewrite it using a friendlier tone.", "Summarize it."])
+async def test_followup_after_email_draft_does_not_return_to_an_older_document(attached, text):
+    instance = orchestrator()
+    instance._active_attachments = ["/some/exam_schedule.pdf"] if attached else []
+    instance._last_saved_result_id = "old-timetable"
+    instance._recent_turns.extend([
+        {"role": "user", "content": "Show my timetable.\n[Saved result: old-timetable]"},
+        {"role": "assistant", "content": "Your exam is on Monday."},
+        {"role": "user", "content": "Draft a mail to my professor asking for an extension."},
+        {"role": "assistant", "content": "Dear Professor, could I have an extension?"},
+    ])
+    instance._handle_text_message = AsyncMock(return_value="Revised email")
+    instance._handle_attachment_message = AsyncMock()
+    instance._document_library = MagicMock(side_effect=AssertionError("Email followup searched old documents"))
+    assert await instance.handle_user_message(blob_service_pb2.UserMessage(text=text)) == "Revised email"
+    instance._handle_attachment_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_email_drafting_calls_chat_model_without_reading_attached_files(tmp_path):
+    from blob.ai.prompt_templates import SYSTEM_PROMPT
+    from blob.skills.registry import SkillRegistry
+    instance = orchestrator()
+    instance._active_attachments = ["/some/exam_schedule.pdf"]
+    instance.screen_sampler = None
+    instance.skill_registry = SkillRegistry(tmp_path / "skills")
+    instance._build_context = lambda text: "No relevant memories."
+    instance._build_system_prompt = lambda: SYSTEM_PROMPT.replace("{skills}", "No tools available.")
+    instance.llm.generate_from_messages.return_value = SimpleNamespace(
+        content="Dear Professor, could I please have an extension? <emote>HAPPY</emote>")
+    instance.llm.vision_engine.side_effect = AssertionError("Drafting email must not use vision")
+    instance._attachment_reader = SimpleNamespace(prepare=MagicMock(side_effect=AssertionError("Unrelated PDF read")))
+    reply = await instance.handle_user_message(blob_service_pb2.UserMessage(
+        text="Draft a mail to my professor asking for an extension."))
+    assert reply == "Dear Professor, could I please have an extension?"
+    instance.llm.generate_from_messages.assert_awaited_once()
+    messages, _ = instance.llm.generate_from_messages.call_args.args
+    assert all(isinstance(message["content"], str) for message in messages)
+    assert "exam_schedule.pdf" not in str(messages)
+    instance.llm.vision_engine.assert_not_awaited()
+    instance._attachment_reader.prepare.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_grpc_drop_triggers_terminal_analysis_and_followup_reads_same_document(tmp_path, capsys):
     path = tmp_path / "lesson.pdf"
     text_pdf(path, ["Voltage equals current times resistance", "Power equals voltage times current"])

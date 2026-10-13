@@ -134,6 +134,28 @@ FILE_SEARCH_CLAIM = re.compile(
     r"|\b(?:search|find|found)\b.{0,100}\b(?:file|document|pdf)\b",
     re.IGNORECASE,
 )
+ATTACHMENT_REFERENCE = re.compile(
+    r"\b(?:attached|attachments?|pdfs?|documents?|files?|images?|pictures?|diagrams?|chapters?|pages?"
+    r"|timetables?|datesheets?|schedules?)\b|\.(?:png|jpe?g|webp)\b", re.I)
+EXAM_DOCUMENT_REQUEST = re.compile(
+    r"\b(?:what(?:['’]s)?|which)\s+(?:(?:is|are|my|the|first|next|upcoming)\s+)*"
+    r"(?:exams?|examinations?|papers?)\b"
+    r"|\b(?:when|what (?:time|date)|how (?:long|many (?:days|hours|minutes)|much time))\b"
+    r".{0,100}\b(?:exams?|examinations?|papers?)\b"
+    r"|\b(?:exams?|examinations?)\b.{0,100}\bhow (?:long|many (?:days|hours|minutes)|much time)\b", re.I)
+WRITING_REQUEST = re.compile(
+    r"\b(?:draft|write|compose|send)\b.{0,80}\b(?:e[ -]?mail|mails?|letters?|messages?)\b", re.I)
+WRITING_SOURCE = re.compile(
+    r"\b(?:using|from|based on|summari[sz](?:e|ing))\b.{0,80}"
+    r"\b(?:attached|attachments?|pdfs?|documents?|files?|images?|pictures?|timetables?|datesheets?|schedule|pages?|notes)\b"
+    r"|\babout\b.{0,40}\b(?:attached|uploaded|dropped)\b.{0,40}\b(?:pdf|document|file|image|picture)\b", re.I)
+DOCUMENT_FOLLOWUP = re.compile(
+    r"\b(?:explain|summari[sz]e|simplify|shorten|expand|translate|rewrite|break down)\s+"
+    r"(?:this|that|it|these|those)\b"
+    r"|\bmake\s+(?:this|that|it)\s+(?:simpler|shorter|clearer|longer|easier)\b"
+    r"|\b(?:tell me more|more detail|what about|how (?:much time|many days|long))\b", re.I)
+SAVED_TOPIC_REQUEST = re.compile(
+    r"^\s*(?:(?:please|(?:can|could|would) you)\s+)?(?:explain|summari[sz]e|teach me)\b", re.I)
 AMBIENT_REFERENCE = re.compile(
     r"\bwhat am I (?:doing|working on|studying|reading)(?: (?:right )?now)?[?.!]*$"
     r"|\b(?:help me with|explain|simplify|break down) (?:this|what I'm doing)[?.!]*$", re.I)
@@ -704,23 +726,40 @@ class BlobOrchestrator:
         return await self._send_direct_response(response, emote)
 
     def _uses_attachment_context(self, text):
-        """Use dropped files for conversation while preserving explicit controls and tools."""
+        """Require a document request; keeping files attached must not claim all chat."""
         stripped = text.strip()
         if (stripped.startswith("/") or DAY_ONLY_REQUEST.fullmatch(stripped) or
                 FACE_REQUEST.fullmatch(stripped) or REMEMBER_ME_REQUEST.fullmatch(stripped) or
                 PROFILE_OVERVIEW_REQUEST.search(stripped) or REMINDER_INTENT.search(stripped) or
                 _wants_screen_capture(stripped, getattr(self, "_recent_turns", ()))):
             return False
-        if re.search(r"\b(?:attached|attachment|pdf|document|image|picture|diagram|chapter|pages?)\b", stripped, re.I):
-            return True
-        return not (
+        if (
             WEATHER_INTENT.search(stripped) or
             (WEATHER_TOPIC.search(stripped) and FUTURE_WEATHER_TIME.search(stripped)) or
             CAMERA_REQUEST.search(stripped) or CAMERA_STATUS_REQUEST.search(stripped) or
             CAMERA_RETRY_EXPLICIT.search(stripped) or re.fullmatch(r"(?:camera|webcam)[.!?]*", stripped, re.I) or
             (getattr(self, "_last_camera_action", None) and CAMERA_RETRY_FOLLOWUP.fullmatch(stripped)) or
             FILE_REQUEST.search(stripped)
-        )
+        ):
+            return False
+        # A new writing task can mention an exam without asking to use its PDF.
+        if WRITING_REQUEST.search(stripped) and not WRITING_SOURCE.search(stripped):
+            return False
+        academic_declaration = (
+            topic_key(stripped).startswith("education:") and
+            not re.search(r"\b(?:stressing|stressful|overwhelming|exhausting|worrying)\b", stripped, re.I))
+        if (ATTACHMENT_REFERENCE.search(stripped) or EXAM_DOCUMENT_REQUEST.search(stripped) or
+                academic_declaration or REPLAY_REQUEST.fullmatch(stripped)):
+            return True
+        previous = next((turn["content"] for turn in reversed(getattr(self, "_recent_turns", ()))
+                         if turn["role"] == "user"), "")
+        document_turn = "[Attached: " in previous or "[Saved result: " in previous
+        if document_turn and (DOCUMENT_FOLLOWUP.search(stripped) or EDIT_REQUEST.search(stripped)):
+            return True
+        # Topic-only questions can search saved excerpts after detaching/restarting;
+        # the library still requires a match before any source reaches the model.
+        return (not getattr(self, "_active_attachments", ()) and bool(SAVED_TOPIC_REQUEST.search(stripped)) and
+                not re.search(r"\b(?:this|that|it|these|those)\b", stripped, re.I))
 
     async def handle_user_message(self, user_msg):
         controls = getattr(self, "controls", None)
@@ -798,10 +837,11 @@ class BlobOrchestrator:
                 return await self._handle_text_message(user_msg)
             explicit = list(getattr(user_msg, "attachments", ()))
             paths = explicit or list(getattr(self, "_active_attachments", ()))
-            if paths and (explicit or self._uses_attachment_context(stripped)):
+            use_document_context = self._uses_attachment_context(stripped)
+            if paths and (explicit or use_document_context):
                 return await self._handle_attachment_message(blob_service_pb2.UserMessage(
                     text=user_msg.text, attachments=paths))
-            if not paths and self._uses_attachment_context(stripped):
+            if not paths and use_document_context:
                 library = self._document_library()
                 try:
                     records = await asyncio.to_thread(library.records)

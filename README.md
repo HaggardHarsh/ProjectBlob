@@ -171,6 +171,12 @@ Drag PDFs or images onto the desktop Blob. It prints a brief analysis in the bac
 
 Use `/files` to list attached files, `/files remove <number>` to detach one, or `/files clear` to detach all files. Explicit requests such as reminders, camera commands, and screen capture continue to work while files are attached. The active selection lasts until detached or the backend restarts.
 
+Keeping files attached does not turn ordinary terminal chat into file analysis.
+You can ask what Blob can do or request an email draft without detaching your PDF.
+Refer to a file, page, exam timetable, or the immediately preceding document answer
+when you want file-based help. To draft from a source, say “Draft an email using the
+attached PDF.” Blob can write drafts in chat; sending requires an available sending tool.
+
 Blob also saves private local source copies in `~/.blob/documents/` (override with `BLOB_DOCUMENTS_DIR_PATH`). After a restart, ask about your exam timetable or name a saved document: Blob searches filenames and extracted excerpts, reopens relevant sources, and answers with page references. This also works if the original file moved or was deleted. Search uses bounded extracted text and filenames; text outside previous excerpts and visual details without OCR might require naming the file or opening it explicitly. The library holds up to 20 documents / 200 MB; storage failures are reported in the terminal and leave the current analysis usable. Files dropped before this persistence feature must be dropped again once.
 
 Use `/files saved` to list saved document IDs, `/files open <id>` to reopen one, and `/files forget <id>` or `/files forget all` to delete saved source copies. Original files remain untouched. Forgetting a source removes source-only overviews from the current conversation while preserving completed work and unrelated chat. Detaching a file keeps its saved copy; a later question about it can reopen it.
