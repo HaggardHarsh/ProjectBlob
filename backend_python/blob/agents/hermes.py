@@ -28,6 +28,14 @@ class HermesAgentWrapper:
     def __init__(self, config, llm, *, controls=None):
         self.config, self.llm, self.controls = config, llm, controls
         self.last_run = None
+        self._lock = asyncio.Lock()
+        self._process = None
+        self._profile = None
+        self._ready = False
+
+    @property
+    def worker_ready(self):
+        return self._ready and self._process is not None and self._process.returncode is None
 
     def command(self):
         source = Path(self.config.hermes_source_path).expanduser()
@@ -39,44 +47,103 @@ class HermesAgentWrapper:
         return [str(python), "-u", str(Path(__file__).with_name("hermes_worker.py")),
                 "--source", str(source.resolve())]
 
-    async def run(self, messages, system_prompt, tools, execute_tool, on_event):
-        self.last_run = {"runtime": "hermes", "status": "starting", "model_calls": 0,
-                         "tools": [], "duration_ms": 0}
-        started = time.monotonic()
-        process = None
-        profile = tempfile.TemporaryDirectory(prefix="blob-hermes-")
+    async def _send(self, frame):
+        data = json.dumps(frame, ensure_ascii=False).encode() + b"\n"
+        if len(data) > MAX_FRAME_BYTES:
+            raise AgentRuntimeError("Hermes request exceeds the bridge size limit.")
+        try:
+            self._process.stdin.write(data)
+            await self._process.stdin.drain()
+        except (BrokenPipeError, ConnectionResetError) as exc:
+            raise AgentRuntimeError("Hermes worker stopped before answering. Run blob-agent doctor.") from exc
+
+    async def _receive(self):
+        try:
+            line = await self._process.stdout.readline()
+            frame = json.loads(line) if line else None
+        except (ValueError, UnicodeError) as exc:
+            raise AgentRuntimeError("Hermes returned an invalid bridge message.") from exc
+        if not isinstance(frame, dict):
+            raise AgentRuntimeError("Hermes worker stopped before answering. Run blob-agent doctor.")
+        return frame
+
+    async def _stop_worker(self):
+        process, profile = self._process, self._profile
+        self._process, self._profile, self._ready = None, None, False
+        try:
+            if process is not None:
+                try:
+                    if process.returncode is None:
+                        if os.name == "posix":
+                            os.killpg(process.pid, signal.SIGKILL)
+                        else:
+                            process.kill()
+                except ProcessLookupError:
+                    pass
+                await process.wait()
+        finally:
+            if profile is not None:
+                profile.cleanup()
+
+    async def _ensure_worker(self):
+        if self.worker_ready:
+            return
+        await self._stop_worker()
+        command = self.command()
+        self._profile = tempfile.TemporaryDirectory(prefix="blob-hermes-")
         env = {key: os.environ[key] for key in ("PATH", "LANG", "LC_ALL", "SSL_CERT_FILE", "SSL_CERT_DIR")
                if key in os.environ}
         env["PYTHONUNBUFFERED"] = "1"
-        env["BLOB_WORKER_PROFILE"] = profile.name
+        env["BLOB_WORKER_PROFILE"] = self._profile.name
+        try:
+            self._process = await asyncio.create_subprocess_exec(
+                *command, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL, env=env, cwd="/tmp",
+                start_new_session=os.name == "posix", limit=MAX_FRAME_BYTES)
+            # Preload the actual core without forwarding any conversation or credentials.
+            await self._send({"type": "initialize", "model": self.config.model_name,
+                              "max_iterations": self.config.agent_max_iterations})
+            frame = await self._receive()
+            if frame.get("type") != "ready":
+                raise AgentRuntimeError("Hermes could not initialize. Run blob-agent doctor.")
+            self._ready = True
+        except BaseException:
+            await self._stop_worker()
+            raise
+
+    async def start(self):
+        """Load Hermes ahead of terminal input; no cloud calls or user data."""
+        async with self._lock:
+            async with asyncio.timeout(self.config.agent_timeout_seconds):
+                await self._ensure_worker()
+
+    async def close(self):
+        async with self._lock:
+            await self._stop_worker()
+
+    async def run(self, messages, system_prompt, tools, execute_tool, on_event):
+        # One bridge conversation at a time, even outside the orchestrator lock.
+        async with self._lock:
+            return await self._run(messages, system_prompt, tools, execute_tool, on_event)
+
+    async def _run(self, messages, system_prompt, tools, execute_tool, on_event):
+        self.last_run = {"runtime": "hermes", "status": "starting", "model_calls": 0,
+                         "tools": [], "duration_ms": 0, "worker_reused": self.worker_ready,
+                         "startup_ms": 0, "model_duration_ms": 0, "tool_duration_ms": 0}
+        started = time.monotonic()
         try:
             if self.controls:
                 self.controls.check(cloud=True)
-            command = self.command()
             async with asyncio.timeout(self.config.agent_timeout_seconds):
-                process = await asyncio.create_subprocess_exec(
-                    *command, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.DEVNULL, env=env, cwd="/tmp",
-                    start_new_session=os.name == "posix", limit=MAX_FRAME_BYTES)
-                async def send(frame):
-                    data = json.dumps(frame, ensure_ascii=False).encode() + b"\n"
-                    if len(data) > MAX_FRAME_BYTES:
-                        raise AgentRuntimeError("Hermes request exceeds the bridge size limit.")
-                    process.stdin.write(data)
-                    await process.stdin.drain()
-                await send({"messages": messages, "system_prompt": system_prompt,
+                await self._ensure_worker()
+                self.last_run["startup_ms"] = round((time.monotonic() - started) * 1000)
+                await self._send({"messages": messages, "system_prompt": system_prompt,
                             "tools": tools, "model": self.config.model_name,
                             "max_iterations": self.config.agent_max_iterations})
                 self.last_run["status"] = "running"
                 names = {tool["name"] for tool in tools}
                 while True:
-                    try:
-                        line = await process.stdout.readline()
-                        frame = json.loads(line) if line else None
-                    except (ValueError, UnicodeError) as exc:
-                        raise AgentRuntimeError("Hermes returned an invalid bridge message.") from exc
-                    if not isinstance(frame, dict):
-                        raise AgentRuntimeError("Hermes worker stopped before answering. Run blob-agent doctor.")
+                    frame = await self._receive()
                     if self.controls:
                         self.controls.check(cloud=True)
                     kind = frame.get("type")
@@ -95,28 +162,36 @@ class HermesAgentWrapper:
                         if self.last_run["model_calls"] >= self.config.agent_max_iterations:
                             raise AgentRuntimeError("Hermes reached the model-call budget. Check /agent before retrying completed actions.")
                         self.last_run["model_calls"] += 1
+                        self.last_run.setdefault("first_model_ms", round((time.monotonic() - started) * 1000))
                         await on_event("model", {})
                         kwargs = {key: request[key] for key in
                                   ("messages", "tools", "tool_choice", "temperature", "max_tokens") if key in request}
                         kwargs.update(model=self.config.model_name, stream=False)
                         kwargs["max_tokens"] = min(int(kwargs.get("max_tokens") or 4096), 4096)
                         try:
+                            model_started = time.monotonic()
                             response = await self.llm._create(**kwargs)
                         except (PrivacyBlocked, asyncio.CancelledError):
                             raise
                         except Exception as exc:
                             raise AgentRuntimeError("The AI provider failed during the Hermes run. Check /agent for completed tools before retrying.") from exc
-                        await send({"id": frame.get("id"), "result": response.model_dump(mode="json")})
+                        finally:
+                            self.last_run["model_duration_ms"] += round((time.monotonic() - model_started) * 1000)
+                        await self._send({"id": frame.get("id"), "result": response.model_dump(mode="json")})
                     elif kind == "tool":
                         name, args = frame.get("name"), frame.get("args")
                         if name not in names or not isinstance(args, dict):
                             raise AgentRuntimeError("Hermes requested a tool outside this turn's capabilities.")
                         await on_event("tool_start", {"name": name})
-                        result = await execute_tool(name, args)
+                        tool_started = time.monotonic()
+                        try:
+                            result = await execute_tool(name, args)
+                        finally:
+                            self.last_run["tool_duration_ms"] += round((time.monotonic() - tool_started) * 1000)
                         record = {"name": name, "success": result.success}
                         self.last_run["tools"].append(record)
                         await on_event("tool_complete", record)
-                        await send({"id": frame.get("id"), "result": {"success": result.success, "output": result.output}})
+                        await self._send({"id": frame.get("id"), "result": {"success": result.success, "output": result.output}})
                     elif kind == "final":
                         answer = frame.get("answer")
                         if not isinstance(answer, str) or not answer.strip() or frame.get("completed") is not True:
@@ -142,16 +217,7 @@ class HermesAgentWrapper:
             raise
         finally:
             try:
-                if process is not None:
-                    try:
-                        if process.returncode is None:
-                            if os.name == "posix":
-                                os.killpg(process.pid, signal.SIGKILL)
-                            else:
-                                process.kill()
-                    except ProcessLookupError:
-                        pass
-                    await process.wait()
+                if self.last_run["status"] != "completed":
+                    await self._stop_worker()
             finally:
-                profile.cleanup()
                 self.last_run["duration_ms"] = round((time.monotonic() - started) * 1000)

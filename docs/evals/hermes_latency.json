@@ -1,0 +1,146 @@
+{
+  "scope": "real Hermes; synthetic local model; no cloud inference",
+  "turns": 5,
+  "cold": {
+    "median_ms": 2434,
+    "runs": [
+      {
+        "runtime": "hermes",
+        "status": "completed",
+        "model_calls": 1,
+        "tools": [],
+        "duration_ms": 2434,
+        "worker_reused": false,
+        "startup_ms": 2324,
+        "model_duration_ms": 4,
+        "tool_duration_ms": 0,
+        "phase": "conversation",
+        "first_model_ms": 2350
+      },
+      {
+        "runtime": "hermes",
+        "status": "completed",
+        "model_calls": 1,
+        "tools": [],
+        "duration_ms": 2327,
+        "worker_reused": false,
+        "startup_ms": 2230,
+        "model_duration_ms": 0,
+        "tool_duration_ms": 0,
+        "phase": "conversation",
+        "first_model_ms": 2253
+      },
+      {
+        "runtime": "hermes",
+        "status": "completed",
+        "model_calls": 1,
+        "tools": [],
+        "duration_ms": 2463,
+        "worker_reused": false,
+        "startup_ms": 2355,
+        "model_duration_ms": 0,
+        "tool_duration_ms": 0,
+        "phase": "conversation",
+        "first_model_ms": 2382
+      },
+      {
+        "runtime": "hermes",
+        "status": "completed",
+        "model_calls": 1,
+        "tools": [],
+        "duration_ms": 2436,
+        "worker_reused": false,
+        "startup_ms": 2352,
+        "model_duration_ms": 0,
+        "tool_duration_ms": 0,
+        "phase": "conversation",
+        "first_model_ms": 2374
+      },
+      {
+        "runtime": "hermes",
+        "status": "completed",
+        "model_calls": 1,
+        "tools": [],
+        "duration_ms": 2118,
+        "worker_reused": false,
+        "startup_ms": 2032,
+        "model_duration_ms": 0,
+        "tool_duration_ms": 0,
+        "phase": "conversation",
+        "first_model_ms": 2055
+      }
+    ]
+  },
+  "preload_ms": 2018,
+  "warm": {
+    "median_ms": 83,
+    "runs": [
+      {
+        "runtime": "hermes",
+        "status": "completed",
+        "model_calls": 1,
+        "tools": [],
+        "duration_ms": 85,
+        "worker_reused": true,
+        "startup_ms": 0,
+        "model_duration_ms": 0,
+        "tool_duration_ms": 0,
+        "phase": "conversation",
+        "first_model_ms": 23
+      },
+      {
+        "runtime": "hermes",
+        "status": "completed",
+        "model_calls": 1,
+        "tools": [],
+        "duration_ms": 82,
+        "worker_reused": true,
+        "startup_ms": 0,
+        "model_duration_ms": 0,
+        "tool_duration_ms": 0,
+        "phase": "conversation",
+        "first_model_ms": 20
+      },
+      {
+        "runtime": "hermes",
+        "status": "completed",
+        "model_calls": 1,
+        "tools": [],
+        "duration_ms": 82,
+        "worker_reused": true,
+        "startup_ms": 0,
+        "model_duration_ms": 0,
+        "tool_duration_ms": 0,
+        "phase": "conversation",
+        "first_model_ms": 20
+      },
+      {
+        "runtime": "hermes",
+        "status": "completed",
+        "model_calls": 1,
+        "tools": [],
+        "duration_ms": 83,
+        "worker_reused": true,
+        "startup_ms": 0,
+        "model_duration_ms": 0,
+        "tool_duration_ms": 0,
+        "phase": "conversation",
+        "first_model_ms": 20
+      },
+      {
+        "runtime": "hermes",
+        "status": "completed",
+        "model_calls": 1,
+        "tools": [],
+        "duration_ms": 85,
+        "worker_reused": true,
+        "startup_ms": 0,
+        "model_duration_ms": 0,
+        "tool_duration_ms": 0,
+        "phase": "conversation",
+        "first_model_ms": 21
+      }
+    ]
+  },
+  "saved_median_ms": 2351
+}

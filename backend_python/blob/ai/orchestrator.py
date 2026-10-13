@@ -842,6 +842,7 @@ class BlobOrchestrator:
             runtime = getattr(self, "agent_runtime", None)
             status = {"runtime": "hermes" if runtime is not None else "classic",
                       "model": getattr(self.config, "model_name", "configured model"),
+                      "worker_ready": bool(getattr(runtime, "worker_ready", False)),
                       "last_run": runtime.last_run if runtime is not None else None}
             return await self._send_direct_response(json.dumps(status, indent=2), "IDLE")
         if command == "/awareness":

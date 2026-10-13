@@ -109,6 +109,12 @@ async def main_async(*, daemon=False):
         config, vector_store, skill_registry, event_dispatcher,
         screen_sampler=screen_sampler, controls=controls
     )
+    async def prepare_agent():
+        if orchestrator.agent_runtime is not None:
+            try:
+                await orchestrator.agent_runtime.start()
+            except Exception:
+                logger.warning("Hermes preload failed; the next request will try initialization again.")
     awareness = ScreenAwareness(config, screen_sampler, ocr_processor, controls)
     orchestrator.awareness = awareness
     privacy_shield.awareness = awareness
@@ -152,6 +158,7 @@ async def main_async(*, daemon=False):
 
     # Start tasks
     tasks = [
+        asyncio.create_task(prepare_agent()),
         asyncio.create_task(privacy_shield.run()),
         asyncio.create_task(orchestrator.semantic.consolidation_loop()),
         asyncio.create_task(awareness.run()),
@@ -179,6 +186,8 @@ async def main_async(*, daemon=False):
     
     await servicer.close_streams()
     await server.stop(grace=5)
+    if orchestrator.agent_runtime is not None:
+        await orchestrator.agent_runtime.close()
     logger.info("Shutdown complete")
 
 def main():

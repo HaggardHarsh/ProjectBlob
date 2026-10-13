@@ -100,6 +100,9 @@ def make_assistant(root, events, calls, *, live, model=None, memory_model=None):
 
 
 async def close_assistant(blob):
+    runtime = getattr(blob, "agent_runtime", None)
+    if runtime is not None:
+        await runtime.close()
     await blob.skill_registry.close()
     engines = {id(engine): engine for engine in (blob.llm, blob.semantic.llm)}
     for engine in engines.values():

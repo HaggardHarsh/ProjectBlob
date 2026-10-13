@@ -38,6 +38,8 @@ async def doctor(config, *, probe=False):
         except (AgentRuntimeError, OSError) as exc:
             report["hermes_probe"] = False
             report["error"] = str(exc)
+        finally:
+            await runtime.close()
         report["run"] = runtime.last_run
     return report
 

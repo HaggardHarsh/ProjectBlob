@@ -30,7 +30,9 @@ def reply(text="A verified reply."):
 
 def bridge(tmp_path, script, *, controls=None):
     path = tmp_path / "worker.py"
-    path.write_text("import json, sys, os, time\nrequest=json.loads(sys.stdin.readline())\n"
+    path.write_text("import json, sys, os, time\ninitialize=json.loads(sys.stdin.readline())\n"
+        "assert initialize['type']=='initialize'\nprint(json.dumps({'type':'ready'}),flush=True)\n"
+        "request=json.loads(sys.stdin.readline())\n"
         "def emit(frame):\n print(json.dumps(frame),flush=True)\n"
         "def receive():\n return json.loads(sys.stdin.readline())\n" + script)
     config = BlobConfig(nebius_api_key="never-forward-this", agent_timeout_seconds=5)
@@ -65,6 +67,7 @@ emit({'type':'final','answer':'Done.','completed':True})
     assert runtime.last_run["tools"] == [{"name": "blob_test", "success": True}]
     assert [call.args[0] for call in event.await_args_list] == ["model", "tool_start", "tool_complete"]
     assert "test" not in json.dumps(runtime.last_run).replace("blob_test", "")
+    await runtime.close()
 
 
 @pytest.mark.asyncio
@@ -160,6 +163,94 @@ async def test_timeout_removes_profile_and_does_not_retry_actions(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_warm_worker_serializes_turns_and_close_removes_profile(tmp_path):
+    runtime = bridge(tmp_path, '''
+for index in range(3):
+ if index:
+  request=receive()
+ emit({'type':'model','id':index,'request':{'messages':request['messages']}})
+ assert receive()['id']==index
+ time.sleep(0.03)
+ emit({'type':'final','answer':'Done.','completed':True})
+time.sleep(60)
+''')
+    try:
+        await runtime.start()
+        runtime.llm._create.assert_not_awaited()
+        pid, profile = runtime._process.pid, Path(runtime._profile.name)
+        assert await asyncio.gather(run(runtime), run(runtime), run(runtime)) == ['Done.'] * 3
+        assert runtime._process.pid == pid
+        assert runtime.last_run['worker_reused'] is True
+        assert runtime.last_run['model_calls'] == 1
+    finally:
+        await runtime.close()
+    assert not runtime.worker_ready and not profile.exists()
+    await runtime.close()  # Idempotent shutdown.
+
+
+@pytest.mark.asyncio
+async def test_previous_turn_permissions_do_not_authorize_next_turn(tmp_path):
+    runtime = bridge(tmp_path, '''
+emit({'type':'tool','id':1,'name':'blob_test','args':{}})
+receive()
+emit({'type':'final','answer':'Done.','completed':True})
+request=receive()
+emit({'type':'tool','id':2,'name':'blob_test','args':{}})
+time.sleep(60)
+''')
+    execute = AsyncMock(return_value=SkillResult('Done.', True, 'SUCCESS'))
+    await run(runtime, [{'name':'blob_test'}], execute)
+    with pytest.raises(AgentRuntimeError, match="outside this turn"):
+        await run(runtime, execute=execute)
+    execute.assert_awaited_once()
+    assert not runtime.worker_ready
+
+
+@pytest.mark.asyncio
+async def test_idle_worker_death_restarts_before_next_task(tmp_path):
+    runtime = bridge(tmp_path, "emit({'type':'final','answer':'Done.','completed':True})\ntime.sleep(60)")
+    try:
+        await run(runtime)
+        first_pid = runtime._process.pid
+        profile = Path(runtime._profile.name)
+        runtime._process.kill()
+        await runtime._process.wait()
+        assert await run(runtime) == 'Done.'
+        assert runtime._process.pid != first_pid and not profile.exists()
+        assert runtime.last_run['worker_reused'] is False
+    finally:
+        await runtime.close()
+
+
+@pytest.mark.asyncio
+async def test_failed_run_is_not_replayed_and_next_request_can_recover(tmp_path):
+    runtime = bridge(tmp_path, "emit({'type':'model','request':{'messages':request['messages']}})\nreceive()\n"
+        "emit({'type':'final','answer':'Recovered.','completed':True})\ntime.sleep(60)")
+    runtime.llm._create.side_effect = [RuntimeError('provider failed'), reply()]
+    try:
+        with pytest.raises(AgentRuntimeError, match='provider failed'):
+            await run(runtime)
+        assert runtime.llm._create.await_count == 1 and not runtime.worker_ready
+        assert await run(runtime) == 'Recovered.'
+        assert runtime.llm._create.await_count == 2
+    finally:
+        await runtime.close()
+
+
+@pytest.mark.asyncio
+async def test_prewarm_failure_removes_profile_without_model_calls(tmp_path):
+    path = tmp_path / 'broken.py'
+    path.write_text("import json,sys\njson.loads(sys.stdin.readline())\n"
+        "print(json.dumps({'type':'model','request':{'messages':[]}}),flush=True)\n")
+    runtime = bridge(tmp_path, '')
+    runtime.command = lambda: [sys.executable, str(path)]
+    with pytest.raises(AgentRuntimeError, match='initialize'):
+        await runtime.start()
+    assert runtime._profile is None and not runtime.worker_ready
+    runtime.llm._create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 @pytest.mark.skipif(not Path('.runtime/hermes-venv/bin/python').is_file(), reason="separate Hermes runtime not installed")
 async def test_real_hermes_core_roundtrip_uses_native_tool_receipts():
     config = BlobConfig(hermes_source_path=str(Path('.runtime/hermes').absolute()),
@@ -180,6 +271,44 @@ async def test_real_hermes_core_roundtrip_uses_native_tool_receipts():
     execute.assert_awaited_once_with("blob_test", {"value":"synthetic"})
     assert runtime.last_run["model_calls"] == 2
     assert any(item["role"]=="tool" for item in llm._create.call_args.kwargs["messages"])
+    await runtime.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(not Path('.runtime/hermes-venv/bin/python').is_file(), reason="separate Hermes runtime not installed")
+async def test_real_warm_worker_clears_history_tools_and_files_between_turns():
+    config = BlobConfig(hermes_source_path=str(Path('.runtime/hermes').absolute()),
+                        hermes_python=str(Path('.runtime/hermes-venv/bin/python').absolute()),
+                        agent_timeout_seconds=30)
+    calls = []
+    async def complete(**kwargs):
+        calls.append(kwargs)
+        return reply('Verified.')
+    runtime = HermesAgentWrapper(config, SimpleNamespace(_create=complete))
+    first_tool = {'name':'blob_first','description':'First capability.',
+                  'parameters':{'type':'object','properties':{}}}
+    second_tool = {'name':'blob_second','description':'Second capability.',
+                   'parameters':{'type':'object','properties':{}}}
+    try:
+        await runtime.start()
+        assert not calls
+        process, profile = runtime._process, Path(runtime._profile.name)
+        assert list(profile.iterdir()) == []
+        for index, tools in enumerate(([first_tool], [second_tool], [])):
+            text = f'Private synthetic message {index}'
+            assert await runtime.run([{'role':'user','content':text}], 'System', tools,
+                                     AsyncMock(), AsyncMock()) == 'Verified.'
+            assert runtime._process is process and runtime.last_run['worker_reused']
+            assert list(profile.iterdir()) == []
+            advertised = {tool['function']['name'] for tool in calls[-1].get('tools', [])}
+            assert advertised == {tool['name'] for tool in tools}
+            payload = json.dumps(calls[-1]['messages'])
+            assert text in payload
+            for prior in range(index):
+                assert f'Private synthetic message {prior}' not in payload
+    finally:
+        await runtime.close()
+    assert not profile.exists()
 
 
 @pytest.mark.asyncio

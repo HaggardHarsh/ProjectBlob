@@ -6,7 +6,7 @@ chat and built-in task tools. The running development installation selects
 configuration default until the separate Hermes runtime is installed and selected.
 There is no additional chat window.
 
-The first integration uses a separate Python worker and native function calls.
+The integration uses a separate Python worker and native function calls.
 The worker gets no provider API key. Every model request goes through Blob's
 configured Nebius client and privacy controls. Every tool request goes through
 Blob's validated skill registry. Camera and fresh screen capture remain explicit
@@ -21,9 +21,23 @@ default shell, browser, plugins, delegation, scheduled jobs or memory tools.
 Reminder changes require the current user's request. A successful creation cannot
 be repeated in the same turn. Blob retains its existing reminder store and memory.
 
-Execution events drive desktop emotions. Worker profiles are temporary and owned
-by Blob, so they are removed after completion, failure, timeout or cancellation.
-Run receipts contain tool names, success flags, model-call count and duration;
+Execution events drive desktop emotions. Blob preloads Hermes when the backend
+starts and keeps its libraries loaded between messages. Each message gets a fresh
+`AIAgent`, the current tool list and conversation history supplied by Blob. Its
+tool registrations and temporary task profile are removed before the final answer
+returns. Upstream conversation logging, background review and environment probing
+are disabled; Blob owns memories and receipts. Preloading uses a synthetic local
+reply to load lazy conversation code, makes no cloud calls and passes no user
+messages or provider credentials to the worker.
+
+Failure, timeout and cancellation stop the whole worker process group and remove
+its profile. The next user request can start a replacement; completed actions are
+never automatically replayed. An idle worker that has exited is replaced before
+the next task. Backend shutdown closes the worker. Keeping it loaded uses idle RAM;
+the first message during startup, or after a worker reset, can still wait for loading.
+
+Run receipts contain tool names, success flags, model-call count, worker reuse and
+timings for startup, first model request, provider calls, tools and total duration;
 they contain no tool arguments, file contents or conversation text.
 
 ## Installation
@@ -60,12 +74,24 @@ venv/bin/python -m blob.agents.cli doctor --probe
 This installation already selects `BLOB_AGENT_RUNTIME=hermes` and has restarted
 the backend. For another installation, choose that setting and restart the backend.
 Use `/agent` in terminal chat to see the selected runtime and last run receipt.
+`worker_ready` indicates that the Hermes process has been preloaded.
 Rollback by selecting `BLOB_AGENT_RUNTIME=classic` and restarting. A missing or
 failed Hermes runtime produces an explicit error; it never silently retries a
 task through the classic engine. Do not automatically retry external actions
 after a timeout; inspect their completed tool receipts first.
 
 ## Workflow comparison
+
+Measure startup separately from cloud response time with synthetic local replies:
+
+```bash
+venv/bin/python -m blob.evals.hermes_latency --turns 5 --output /tmp/blob-hermes-latency.json
+```
+
+This uses the real Hermes core, compares restarting it for every turn with
+preloading and reusing it, and closes all workers afterward. See the
+[warm-worker measurements](evals/hermes_latency.md). Provider latency and actual
+task quality require the separate live workflow evaluation below.
 
 ```bash
 venv/bin/python -m blob.evals.agent_runtime --live --output /tmp/blob-runtime-comparison.json
