@@ -3,6 +3,7 @@ import threading
 from blob.skills.base import SkillInterface, SkillResult
 from blob.skills.contracts import object_schema
 from blob.vision.camera import CameraError
+from blob.privacy.controls import PrivacyBlocked
 
 
 class CameraSkill(SkillInterface):
@@ -33,6 +34,26 @@ class CameraSkill(SkillInterface):
     def execute(self, args: dict) -> SkillResult:
         with self._lock:
             return self._execute(args)
+
+    def match_image(self, data):
+        """Local selected-image operation, serialized with enrollment and deletion."""
+        controls = getattr(self, "controls", None)
+        generation = controls.generation if controls else None
+        if controls:
+            controls.check()
+            if "camera" in controls.state["disabled_skills"]:
+                raise CameraError("Local face matching is disabled. Use /privacy enable camera to allow it.")
+        with self._lock:
+            if controls:
+                controls.check()
+                if controls.generation != generation:
+                    raise PrivacyBlocked("Local face check stopped because privacy settings changed.")
+            result = self.vision.match_image(data)
+            if controls:
+                controls.check()
+                if controls.generation != generation:
+                    raise PrivacyBlocked("Local face check stopped because privacy settings changed.")
+            return result
 
     def _execute(self, args: dict) -> SkillResult:
         action = args.get("action", "scan")

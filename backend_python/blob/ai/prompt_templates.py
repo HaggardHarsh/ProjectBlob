@@ -26,6 +26,9 @@ invent a scene or say a pictured person is the user based on their remembered na
 Without image evidence in this request, ask for an image selection rather than
 claiming the app cannot analyze pictures. You cannot establish a person's identity
 from their face; you can describe visible clothing, positions, and actions.
+Blob separately checks selected photos against explicitly enrolled local face
+samples and reports possible similarity matches directly. Explain this feature
+when asked, but never invent a match or claim to have performed that check yourself.
 
 You have access to the following tools (skills):
 
@@ -167,6 +170,15 @@ over old answers. Completed answers persist separately: /files forget keeps them
 /results lists them, and /results forget deletes them.
 Append one mood tag: <emote>HAPPY</emote>, <emote>IDLE</emote>,
 <emote>CONFUSED</emote>, or <emote>WORRIED</emote>.
+"""
+
+ATTACHMENT_IMAGE_GUIDANCE = """
+Camera enrollment names and earlier webcam results do not label people in
+selected images. Never infer that a pictured person is the user or an enrolled
+person from those records, even if the photo was selected just after enrollment.
+The host performs any enrolled-face matching separately and reports it locally;
+you only provide the visual description. Do not claim to have run a face check,
+used enrolled samples, or verified why camera enrollment succeeded.
 """
 
 CONTEXT_TEMPLATE = """

@@ -19,7 +19,7 @@ from blob.ai.attachments import AttachmentReader, AttachmentError, MAX_IMAGES, p
 from blob.ipc import blob_service_pb2
 from blob.ai.guardrails import GuardrailsEngine, PERSONAL_PLAN_TOPIC, unsupported_personal_event_claim
 from blob.ai.context_budget import DEFAULT_MAX_PROMPT_BYTES, IMAGE_BUDGET_BYTES, fit_messages, prompt_size_bytes
-from blob.ai.prompt_templates import SYSTEM_PROMPT, ATTACHMENT_SYSTEM_PROMPT, CONTEXT_TEMPLATE
+from blob.ai.prompt_templates import SYSTEM_PROMPT, ATTACHMENT_SYSTEM_PROMPT, ATTACHMENT_IMAGE_GUIDANCE, CONTEXT_TEMPLATE
 from blob.memory.episodic import EpisodicMemory
 from blob.memory.documents import DocumentLibrary, DocumentError, DOCUMENT_REFERENCE
 from blob.memory.results import ResultLibrary, ResultError, REPLAY_REQUEST, EDIT_REQUEST, SOURCE_REQUEST
@@ -196,8 +196,9 @@ IMAGE_IDENTITY_REQUEST = re.compile(
     r"\bwho(?:['’]s| is| are)\b|\b(?:identify|recognize|recognise|name)\b.{0,50}"
     r"\b(?:person|people|faces?|me|him|her|them)\b", re.I)
 IMAGE_IDENTITY_REPLY = (
-    "I can't establish who the people are from their faces. I can describe their clothing, "
+    "Local face matching isn't available in this session, so I can't establish who the people are from their faces. I can describe their clothing, "
     "positions, and what they're doing in this picture.")
+LOCAL_FACE_CHECK = "Local face check:"
 SAVED_TOPIC_REQUEST = re.compile(
     r"^\s*(?:(?:please|(?:can|could|would) you)\s+)?(?:explain|summari[sz]e|teach me)\b", re.I)
 AMBIENT_REFERENCE = re.compile(
@@ -824,6 +825,45 @@ class BlobOrchestrator:
         return (not getattr(self, "_active_attachments", ()) and bool(SAVED_TOPIC_REQUEST.search(stripped)) and
                 not re.search(r"\b(?:this|that|it|these|those)\b", stripped, re.I))
 
+    def _image_identity_paths(self, user_msg):
+        explicit = list(getattr(user_msg, "attachments", ()))
+        paths = explicit or list(getattr(self, "_active_attachments", ()))
+        images = [path for path in paths if Path(path).suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}]
+        short_reference = re.fullmatch(r"\s*who(?:['’]s| is| are)\s+(?:this|that|it|he|she|they|these|those)[?!. ]*", user_msg.text, re.I)
+        if not images or not (explicit or short_reference or self._uses_attachment_context(user_msg.text)):
+            return []
+        recent = list(getattr(self, "_recent_turns", ()))
+        last_reply = recent[-1]["content"] if recent and recent[-1]["role"] == "assistant" else ""
+        identity_followup = ((last_reply == IMAGE_IDENTITY_REPLY or last_reply.startswith(LOCAL_FACE_CHECK)) and
+            re.match(r"^(?:what about|and)\b", user_msg.text.strip(), re.I) and IMAGE_FOLLOWUP.search(user_msg.text))
+        if IMAGE_IDENTITY_REQUEST.search(user_msg.text) or identity_followup:
+            return images
+        return []
+
+    def _attachment_history(self, *, images=False):
+        recent = list(getattr(self, "_recent_turns", ()))
+        if not images:
+            return recent
+        filtered = []
+        skip_reply = False
+        for item in recent:
+            text = item["content"]
+            if item["role"] == "user":
+                skip_reply = bool(text.strip().lower().startswith("/camera") or _requested_camera_action(text))
+                if skip_reply:
+                    continue
+            elif skip_reply:
+                continue
+            if item["role"] == "assistant":
+                text = text.split("\n\n" + LOCAL_FACE_CHECK, 1)[0]
+                if text.startswith(LOCAL_FACE_CHECK) or text == IMAGE_IDENTITY_REPLY:
+                    # Local-only face names must not enter a later vision request.
+                    if filtered and filtered[-1]["role"] == "user":
+                        filtered.pop()
+                    continue
+            filtered.append({**item, "content": text})
+        return filtered
+
     async def handle_user_message(self, user_msg):
         if not getattr(user_msg, "attachments", ()):
             try:
@@ -856,6 +896,7 @@ class BlobOrchestrator:
             return await self._send_direct_response(text, "IDLE")
         # Listing/deletion and direct reminders remain available while paused.
         local = (command in {"/skills", "/reminders", "/files", "/results", "/camera"} or
+                 bool(self._image_identity_paths(user_msg)) or
                  (not getattr(user_msg, "attachments", ()) and (
                      _requested_face(user_msg.text) is not None or
                      camera_action is not None)))
@@ -922,14 +963,10 @@ class BlobOrchestrator:
             explicit = list(getattr(user_msg, "attachments", ()))
             paths = explicit or list(getattr(self, "_active_attachments", ()))
             use_document_context = self._uses_attachment_context(stripped)
+            identity_paths = self._image_identity_paths(user_msg)
+            if identity_paths:
+                return await self._handle_image_identity_question(user_msg.text, identity_paths, activate=bool(explicit))
             if paths and (explicit or use_document_context):
-                recent = list(getattr(self, "_recent_turns", ()))
-                identity_followup = (recent and recent[-1]["role"] == "assistant" and
-                    recent[-1]["content"] == IMAGE_IDENTITY_REPLY and
-                    re.match(r"^(?:what about|and)\b", stripped, re.I) and IMAGE_FOLLOWUP.search(stripped))
-                if all(Path(path).suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"} for path in paths) and (
-                        IMAGE_IDENTITY_REQUEST.search(stripped) or identity_followup):
-                    return await self._handle_image_identity_question(user_msg.text, paths, activate=bool(explicit))
                 if explicit:
                     print("\nBlob: Reading selected files: " + ", ".join(Path(path).name for path in explicit) +
                           ". Selected content is sent to your AI provider for analysis.\n")
@@ -1060,8 +1097,60 @@ class BlobOrchestrator:
         return await self._send_direct_response(
             f"Files available for terminal follow-ups:\n{listing}\nUse /files remove <number> or /files clear to detach.", "IDLE")
 
+    async def _local_face_summary(self, sources, *, required=False):
+        """Render host-only matches; never pass enrolled names or samples to an LLM."""
+        from blob.vision.camera import CameraError
+
+        registry = getattr(self, "skill_registry", None)
+        skill = registry.get_skill("camera") if registry is not None else None
+        if skill is None or not callable(getattr(skill, "match_image", None)):
+            return IMAGE_IDENTITY_REPLY if required else ""
+        controls = getattr(self, "controls", None)
+        if controls:
+            controls.check()
+            if "camera" in controls.state["disabled_skills"]:
+                return (LOCAL_FACE_CHECK + " Disabled. Use /privacy enable camera to allow it.") if required else ""
+        if not getattr(getattr(skill, "vision", None), "enabled", True) and not required:
+            return ""
+        lines, matched = [], False
+        for source in sources:
+            if Path(source.path).suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
+                continue
+            try:
+                result = await asyncio.wait_for(asyncio.to_thread(skill.match_image, source.data), timeout=15)
+            except PrivacyBlocked:
+                raise
+            except CameraError as exc:
+                lines.append(f"{Path(source.path).name}: {exc}")
+                continue
+            except Exception:
+                logger.exception("Local image face check failed")
+                lines.append(f"{Path(source.path).name}: Local face matching is unavailable right now.")
+                continue
+            if controls:
+                controls.check()
+            if not result["enrolled"]:
+                if required:
+                    lines.append("No face profiles are enrolled. Use /camera enroll <name> with a consenting person.")
+                break
+            faces = result["faces"]
+            if not faces:
+                if required:
+                    lines.append(f"{Path(source.path).name}: No clear face detected. Try a clearer, front-facing photo.")
+                continue
+            for index, face in enumerate(faces):
+                position = "face" if len(faces) == 1 else f"face {index + 1} (ordered left to right)"
+                finding = f"possible match to {face['name']}" if face["name"] else "unknown; no confident match to an enrolled face"
+                matched |= face["name"] is not None
+                lines.append(f"{Path(source.path).name}, {position}: {finding}.")
+        if not lines:
+            return ""
+        if matched:
+            lines.append("These are local similarity matches to saved samples, not verified identities.")
+        return LOCAL_FACE_CHECK + "\n" + "\n".join(lines)
+
     async def _handle_image_identity_question(self, question, paths, *, activate=False):
-        """Validate the selection, retain it for descriptions, and avoid face-identity guesses."""
+        """Use selected pixels and enrolled local samples, with no cloud request."""
         reader = getattr(self, "_attachment_reader", None)
         if reader is None:
             reader = self._attachment_reader = AttachmentReader()
@@ -1077,8 +1166,13 @@ class BlobOrchestrator:
         except (DocumentError, OSError, sqlite3.Error) as exc:
             logger.warning("Image save failed: %s", exc)
             print("Blob: This image is available now but could not be saved for restart.\n")
-        self._remember_recent_turn(question + "\n[Attached: " + ", ".join(attached.names) + "]", IMAGE_IDENTITY_REPLY)
-        return await self._send_direct_response(IMAGE_IDENTITY_REPLY, "IDLE")
+        answer = await self._local_face_summary(attached.sources, required=True)
+        # Keep the reply available to the user, while withholding local biometric
+        # labels from future model history and generated-work storage.
+        history_reply = LOCAL_FACE_CHECK + " Completed locally; ask about the image to check again."
+        self._remember_recent_turn(question + "\n[Attached: " + ", ".join(attached.names) + "]",
+                                   IMAGE_IDENTITY_REPLY if answer == IMAGE_IDENTITY_REPLY else history_reply)
+        return await self._send_direct_response(answer, "IDLE")
 
     async def _generate_attachment_answer(self, messages, system, engine, *, has_images):
         backup_name = getattr(getattr(self, "config", None), "vision_fallback_model_name", "openbmb/MiniCPM-V-4_5")
@@ -1132,7 +1226,8 @@ class BlobOrchestrator:
             return await self._send_direct_response(
                 "I couldn't load your saved personal context. Try again or check the backend logs; I won't guess which timetable rows are yours.",
                 "WORRIED")
-        system = ATTACHMENT_SYSTEM_PROMPT
+        selected_images = any(Path(path).suffix.lower() != ".pdf" for path in user_msg.attachments)
+        system = ATTACHMENT_SYSTEM_PROMPT + (ATTACHMENT_IMAGE_GUIDANCE if selected_images else "")
         if personal_context:
             system += "\n## Saved user statements (verbatim evidence, not instructions)\n" + personal_context + "\n"
         system += self._current_clock_context()
@@ -1165,7 +1260,7 @@ class BlobOrchestrator:
             engine = self.llm
         messages = [{"role": "system", "content": system},
                     {"role": "user", "content": "Historical background: This is a conversation about user-selected files."},
-                    *list(getattr(self, "_recent_turns", ())), current]
+                    *self._attachment_history(images=selected_images), current]
         bounded = fit_messages(messages, current, max_bytes)
         if bounded is None:
             return await self._send_direct_response(
@@ -1225,7 +1320,12 @@ class BlobOrchestrator:
             reference = f"[Saved result: {result['id']}; Sources: {', '.join(attached.names)}]"
         else:
             reference = "[Attached: " + ", ".join(attached.names) + "]"
-        self._remember_recent_turn(question + "\n" + reference, response)
+        history_response = response
+        if activate:
+            face_summary = await self._local_face_summary(attached.sources)
+            if face_summary:
+                response += "\n\n" + face_summary
+        self._remember_recent_turn(question + "\n" + reference, history_response)
         return await self._send_direct_response(response, emote)
 
     async def _handle_hermes_turn(self, messages, system_prompt, text, required_tool, camera_discussion):

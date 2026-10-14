@@ -1,6 +1,8 @@
 """On-demand camera detection and explicit, local face enrollment."""
 
 import json
+from io import BytesIO
+import math
 import os
 from pathlib import Path
 import re
@@ -179,6 +181,46 @@ class CameraVision:
             }
         finally:
             capture.release()
+
+    def match_image(self, data: bytes):
+        """Compare a selected image with enrolled samples without opening the webcam.
+
+        LBPH distances are similarity scores, not identity probabilities. Use
+        the same acceptance threshold as camera scans and report possible
+        matches only. Do not save crops or add the image to an enrollment.
+        """
+        from PIL import Image, ImageOps, UnidentifiedImageError
+
+        self._require_enabled()
+        people = self._load_index()
+        if not people:
+            return {"enrolled": False, "faces": []}
+        cv2 = self._cv2()
+        import numpy as np
+        try:
+            with Image.open(BytesIO(data)) as image:
+                if image.width * image.height > 40_000_000:
+                    raise CameraError("The selected image is too large for local face matching.")
+                image = ImageOps.exif_transpose(image).convert("RGB")
+                image.thumbnail((1600, 1600))
+                frame = cv2.cvtColor(np.asarray(image), cv2.COLOR_RGB2BGR)
+        except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError) as exc:
+            raise CameraError("The selected image could not be decoded for local face matching.") from exc
+        gray, boxes = self._faces(cv2, self._face_detector(cv2), frame)
+        self._check_privacy()
+        recognizer, names = self._trained_recognizer(cv2, people) if boxes else (None, {})
+        faces = []
+        # Stable order lets chat refer to the left/right or numbered face.
+        for box in sorted(boxes, key=lambda box: (int(box[0]), int(box[1]))):
+            self._check_privacy()
+            match = None
+            if recognizer is not None:
+                label, distance = recognizer.predict(self._crop(cv2, gray, box))
+                if math.isfinite(distance) and 0 <= distance <= 65 and label in names:
+                    match = names[label]
+            faces.append({"box": [int(value) for value in box], "name": match})
+        self._check_privacy()
+        return {"enrolled": True, "faces": faces}
 
     def enroll(self, name: str):
         name = name.strip()

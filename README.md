@@ -189,7 +189,9 @@ files stay available for follow-ups such as “What about the other person?” a
 “What are they wearing?” Ordinary chat and email drafts still use normal chat.
 Image descriptions use the configured vision model; a bare filename is not visual
 evidence. Blob can describe visible people, but does not guess their identities
-from faces or assume a pictured person is you from a remembered nickname.
+from faces or assume a pictured person is you from a remembered nickname. With
+local face profiles enrolled, it separately checks selected photos against those
+samples and reports possible matches or unknown faces.
 
 Use `/files` to list attached files, `/files remove <number>` to detach one, or `/files clear` to detach all files. Explicit requests such as reminders, camera commands, and screen capture continue to work while files are attached. The active selection lasts until detached or the backend restarts.
 
@@ -248,6 +250,17 @@ while manual privacy pause still blocks camera access. Blob reports the camera
 tool's actual result rather than narrating an unexecuted attempt.
 
 Enrollment requires the person's consent and captures at least eight clear frames with one face visible. A scan reports face and full-body detections and matches enrolled faces by name. Recognition uses OpenCV's LBPH model; it can make mistakes, especially with poor light or a changed appearance, so it should not be used for authentication. The camera opens only for a request and is released afterward. Frames are not sent to the LLM or stored in chat memory. Enrollment stores cropped grayscale face samples under `~/.blob/faces/` (or `BLOB_FACE_DB_PATH`); `/camera forget <name>` deletes that person's samples.
+
+Dropped or selected photos also receive a separate local face check when profiles
+are enrolled. Ask “Who is the person in this image?” to check the selected photo
+again, without contacting the AI provider or opening the webcam; this works with
+cloud assistance off. Results say “possible match to Asha” or “unknown” and list
+multiple faces from left to right. They are similarity matches, not verified
+identities. The photo is never added to an enrollment. Match results and enrolled
+samples stay out of model prompts and saved generated answers; ordinary photo
+descriptions still send the selected image to the configured vision provider.
+Privacy pause, `/privacy disable camera`, and `BLOB_CAMERA_ENABLED=0` also disable
+photo matching. `/camera forget <name>` takes effect on the next check.
 
 `/camera status` opens the webcam long enough to verify that a frame can be read. Webcam access is separate from Wayland screen sharing. A scan reports detections, not a general visual description of the camera scene.
 
