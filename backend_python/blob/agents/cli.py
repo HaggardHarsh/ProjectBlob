@@ -13,10 +13,11 @@ from blob.config import BlobConfig
 
 async def doctor(config, *, probe=False):
     report = {"selected_runtime": config.agent_runtime, "model": config.model_name,
+              "hermes_transport": config.hermes_transport,
               "hermes_source": bool(config.hermes_source_path and
                                     (Path(config.hermes_source_path) / "run_agent.py").is_file()),
               "hermes_python": bool(config.hermes_python and Path(config.hermes_python).is_file()),
-              "openshell_cli": shutil.which("openshell") is not None,
+              "openshell_cli": shutil.which(str(Path(config.openshell_cli).expanduser())) is not None,
               "nemoclaw_cli": shutil.which("nemoclaw") is not None,
               "docker_socket": Path("/var/run/docker.sock").exists(),
               "sandbox_active": False}
@@ -40,6 +41,7 @@ async def doctor(config, *, probe=False):
             report["error"] = str(exc)
         finally:
             await runtime.close()
+        report.update(runtime.transport_status)
         report["run"] = runtime.last_run
     return report
 

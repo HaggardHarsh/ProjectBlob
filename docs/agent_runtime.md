@@ -26,7 +26,10 @@ starts and keeps its libraries loaded between messages. Each message gets a fres
 `AIAgent`, the current tool list and conversation history supplied by Blob. Its
 tool registrations and temporary task profile are removed before the final answer
 returns. Upstream conversation logging, background review and environment probing
-are disabled; Blob owns memories and receipts. Preloading uses a synthetic local
+are disabled; Blob owns memories and receipts. Before preloading, the worker
+selects Hermes's no-op Relay host for every profile. This prevents system Relay
+plugin discovery, native plugin initialization and upstream telemetry from
+running during Blob conversations. Preloading uses a synthetic local
 reply to load lazy conversation code, makes no cloud calls and passes no user
 messages or provider credentials to the worker.
 
@@ -117,29 +120,26 @@ above selects each runtime explicitly and uses real model responses.
 
 ## OpenShell and NemoClaw deployment
 
-The active Hermes integration uses a local process boundary. It is **not** running inside
-NVIDIA OpenShell or NemoClaw. `doctor` reports those separately and never claims
-an active kernel sandbox just because an executable exists.
+Hermes defaults to a local process boundary. An opt-in OpenShell 0.1.4 transport
+can run its worker in a dedicated sandbox with rootless Podman; see
+[setup, verification and rollback](openshell.md). `/agent` reports the selected
+transport and worker handshake state. `doctor` never claims an active sandbox
+just because an executable exists.
+
+The development installation selects `BLOB_HERMES_TRANSPORT=openshell` and runs
+`blob-openshell.service`. Its real integration evaluation passed 13/13 checks;
+see [verification results](evals/openshell.md).
 
 The existing `OpenShellSandbox` compatibility class is a command allowlist; it
 does not integrate NVIDIA OpenShell. Command skills already use Blob's existing
 Bubblewrap isolation. NVIDIA OpenShell is installed through its official runtime
 installer, not the unrelated `openshell` Python extra previously listed here.
 
-For the next deployment stage, use [NemoClaw's Hermes guide](https://docs.nvidia.com/nemoclaw/user-guide/hermes/home)
-and [OpenShell's architecture](https://docs.nvidia.com/openshell/about/architecture).
-Provision the worker's pinned source/interpreter inside a sandbox, leave camera
-and screen hardware in the host integration, and test stop/disconnect behavior
-before switching to that transport. Keep native Hermes shell/browser tools off
-until network and filesystem policies, action permissions and run receipts are
-verified end to end. OpenShell controls allowed destinations; an allowed cloud
-image request still sends image content outside the computer.
-
-On the development host, rootless Podman works. Docker is installed but its daemon
-socket is absent; starting it with noninteractive sudo requires a password. The
-OpenShell/NemoClaw CLIs are absent. OpenShell's official Linux installer uses system
-Debian/RPM packages, requiring administrator authentication. The Hermes adapter
-can be evaluated independently while that deployment prerequisite is resolved.
+The OpenShell transport retains host inference and existing camera/screen
+integration. It does not activate native Hermes shell/browser tools or NemoClaw
+managed inference. Cloud requests still send selected context to Nebius through
+Blob's host client. OpenShell's network policy applies to the worker, while host
+tools retain Blob's existing policies and Bubblewrap isolation.
 
 Upstream integration references:
 [programmatic interfaces](https://hermes-agent.nousresearch.com/docs/developer-guide/programmatic-integration)

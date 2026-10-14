@@ -46,6 +46,34 @@ async def run(runtime, tools=(), execute=None, event=None):
         execute or AsyncMock(return_value=SkillResult("Tool completed.", True, "SUCCESS")), event or AsyncMock())
 
 
+def test_worker_disables_relay_plugins_for_every_profile(monkeypatch):
+    from blob.agents.hermes_worker import disable_relay_plugins
+
+    class NoopRelayRuntime:
+        def __init__(self, *, profile_key, reason):
+            self.profile_key, self.reason = profile_key, reason
+
+    def unexpected_host(*args, **kwargs):
+        raise AssertionError("Upstream plugin discovery must not run")
+
+    registry = SimpleNamespace(for_profile=unexpected_host)
+    coordinator = SimpleNamespace(registry=registry, hooks=["existing session hook"])
+    relay = SimpleNamespace(HOST_REGISTRY=registry, SESSION_COORDINATOR=coordinator,
+                            NoopRelayRuntime=NoopRelayRuntime,
+                            current_profile_key=lambda: "current task profile")
+    monkeypatch.setitem(sys.modules, "agent", SimpleNamespace(relay_runtime=relay))
+
+    disable_relay_plugins()
+
+    assert relay.SESSION_COORDINATOR is coordinator
+    assert coordinator.hooks == ["existing session hook"]
+    for key in (None, "first task profile", "second task profile"):
+        for create in (True, False):
+            host = coordinator.registry.for_profile(key, create=create)
+            assert isinstance(host, NoopRelayRuntime)
+            assert host.profile_key == (key or "current task profile")
+
+
 @pytest.mark.asyncio
 async def test_bridge_native_tools_use_blob_provider_and_do_not_forward_credentials(tmp_path, monkeypatch):
     monkeypatch.setenv("NEBIUS_API_KEY", "provider-secret")

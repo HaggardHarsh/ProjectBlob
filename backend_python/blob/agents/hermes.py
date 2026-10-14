@@ -32,10 +32,21 @@ class HermesAgentWrapper:
         self._process = None
         self._profile = None
         self._ready = False
+        self._transport = None
+        if getattr(config, "hermes_transport", "local") == "openshell":
+            from blob.agents.openshell_transport import OpenShellWorkerTransport
+            self._transport = OpenShellWorkerTransport(config)
 
     @property
     def worker_ready(self):
         return self._ready and self._process is not None and self._process.returncode is None
+
+    @property
+    def transport_status(self):
+        return {"transport": "openshell" if self._transport else "local",
+                "sandbox_active": bool(self._transport and self._transport.active and self.worker_ready),
+                "sandbox_name": self._transport.name if self._transport else None,
+                "sandbox_cleanup": self._transport.cleanup_status if self._transport else None}
 
     def command(self):
         source = Path(self.config.hermes_source_path).expanduser()
@@ -82,21 +93,27 @@ class HermesAgentWrapper:
                     pass
                 await process.wait()
         finally:
-            if profile is not None:
-                profile.cleanup()
+            try:
+                if self._transport is not None:
+                    await self._transport.close()
+            finally:
+                if profile is not None:
+                    profile.cleanup()
 
     async def _ensure_worker(self):
         if self.worker_ready:
             return
         await self._stop_worker()
-        command = self.command()
-        self._profile = tempfile.TemporaryDirectory(prefix="blob-hermes-")
+        command = self.command() if self._transport is None else None
+        if self._transport is None:
+            self._profile = tempfile.TemporaryDirectory(prefix="blob-hermes-")
         env = {key: os.environ[key] for key in ("PATH", "LANG", "LC_ALL", "SSL_CERT_FILE", "SSL_CERT_DIR")
                if key in os.environ}
         env["PYTHONUNBUFFERED"] = "1"
-        env["BLOB_WORKER_PROFILE"] = self._profile.name
+        if self._profile is not None:
+            env["BLOB_WORKER_PROFILE"] = self._profile.name
         try:
-            self._process = await asyncio.create_subprocess_exec(
+            self._process = await self._transport.launch() if self._transport else await asyncio.create_subprocess_exec(
                 *command, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL, env=env, cwd="/tmp",
                 start_new_session=os.name == "posix", limit=MAX_FRAME_BYTES)
@@ -105,7 +122,9 @@ class HermesAgentWrapper:
                               "max_iterations": self.config.agent_max_iterations})
             frame = await self._receive()
             if frame.get("type") != "ready":
-                raise AgentRuntimeError("Hermes could not initialize. Run blob-agent doctor.")
+                code = frame.get("code")
+                detail = f" ({code})" if isinstance(code, str) and code.isidentifier() and len(code) <= 80 else ""
+                raise AgentRuntimeError("Hermes could not initialize" + detail + ". Run blob-agent doctor.")
             self._ready = True
         except BaseException:
             await self._stop_worker()
@@ -130,6 +149,7 @@ class HermesAgentWrapper:
         self.last_run = {"runtime": "hermes", "status": "starting", "model_calls": 0,
                          "tools": [], "duration_ms": 0, "worker_reused": self.worker_ready,
                          "startup_ms": 0, "model_duration_ms": 0, "tool_duration_ms": 0}
+        self.last_run.update(self.transport_status)
         started = time.monotonic()
         try:
             if self.controls:
@@ -221,3 +241,4 @@ class HermesAgentWrapper:
                     await self._stop_worker()
             finally:
                 self.last_run["duration_ms"] = round((time.monotonic() - started) * 1000)
+                self.last_run.update(self.transport_status)

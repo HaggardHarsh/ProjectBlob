@@ -29,7 +29,9 @@ The [Hermes runtime](docs/agent_runtime.md) uses native tool calls behind the sa
 terminal and desktop interface. This installation selects it with
 `BLOB_AGENT_RUNTIME=hermes`; `classic` remains available for rollback and fresh
 installations without Hermes. `/agent` shows the active runtime and last tool receipts.
-OpenShell/NemoClaw deployment is a separate stage and is not currently active.
+The [OpenShell transport](docs/openshell.md) can isolate the Hermes worker in a
+dedicated sandbox with rootless Podman. Select it explicitly after verification;
+the local transport remains the default. NemoClaw managed inference is separate.
 
 ```
 ┌─────────────────────────────┐     gRPC (localhost:50051)     ┌─────────────────────────────┐

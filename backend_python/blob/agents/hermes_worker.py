@@ -7,6 +7,7 @@ The parent performs every cloud request and tool operation.
 import argparse
 from contextlib import redirect_stdout, redirect_stderr
 import gc
+import io
 import json
 import logging
 import os
@@ -15,6 +16,35 @@ import shutil
 import sys
 import threading
 from types import SimpleNamespace
+
+
+class DiscardOutput(io.TextIOBase):
+    """Suppress upstream console output without filesystem access or buffering."""
+
+    @property
+    def encoding(self):
+        return "utf-8"
+
+    def write(self, text):
+        return len(text)
+
+
+def disable_relay_plugins():
+    """Keep upstream plugin discovery outside Blob's mediated runtime.
+
+    Hermes creates its Relay host lazily on the first conversation. Even an
+    empty task profile can discover system plugins and initialize their native
+    runtime. Use Hermes's own no-op host for every profile before preloading.
+    The existing coordinator keeps its session hooks and points to this registry.
+    """
+    from agent import relay_runtime
+
+    def host_for_profile(profile_key=None, *, create=True):
+        return relay_runtime.NoopRelayRuntime(
+            profile_key=profile_key or relay_runtime.current_profile_key(),
+            reason="Blob owns inference, tool authorization and run receipts.")
+
+    relay_runtime.HOST_REGISTRY.for_profile = host_for_profile
 
 
 def main():
@@ -59,7 +89,7 @@ def main():
         os.environ["HERMES_DISABLE_LAZY_INSTALLS"] = "1"
         sys.path.insert(0, str(Path(args.source).resolve()))
         prepare_profile()
-        with open(os.devnull, "w") as quiet, redirect_stdout(quiet), redirect_stderr(quiet):
+        with DiscardOutput() as quiet, redirect_stdout(quiet), redirect_stderr(quiet):
             # Blob owns receipts. Do not retain upstream conversation logs in a
             # long-lived process or start its logging thread/file handlers.
             logging.disable(logging.CRITICAL)
@@ -69,6 +99,8 @@ def main():
             from tools.registry import registry
             from openai.types.chat import ChatCompletion
             import toolsets
+
+            disable_relay_plugins()
 
             def new_agent(model, max_iterations, tools):
                 toolsets.TOOLSETS["blob"] = {"description": "Blob's per-turn capabilities",

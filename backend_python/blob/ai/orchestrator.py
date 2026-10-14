@@ -844,6 +844,7 @@ class BlobOrchestrator:
                       "model": getattr(self.config, "model_name", "configured model"),
                       "worker_ready": bool(getattr(runtime, "worker_ready", False)),
                       "last_run": runtime.last_run if runtime is not None else None}
+            status.update(getattr(runtime, "transport_status", {}))
             return await self._send_direct_response(json.dumps(status, indent=2), "IDLE")
         if command == "/awareness":
             awareness = getattr(self, "awareness", None)

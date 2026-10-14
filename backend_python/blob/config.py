@@ -22,6 +22,13 @@ class BlobConfig(BaseModel):
     vision_model_name: str = "zai-org/GLM-5.3-Flash"  # Super is text-only; "auto" discovers, "off" uses OCR.
     vision_fallback_model_name: str = "openbmb/MiniCPM-V-4_5"  # Same-provider backup; "off" disables failover.
     agent_runtime: Literal["classic", "hermes"] = "classic"
+    hermes_transport: Literal["local", "openshell"] = "local"
+    openshell_cli: str = "openshell"
+    openshell_gateway: str = Field(default="blob", pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$")
+    openshell_workspace: str = Field(default="default", pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$")
+    openshell_config_dir: str = ""
+    openshell_image: str = "localhost/blob-hermes:783637e3"
+    openshell_policy_path: str = Field(default_factory=lambda: str(Path(__file__).resolve().parents[2] / "deploy/openshell/policy.yaml"))
     hermes_python: str = Field(default_factory=lambda: str(Path(__file__).resolve().parents[2] / ".runtime/hermes-venv/bin/python"))
     hermes_source_path: str = Field(default_factory=lambda: str(Path(__file__).resolve().parents[2] / ".runtime/hermes"))
     agent_timeout_seconds: int = Field(default=120, ge=5, le=600)
@@ -69,6 +76,13 @@ class BlobConfig(BaseModel):
         if "BLOB_VISION_FALLBACK_MODEL" in os.environ:
             data["vision_fallback_model_name"] = os.environ["BLOB_VISION_FALLBACK_MODEL"]
         for variable, field in (("BLOB_AGENT_RUNTIME", "agent_runtime"),
+                                ("BLOB_HERMES_TRANSPORT", "hermes_transport"),
+                                ("BLOB_OPENSHELL_CLI", "openshell_cli"),
+                                ("BLOB_OPENSHELL_GATEWAY", "openshell_gateway"),
+                                ("BLOB_OPENSHELL_WORKSPACE", "openshell_workspace"),
+                                ("BLOB_OPENSHELL_CONFIG_DIR", "openshell_config_dir"),
+                                ("BLOB_OPENSHELL_IMAGE", "openshell_image"),
+                                ("BLOB_OPENSHELL_POLICY", "openshell_policy_path"),
                                 ("BLOB_HERMES_PYTHON", "hermes_python"),
                                 ("BLOB_HERMES_SOURCE", "hermes_source_path"),
                                 ("BLOB_AGENT_TIMEOUT_SECONDS", "agent_timeout_seconds"),

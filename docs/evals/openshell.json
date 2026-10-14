@@ -1,0 +1,77 @@
+{
+  "scope": "real OpenShell/Hermes; synthetic local inference; no cloud or personal data",
+  "checks": {
+    "preload_without_inference": true,
+    "non_root": true,
+    "no_provider_keys": true,
+    "readonly_code": true,
+    "network_blocked": true,
+    "no_new_privileges": true,
+    "seccomp": true,
+    "native_host_tool": true,
+    "replies": true,
+    "warm_worker": true,
+    "fresh_history": true,
+    "fresh_permissions": true,
+    "cancel_stops_sandbox": true
+  },
+  "runs": [
+    {
+      "runtime": "hermes",
+      "status": "completed",
+      "model_calls": 2,
+      "tools": [
+        {
+          "name": "blob_check",
+          "success": true
+        }
+      ],
+      "duration_ms": 171,
+      "worker_reused": true,
+      "startup_ms": 0,
+      "model_duration_ms": 0,
+      "tool_duration_ms": 0,
+      "transport": "openshell",
+      "sandbox_active": true,
+      "sandbox_name": "blob-h-ebc934d5c81b",
+      "sandbox_cleanup": null,
+      "phase": "conversation",
+      "first_model_ms": 55
+    },
+    {
+      "runtime": "hermes",
+      "status": "completed",
+      "model_calls": 1,
+      "tools": [],
+      "duration_ms": 118,
+      "worker_reused": true,
+      "startup_ms": 0,
+      "model_duration_ms": 0,
+      "tool_duration_ms": 0,
+      "transport": "openshell",
+      "sandbox_active": true,
+      "sandbox_name": "blob-h-ebc934d5c81b",
+      "sandbox_cleanup": null,
+      "phase": "conversation",
+      "first_model_ms": 50
+    },
+    {
+      "runtime": "hermes",
+      "status": "cancelled",
+      "model_calls": 1,
+      "tools": [],
+      "duration_ms": 328,
+      "worker_reused": true,
+      "startup_ms": 0,
+      "model_duration_ms": 0,
+      "tool_duration_ms": 0,
+      "transport": "openshell",
+      "sandbox_active": false,
+      "sandbox_name": null,
+      "sandbox_cleanup": "deleted",
+      "phase": "conversation",
+      "first_model_ms": 52
+    }
+  ],
+  "passed": true
+}
