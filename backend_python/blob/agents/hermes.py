@@ -15,6 +15,7 @@ import tempfile
 import time
 
 from blob.ai.context_budget import compact_browser_snapshots, prompt_size_bytes
+from blob.ai.response_format import correction_messages, has_tool_protocol
 from blob.privacy.controls import PrivacyBlocked
 
 MAX_FRAME_BYTES = 1024 * 1024
@@ -192,7 +193,20 @@ class HermesAgentWrapper:
                         try:
                             model_started = time.monotonic()
                             response = await self.llm._create(**kwargs)
+                            if has_tool_protocol(response.choices[0].message.content):
+                                if self.last_run["model_calls"] >= self.config.agent_max_iterations:
+                                    raise AgentRuntimeError("The model returned malformed tool text; that completion was discarded.")
+                                self.last_run["model_calls"] += 1
+                                self.last_run["format_retries"] = self.last_run.get("format_retries", 0) + 1
+                                kwargs["messages"] = correction_messages(kwargs["messages"])
+                                if prompt_size_bytes(kwargs["messages"]) > self.config.max_prompt_bytes:
+                                    raise AgentRuntimeError("The model returned malformed tool text; there is no room to repair it safely.")
+                                response = await self.llm._create(**kwargs)
+                                if has_tool_protocol(response.choices[0].message.content):
+                                    raise AgentRuntimeError("The model returned malformed tool text again. Those generated actions were not executed.")
                         except (PrivacyBlocked, asyncio.CancelledError):
+                            raise
+                        except AgentRuntimeError:
                             raise
                         except Exception as exc:
                             raise AgentRuntimeError("The AI provider failed during the Hermes run. Check /agent for completed tools before retrying.") from exc

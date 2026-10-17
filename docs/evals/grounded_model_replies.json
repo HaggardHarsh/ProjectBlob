@@ -1,0 +1,124 @@
+[
+  {
+    "question": "what is gemini 4 argon",
+    "answer": "Gemini 4 Argon is Google’s flagship multimodal model released on Oct 13 2026, featuring a unified 1M‑token context window, adjustable thinking levels, implicit context caching, and support for text, image, audio, and video inputs along with tool use like code execution, function calling, and web grounding【https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/4-argon】.",
+    "receipt": {
+      "runtime": "hermes",
+      "status": "completed",
+      "model_calls": 1,
+      "tools": [],
+      "duration_ms": 8318,
+      "worker_reused": false,
+      "startup_ms": 5849,
+      "model_duration_ms": 2333,
+      "tool_duration_ms": 0,
+      "transport": "openshell",
+      "sandbox_active": true,
+      "sandbox_cleanup": null,
+      "phase": "conversation",
+      "first_model_ms": 5913,
+      "preflight_tools": [
+        {
+          "name": "web_search",
+          "success": true
+        },
+        {
+          "name": "web_read",
+          "success": false
+        },
+        {
+          "name": "web_read",
+          "success": true
+        }
+      ]
+    },
+    "web_lookup": {
+      "status": "verified",
+      "tools": [
+        {
+          "name": "web_search",
+          "success": true
+        },
+        {
+          "name": "web_read",
+          "success": false
+        },
+        {
+          "name": "web_read",
+          "success": true
+        }
+      ]
+    },
+    "checks": {
+      "clean_reply": true,
+      "source_link": true,
+      "live_sources": true,
+      "no_unrelated_tools": true
+    }
+  },
+  {
+    "question": "crazy, is it good?",
+    "answer": "Based on the official docs, Google describes Gemini 4 Argon as a “frontier model” that excels at deep work in areas like coding, finance, legal, cybersecurity, and science—highlighting its large context window, thinking levels, implicit caching, and broad modality/tool support【https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/4-argon】. However, I haven’t seen independent benchmarks or third‑party reviews in the retrieved page, so I can’t give a definitive quality verdict beyond the vendor’s own claims.",
+    "receipt": {
+      "runtime": "hermes",
+      "status": "completed",
+      "model_calls": 1,
+      "tools": [],
+      "duration_ms": 2554,
+      "worker_reused": true,
+      "startup_ms": 0,
+      "model_duration_ms": 2262,
+      "tool_duration_ms": 0,
+      "transport": "openshell",
+      "sandbox_active": true,
+      "sandbox_cleanup": null,
+      "phase": "conversation",
+      "first_model_ms": 115,
+      "preflight_tools": [
+        {
+          "name": "web_search",
+          "success": true
+        },
+        {
+          "name": "web_read",
+          "success": false
+        },
+        {
+          "name": "web_read",
+          "success": false
+        },
+        {
+          "name": "web_read",
+          "success": true
+        }
+      ]
+    },
+    "web_lookup": {
+      "status": "verified",
+      "tools": [
+        {
+          "name": "web_search",
+          "success": true
+        },
+        {
+          "name": "web_read",
+          "success": false
+        },
+        {
+          "name": "web_read",
+          "success": false
+        },
+        {
+          "name": "web_read",
+          "success": true
+        }
+      ]
+    },
+    "checks": {
+      "clean_reply": true,
+      "source_link": true,
+      "live_sources": true,
+      "no_unrelated_tools": true
+    }
+  }
+]

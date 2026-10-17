@@ -34,6 +34,23 @@ details. Direct commands also work without invoking the language model:
 /skills run browser {"action":"close"}
 ```
 
+Recognized AI-product questions and short follow-ups such as “is it good?” trigger
+source retrieval before inference, without needing “search the web” in the request.
+Queries use the user's product name and a public topic, not personal memories or
+earlier assistant claims. Official sources are preferred; pages must mention the
+requested product. If new results fail, Blob can freshly re-read the same product's
+last verified URL. Only the URL is retained, not cached facts, and privacy reset
+clears it. Missing sources produce an explicit verification failure, not a guessed
+release description. `/agent` reports the last automatic lookup separately from
+the last Hermes run; successful inference receipts include `preflight_tools`.
+
+Model tool-serialization tokens are rejected before reaching Hermes. One bounded
+format retry is allowed and counts toward its model-call budget. Generated textual
+tool calls are never converted into real actions; repeated malformed output fails
+closed. Text and streamed replies also keep these tokens out of displayed answers
+and new conversation history. System and reminder tools require their own user
+intent and are not exposed for unrelated model discussions.
+
 Browser responses include current URL, visible text and element `ref`s. Use a
 current ref with `click`, `fill` (with `text`), `select` (option value or label in
 `text`), or `press` (with `key`, e.g. `Enter`). Each successful operation returns

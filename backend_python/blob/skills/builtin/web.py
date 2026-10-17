@@ -41,8 +41,12 @@ class PageText(HTMLParser):
         self.in_title = False
         self.title = []
         self.anchor = None
+        self.main_depth = 0
+        self.main_text = []
 
     def handle_starttag(self, tag, attrs):
+        if tag in {"main", "article"}:
+            self.main_depth += 1
         if tag in {"script", "style", "noscript", "template"}:
             self.hidden += 1
         if tag == "title":
@@ -55,6 +59,8 @@ class PageText(HTMLParser):
                 self.anchor = None
 
     def handle_endtag(self, tag):
+        if tag in {"main", "article"}:
+            self.main_depth = max(0, self.main_depth - 1)
         if tag in {"script", "style", "noscript", "template"}:
             self.hidden = max(0, self.hidden - 1)
         if tag == "title":
@@ -70,6 +76,8 @@ class PageText(HTMLParser):
             self.title.append(text)
         if text and not self.hidden:
             self.text.append(text)
+            if self.main_depth:
+                self.main_text.append(text)
             if self.anchor:
                 self.anchor[1].append(text)
 
@@ -157,7 +165,7 @@ class WebReadSkill(SkillInterface):
             if "html" in content_type.lower():
                 page = PageText(url)
                 page.feed(text)
-                title, text, links = " ".join(page.title)[:160], "\n".join(page.text), page.links
+                title, text, links = " ".join(page.title)[:160], "\n".join(page.main_text or page.text), page.links
             encoded = text.encode("utf-8")
             return web_result({"url": url, "title": title, "text": encoded[:4800].decode("utf-8", errors="ignore"),
                                "truncated": len(encoded) > 4800, "links": links,
