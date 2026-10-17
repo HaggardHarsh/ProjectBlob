@@ -1,0 +1,107 @@
+{
+  "date": "2026-10-17",
+  "model": "nvidia/nemotron-3-super-120b-a12b",
+  "transport": "openshell",
+  "scope": "Synthetic requests and temporary memory. Public documentation search/read and example.com navigation. The availability form is intercepted locally; no real train availability was checked.",
+  "cases": [
+    {
+      "request": "Search the web for Python's official documentation, read one official result, and give its page title and URL. Do not use browser if web_read works.",
+      "answer": "Title: 3.15.0 Documentation  \nURL: https://docs.python.org/3/",
+      "receipt": {
+        "runtime": "hermes",
+        "status": "completed",
+        "model_calls": 3,
+        "tools": [
+          {
+            "name": "blob_web_search",
+            "success": true
+          },
+          {
+            "name": "blob_web_read",
+            "success": true
+          }
+        ],
+        "duration_ms": 13362,
+        "worker_reused": false,
+        "startup_ms": 5336,
+        "model_duration_ms": 5342,
+        "tool_duration_ms": 2386,
+        "transport": "openshell",
+        "sandbox_active": true,
+        "sandbox_name": "blob-h-e25110ebb051",
+        "sandbox_cleanup": null,
+        "phase": "conversation",
+        "first_model_ms": 5392
+      }
+    },
+    {
+      "request": "Open https://example.com/ using the browser tool, then tell me its page title and link. Do not search.",
+      "answer": "Page title: Example Domain  \nLink: https://example.com/",
+      "receipt": {
+        "runtime": "hermes",
+        "status": "completed",
+        "model_calls": 2,
+        "tools": [
+          {
+            "name": "blob_browser",
+            "success": true
+          }
+        ],
+        "duration_ms": 4714,
+        "worker_reused": true,
+        "startup_ms": 0,
+        "model_duration_ms": 2928,
+        "tool_duration_ms": 1610,
+        "transport": "openshell",
+        "sandbox_active": true,
+        "sandbox_name": "blob-h-e25110ebb051",
+        "sandbox_cleanup": null,
+        "phase": "conversation",
+        "first_model_ms": 81
+      }
+    },
+    {
+      "request": "Use the browser to open https://lookup.example/ and check availability for 2026-11-01 in Third AC. This is a synthetic test form. Fill its journey date and class, submit the lookup once, and report the exact fixture status. Do not search or use any account/transaction controls.",
+      "answer": "Fixture availability for 2026‑11‑01 3A: AVAILABLE 7 seats.",
+      "receipt": {
+        "runtime": "hermes",
+        "status": "completed",
+        "model_calls": 5,
+        "tools": [
+          {
+            "name": "blob_browser",
+            "success": true
+          },
+          {
+            "name": "blob_browser",
+            "success": true
+          },
+          {
+            "name": "blob_browser",
+            "success": true
+          },
+          {
+            "name": "blob_browser",
+            "success": true
+          }
+        ],
+        "duration_ms": 15542,
+        "worker_reused": false,
+        "startup_ms": 5523,
+        "model_duration_ms": 9461,
+        "tool_duration_ms": 250,
+        "transport": "openshell",
+        "sandbox_active": true,
+        "sandbox_name": "blob-h-9b58895388df",
+        "sandbox_cleanup": null,
+        "phase": "conversation",
+        "first_model_ms": 5580
+      },
+      "checks": {
+        "reported_fixture_availability": true,
+        "completed": true,
+        "four_browser_operations_succeeded": true
+      }
+    }
+  ]
+}

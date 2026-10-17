@@ -324,6 +324,16 @@ Current weather comes from wttr.in. Name a city to query that city; without one,
 
 ## Skill Pills
 
+### Web search and browsing
+
+Blob can search the public web without an API key, read pages with source links,
+and use a separate temporary browser for lookup forms, dates, dropdowns and dynamic
+results. Install `backend_python[web]` and Playwright Chromium, then restart the
+backend. Ask “Search the web for recent Python announcements” or “Read
+https://example.com/”. Search results alone do not verify live seat availability.
+Web tools obey privacy pause and cloud-off. Login, CAPTCHA, purchases and account
+changes require manual handling. See [setup, commands and limits](docs/web_tools.md).
+
 ### Skill hub and reminders
 
 Blob's skills share typed argument validation, execution deadlines, bounded output,

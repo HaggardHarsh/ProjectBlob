@@ -18,7 +18,7 @@ from blob.ai.llm_engine import NebiusEngine
 from blob.ai.attachments import AttachmentReader, AttachmentError, MAX_IMAGES, parse_selected_files
 from blob.ipc import blob_service_pb2
 from blob.ai.guardrails import GuardrailsEngine, PERSONAL_PLAN_TOPIC, unsupported_personal_event_claim
-from blob.ai.context_budget import DEFAULT_MAX_PROMPT_BYTES, IMAGE_BUDGET_BYTES, fit_messages, prompt_size_bytes
+from blob.ai.context_budget import DEFAULT_MAX_PROMPT_BYTES, IMAGE_BUDGET_BYTES, compact_browser_snapshots, fit_messages, prompt_size_bytes
 from blob.ai.prompt_templates import SYSTEM_PROMPT, ATTACHMENT_SYSTEM_PROMPT, ATTACHMENT_IMAGE_GUIDANCE, CONTEXT_TEMPLATE, CONVERSATION_CONTINUITY
 from blob.memory.episodic import EpisodicMemory
 from blob.memory.documents import DocumentLibrary, DocumentError, DOCUMENT_REFERENCE
@@ -961,6 +961,9 @@ class BlobOrchestrator:
             if (AMBIENT_REFERENCE.search(stripped) and self._ambient_context(stripped)):
                 return await self._handle_text_message(user_msg)
             explicit = list(getattr(user_msg, "attachments", ()))
+            # Web requests need fresh web evidence even while a PDF is selected.
+            if not explicit and re.search(r"https?://|\b(?:web|internet|online|website|browser)\b", stripped, re.I):
+                return await self._handle_text_message(user_msg)
             paths = explicit or list(getattr(self, "_active_attachments", ()))
             use_document_context = self._uses_attachment_context(stripped)
             identity_paths = self._image_identity_paths(user_msg)
@@ -1350,7 +1353,7 @@ class BlobOrchestrator:
         messages = [dict(item) for item in messages]
         messages[0] = {"role": "system", "content": native_prompt}
         tools, mapping = [], {}
-        permitted = {"weather", "git_status", "shell_command", "reminder"}
+        permitted = {"weather", "git_status", "shell_command", "reminder", "web_search", "web_read", "browser"}
         if FILE_REQUEST.search(text):
             permitted.add("file_search")
         for name in sorted(permitted & set(self.skill_registry.skills)):
@@ -1534,8 +1537,12 @@ class BlobOrchestrator:
                 bounded_messages, sys_prompt, clean_text, required_tool, camera_discussion)
 
         # ── ReAct Loop ──────────────────────────────────────────────────
-        for iteration in range(MAX_REACT_ITERATIONS):
-            logger.info(f"ReAct iteration {iteration + 1}/{MAX_REACT_ITERATIONS}")
+        react_iterations = (getattr(self.config, "agent_max_iterations", 12)
+                            if {"web_search", "web_read", "browser"} & set(self.skill_registry.skills)
+                            else MAX_REACT_ITERATIONS)
+        for iteration in range(react_iterations):
+            logger.info("ReAct iteration %s/%s", iteration + 1, react_iterations)
+            messages = compact_browser_snapshots(messages)
             bounded_messages = fit_messages(messages, current_request, max_prompt_bytes)
             if bounded_messages is None:
                 final_response = "That is too much text for me to handle reliably. Please narrow or split the request."
@@ -1556,7 +1563,7 @@ class BlobOrchestrator:
             
             if tool_name is None:
                 if screen_result is not None and FALSE_SCREEN_PERMISSION_DENIAL.search(response_text):
-                    if iteration < MAX_REACT_ITERATIONS - 1:
+                    if iteration < react_iterations - 1:
                         messages.append({"role": "assistant", "content": response_text})
                         messages.append({"role": "user", "content":
                             "[Observation] A fresh screen capture already succeeded. "
@@ -1565,7 +1572,7 @@ class BlobOrchestrator:
                     final_response = "I captured your screen, but couldn't interpret the text reliably. Which part should we focus on?"
                     break
                 if screen_result is not None and not file_search_ran and FILE_SEARCH_CLAIM.search(response_text):
-                    if iteration < MAX_REACT_ITERATIONS - 1:
+                    if iteration < react_iterations - 1:
                         messages.append({"role": "assistant", "content": response_text})
                         messages.append({"role": "user", "content":
                             "[Observation] No file search happened. Answer from the captured OCR text only. "

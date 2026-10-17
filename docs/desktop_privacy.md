@@ -81,7 +81,9 @@ and queued storage writes check the current privacy generation before committing
 This is not provider-side deletion, disk encryption, or secure erasure of backups.
 
 `/privacy cloud off` blocks model requests and model discovery, including background
-consolidation. Use direct `/skills`, `/reminders`, `/camera`, `/files`, `/results` and
+consolidation, and blocks the web search, page reader and browser tools. An idle
+browser also closes on pause, cloud-off, or browser-skill revocation. Use direct
+`/skills`, `/reminders`, `/camera`, `/files`, `/results` and
 `/memory` commands locally. The weather skill contacts wttr.in separately; disable it
 with `/privacy disable weather` to block that skill as well. `/privacy cloud on`
 enables cloud inference but does not resume a manual pause. When enabled, normal

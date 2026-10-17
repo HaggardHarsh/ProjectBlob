@@ -2,6 +2,7 @@
 
 import asyncio
 from collections import deque
+from contextlib import nullcontext
 import hashlib
 import json
 import logging
@@ -14,6 +15,7 @@ from blob.skills.base import SkillResult
 from blob.skills.contracts import validate_arguments
 from blob.skills.command_skill import CommandSkill
 from blob.skills.validator import SkillValidator, VALID_EMOTES
+from blob.privacy.controls import PrivacyBlocked
 
 logger = logging.getLogger(__name__)
 MAX_SKILL_BYTES = 64 * 1024
@@ -77,7 +79,11 @@ class SkillRegistry:
             if source == "model" and (not info["model_callable"] or name == "camera"):
                 raise ValueError("This skill requires an explicit terminal command.")
             values = validate_arguments(info["arguments"], args)
-            result = await asyncio.wait_for(self.skills[name].async_execute(values), info["timeout_seconds"])
+            requires_cloud = getattr(self.skills[name], "requires_cloud", False)
+            with self.controls.operation(cloud=True) if self.controls and requires_cloud else nullcontext():
+                result = await asyncio.wait_for(self.skills[name].async_execute(values), info["timeout_seconds"])
+                if self.controls and requires_cloud:
+                    self.controls.check(cloud=True)
             if not isinstance(result, SkillResult) or not isinstance(result.output, str) or type(result.success) is not bool:
                 raise ValueError("The skill returned an invalid result.")
             if len(result.output.encode("utf-8")) > 8000:
@@ -88,7 +94,7 @@ class SkillRegistry:
                 result = SkillResult(result.output, result.success, "IDLE")
         except asyncio.TimeoutError:
             result = SkillResult(f"{name} timed out. Try a narrower request.", False, "WORRIED")
-        except (ValueError, TypeError) as exc:
+        except (ValueError, TypeError, PrivacyBlocked) as exc:
             result = SkillResult(str(exc), False, "CONFUSED")
         except Exception:
             logger.exception("Skill %s failed", name)

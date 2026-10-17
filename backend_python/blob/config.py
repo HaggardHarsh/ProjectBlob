@@ -33,6 +33,8 @@ class BlobConfig(BaseModel):
     hermes_source_path: str = Field(default_factory=lambda: str(Path(__file__).resolve().parents[2] / ".runtime/hermes"))
     agent_timeout_seconds: int = Field(default=120, ge=5, le=600)
     agent_max_iterations: int = Field(default=12, ge=1, le=30)
+    web_search_provider: Literal["duckduckgo", "brave"] = "duckduckgo"
+    brave_search_api_key: str = Field(default="", repr=False)
     memory_db_path: str = Field(default_factory=lambda: str(Path.home() / ".blob/memory/chromadb"))
     blacklist_path: str = Field(default_factory=lambda: str(Path(__file__).resolve().parents[1] / "data/blacklist.yaml"))
     personality_path: str = Field(default_factory=lambda: str(Path(__file__).resolve().parents[1] / "data/blob_personality.yaml"))
@@ -75,6 +77,10 @@ class BlobConfig(BaseModel):
             data["vision_model_name"] = os.environ["BLOB_VISION_MODEL"]
         if "BLOB_VISION_FALLBACK_MODEL" in os.environ:
             data["vision_fallback_model_name"] = os.environ["BLOB_VISION_FALLBACK_MODEL"]
+        for variable, field in (("BLOB_WEB_SEARCH_PROVIDER", "web_search_provider"),
+                                ("BRAVE_SEARCH_API_KEY", "brave_search_api_key")):
+            if variable in os.environ:
+                data[field] = os.environ[variable]
         for variable, field in (("BLOB_AGENT_RUNTIME", "agent_runtime"),
                                 ("BLOB_HERMES_TRANSPORT", "hermes_transport"),
                                 ("BLOB_OPENSHELL_CLI", "openshell_cli"),

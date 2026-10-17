@@ -5,19 +5,65 @@ This is not an exact token count, so the limit leaves room for chat-template
 tokens and the model's reply.
 """
 
+import json
+
 DEFAULT_MAX_PROMPT_BYTES = 32_000
 MESSAGE_OVERHEAD_BYTES = 64
 IMAGE_BUDGET_BYTES = 4096  # Reserve model context for each bounded image, separately from base64 transport.
 OMITTED_CONTEXT = "\n[Additional historical context omitted to fit the prompt.]"
 
 
+def compact_browser_snapshots(messages):
+    """Keep the newest browser view and earlier action arguments, not stale refs.
+
+    Other tool results, failures, user messages and source-page reads are kept.
+    Both native tool messages and classic observations use this path.
+    """
+    tools, snapshots = {}, []
+    for index, message in enumerate(messages):
+        for call in message.get("tool_calls", ()):
+            tools[call.get("id")] = call.get("function", {}).get("name")
+        content = message.get("content")
+        if not isinstance(content, str):
+            continue
+        prefix = ""
+        if message.get("role") == "tool" and tools.get(message.get("tool_call_id")) == "blob_browser":
+            pass
+        elif content.startswith("[Observation] Tool 'browser' executed successfully.\nResult: "):
+            prefix, content = content.split("\nResult: ", 1)
+            prefix += "\nResult: "
+        else:
+            continue
+        try:
+            wrapper = json.loads(content)
+            view = json.loads(wrapper["output"]) if isinstance(wrapper.get("output"), str) else wrapper
+            if not (view.get("untrusted_web_content") and "elements" in view and "url" in view):
+                continue
+        except (ValueError, TypeError, AttributeError):
+            continue
+        snapshots.append((index, prefix, wrapper, view))
+    compacted = list(messages)
+    for index, prefix, wrapper, view in snapshots[:-1]:
+        summary = {key: view[key] for key in ("url", "title", "checked_at") if key in view}
+        summary["note"] = "Earlier browser snapshot omitted. Its refs expired; use the newest snapshot. Action arguments remain in history."
+        if wrapper is not view:
+            wrapper = {**wrapper, "output": json.dumps(summary)}
+        else:
+            wrapper = summary
+        compacted[index] = {**messages[index], "content": prefix + json.dumps(wrapper)}
+    return compacted
+
+
 def prompt_size_bytes(messages: list[dict]) -> int:
     def content_size(content):
+        if content is None:
+            return 0
         if isinstance(content, str):
             return len(content.encode("utf-8"))
         return sum(len(part.get("text", "").encode("utf-8")) if part.get("type") == "text"
                    else IMAGE_BUDGET_BYTES for part in content)
-    return sum(content_size(message.get("content", "")) + MESSAGE_OVERHEAD_BYTES
+    return sum(content_size(message.get("content", "")) + MESSAGE_OVERHEAD_BYTES +
+               (len(json.dumps(message["tool_calls"], ensure_ascii=False).encode("utf-8")) if message.get("tool_calls") else 0)
                for message in messages)
 
 

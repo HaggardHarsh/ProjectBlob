@@ -14,7 +14,7 @@ import sys
 import tempfile
 import time
 
-from blob.ai.context_budget import prompt_size_bytes
+from blob.ai.context_budget import compact_browser_snapshots, prompt_size_bytes
 from blob.privacy.controls import PrivacyBlocked
 
 MAX_FRAME_BYTES = 1024 * 1024
@@ -173,6 +173,7 @@ class HermesAgentWrapper:
                         request = frame.get("request")
                         if not isinstance(request, dict) or not isinstance(request.get("messages"), list):
                             raise AgentRuntimeError("Hermes returned an invalid model request.")
+                        request["messages"] = compact_browser_snapshots(request["messages"])
                         if prompt_size_bytes(request["messages"]) > self.config.max_prompt_bytes:
                             raise AgentRuntimeError("Hermes reached Blob's context limit. Narrow the request.")
                         requested = request.get("tools", [])

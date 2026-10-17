@@ -63,6 +63,8 @@ async def main_async(*, daemon=False):
     
     from blob.skills.registry import SkillRegistry
     from blob.skills.builtin.weather import WeatherSkill
+    from blob.skills.builtin.web import WebSearchSkill, WebReadSkill
+    from blob.skills.builtin.browser import BrowserSkill
     from blob.skills.builtin.file_search import FileSearchSkill
     from blob.skills.builtin.git_status import GitStatusSkill
     from blob.skills.builtin.shell_command import ShellCommandSkill
@@ -77,6 +79,9 @@ async def main_async(*, daemon=False):
     # ── Build skill registry ─────────────────────────────────────────
     skill_registry = SkillRegistry(config.skills_dir_path, controls=controls)
     skill_registry.register(WeatherSkill())
+    skill_registry.register(WebSearchSkill(config))
+    skill_registry.register(WebReadSkill())
+    skill_registry.register(BrowserSkill())
     skill_registry.register(FileSearchSkill())
     skill_registry.register(GitStatusSkill())
     skill_registry.register(ShellCommandSkill())

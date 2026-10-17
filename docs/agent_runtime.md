@@ -15,7 +15,8 @@ This phase does not replace attachment selection, document memory or local camer
 intent handling. Image tests therefore check regressions in a shared pipeline,
 not an improvement attributable to Hermes.
 
-The integration exposes weather, read-only shell commands, Git status and reminders;
+The integration exposes weather, read-only shell commands, Git status, reminders,
+and Blob's [web search, page reader and temporary browser](web_tools.md);
 file search is exposed for file-search requests. It does not enable Hermes's
 default shell, browser, plugins, delegation, scheduled jobs or memory tools.
 Reminder changes require the current user's request. A successful creation cannot
