@@ -22,14 +22,14 @@ from blob.ipc.event_dispatcher import EventDispatcher
 from blob.ipc.servicer import BlobServiceServicer
 
 
-def text_pdf(path, pages):
+def text_pdf(path, pages, *, page_width=300):
     """Create a real, tiny PDF with a text layer, without another PDF dependency."""
     objects = [b"<< /Type /Catalog /Pages 2 0 R >>", b"", b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]
     page_ids = []
     for text in pages:
         page_ids.append(len(objects) + 1)
         stream = ("BT /F1 14 Tf 30 100 Td (" + text + ") Tj ET").encode("ascii")
-        objects.append(f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 180] /Resources << /Font << /F1 3 0 R >> >> /Contents {len(objects) + 2} 0 R >>".encode())
+        objects.append(f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {page_width} 180] /Resources << /Font << /F1 3 0 R >> >> /Contents {len(objects) + 2} 0 R >>".encode())
         objects.append(b"<< /Length " + str(len(stream)).encode() + b" >>\nstream\n" + stream + b"\nendstream")
     objects[1] = b"<< /Type /Pages /Kids [" + " ".join(f"{i} 0 R" for i in page_ids).encode() + b"] /Count " + str(len(pages)).encode() + b" >>"
     output = bytearray(b"%PDF-1.4\n")
@@ -195,7 +195,10 @@ async def test_dense_file_drop_and_followup_fit_configured_context_limit(tmp_pat
     evidence = content if isinstance(content, str) else "\n".join(p.get("text", "") for p in content)
     assert all(path.name in evidence for path in paths)
     if limit == 32000:
-        assert sum(p["type"] == "image_url" for p in content) == 4
+        # The latest exchange now takes priority over a fourth page image.
+        assert sum(p["type"] == "image_url" for p in content) == 3
+        assert {"role": "user", "content": "Earlier discussion. " * 200} in messages
+        assert {"role": "assistant", "content": "Earlier discussion. " * 200} in messages
     await instance.handle_user_message(blob_service_pb2.UserMessage(text="Explain voltage on page 6"))
     messages = engine.generate_from_messages.call_args.args[0]
     assert engine.generate_from_messages.await_count == 2

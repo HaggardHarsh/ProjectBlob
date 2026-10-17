@@ -38,10 +38,11 @@ def _trim_context_lines(content: str, max_bytes: int) -> str:
 
 def fit_messages(messages: list[dict], current_request: dict,
                  max_bytes: int = DEFAULT_MAX_PROMPT_BYTES) -> list[dict] | None:
-    """Drop old turns, then trim background; preserve this request and tool results.
+    """Drop old turns, then trim background before the latest exchange.
 
     Return None if the essential messages cannot fit without silently cutting
-    the user's latest message or a tool observation.
+    the user's latest message or a tool observation. Keep the latest exchange
+    whenever it fits alongside those essentials, including across model routes.
     """
     current_index = next((i for i, item in enumerate(messages) if item is current_request), None)
     if current_index is None:
@@ -51,6 +52,14 @@ def fit_messages(messages: list[dict], current_request: dict,
         older = [i for i, _ in working if 1 < i < current_index]
         if not older:
             break
+        if len(older) <= 2:
+            # A short follow-up may depend entirely on this exchange. Prefer it
+            # to retrieved background if the essential request leaves room.
+            without_background = [item for i, item in working if not (
+                i == 1 and isinstance(item.get("content"), str) and
+                item["content"].startswith("Historical background"))]
+            if prompt_size_bytes(without_background) <= max_bytes:
+                break
         # Recent turns are stored in user/assistant pairs. Remove the oldest
         # complete pair so the remaining conversation stays in order.
         remove = set(older[:2])
