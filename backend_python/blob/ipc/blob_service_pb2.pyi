@@ -20,7 +20,7 @@ class NotificationAckResponse(_message.Message):
     def __init__(self, acknowledged: _Optional[bool] = ...) -> None: ...
 
 class FrontendEvent(_message.Message):
-    __slots__ = ("timestamp_ms", "user_interaction", "skill_pill_drop", "overlay_state", "user_message", "heartbeat", "attachment_drop")
+    __slots__ = ("timestamp_ms", "user_interaction", "skill_pill_drop", "overlay_state", "user_message", "heartbeat", "attachment_drop", "proactive_feedback")
     TIMESTAMP_MS_FIELD_NUMBER: _ClassVar[int]
     USER_INTERACTION_FIELD_NUMBER: _ClassVar[int]
     SKILL_PILL_DROP_FIELD_NUMBER: _ClassVar[int]
@@ -28,6 +28,7 @@ class FrontendEvent(_message.Message):
     USER_MESSAGE_FIELD_NUMBER: _ClassVar[int]
     HEARTBEAT_FIELD_NUMBER: _ClassVar[int]
     ATTACHMENT_DROP_FIELD_NUMBER: _ClassVar[int]
+    PROACTIVE_FEEDBACK_FIELD_NUMBER: _ClassVar[int]
     timestamp_ms: int
     user_interaction: UserInteraction
     skill_pill_drop: SkillPillDrop
@@ -35,7 +36,8 @@ class FrontendEvent(_message.Message):
     user_message: UserMessage
     heartbeat: HeartbeatPing
     attachment_drop: AttachmentDrop
-    def __init__(self, timestamp_ms: _Optional[int] = ..., user_interaction: _Optional[_Union[UserInteraction, _Mapping]] = ..., skill_pill_drop: _Optional[_Union[SkillPillDrop, _Mapping]] = ..., overlay_state: _Optional[_Union[OverlayStateChange, _Mapping]] = ..., user_message: _Optional[_Union[UserMessage, _Mapping]] = ..., heartbeat: _Optional[_Union[HeartbeatPing, _Mapping]] = ..., attachment_drop: _Optional[_Union[AttachmentDrop, _Mapping]] = ...) -> None: ...
+    proactive_feedback: ProactiveFeedback
+    def __init__(self, timestamp_ms: _Optional[int] = ..., user_interaction: _Optional[_Union[UserInteraction, _Mapping]] = ..., skill_pill_drop: _Optional[_Union[SkillPillDrop, _Mapping]] = ..., overlay_state: _Optional[_Union[OverlayStateChange, _Mapping]] = ..., user_message: _Optional[_Union[UserMessage, _Mapping]] = ..., heartbeat: _Optional[_Union[HeartbeatPing, _Mapping]] = ..., attachment_drop: _Optional[_Union[AttachmentDrop, _Mapping]] = ..., proactive_feedback: _Optional[_Union[ProactiveFeedback, _Mapping]] = ...) -> None: ...
 
 class UserInteraction(_message.Message):
     __slots__ = ("type", "x", "y", "velocity")
@@ -100,10 +102,48 @@ class UserMessage(_message.Message):
     def __init__(self, text: _Optional[str] = ..., attachments: _Optional[_Iterable[str]] = ..., conversation_id: _Optional[str] = ...) -> None: ...
 
 class HeartbeatPing(_message.Message):
-    __slots__ = ("frontend_uptime_ms",)
+    __slots__ = ("frontend_uptime_ms", "client_kind", "proactive_bubbles", "overlay_visible", "desktop_width", "desktop_height")
+    class ClientKind(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+        __slots__ = ()
+        UNKNOWN: _ClassVar[HeartbeatPing.ClientKind]
+        OVERLAY: _ClassVar[HeartbeatPing.ClientKind]
+        CHAT: _ClassVar[HeartbeatPing.ClientKind]
+    UNKNOWN: HeartbeatPing.ClientKind
+    OVERLAY: HeartbeatPing.ClientKind
+    CHAT: HeartbeatPing.ClientKind
     FRONTEND_UPTIME_MS_FIELD_NUMBER: _ClassVar[int]
+    CLIENT_KIND_FIELD_NUMBER: _ClassVar[int]
+    PROACTIVE_BUBBLES_FIELD_NUMBER: _ClassVar[int]
+    OVERLAY_VISIBLE_FIELD_NUMBER: _ClassVar[int]
+    DESKTOP_WIDTH_FIELD_NUMBER: _ClassVar[int]
+    DESKTOP_HEIGHT_FIELD_NUMBER: _ClassVar[int]
     frontend_uptime_ms: int
-    def __init__(self, frontend_uptime_ms: _Optional[int] = ...) -> None: ...
+    client_kind: HeartbeatPing.ClientKind
+    proactive_bubbles: bool
+    overlay_visible: bool
+    desktop_width: int
+    desktop_height: int
+    def __init__(self, frontend_uptime_ms: _Optional[int] = ..., client_kind: _Optional[_Union[HeartbeatPing.ClientKind, str]] = ..., proactive_bubbles: _Optional[bool] = ..., overlay_visible: _Optional[bool] = ..., desktop_width: _Optional[int] = ..., desktop_height: _Optional[int] = ...) -> None: ...
+
+class ProactiveFeedback(_message.Message):
+    __slots__ = ("approach_id", "action")
+    class Action(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+        __slots__ = ()
+        SHOWN: _ClassVar[ProactiveFeedback.Action]
+        DISMISSED: _ClassVar[ProactiveFeedback.Action]
+        REPLY: _ClassVar[ProactiveFeedback.Action]
+        QUIET_TODAY: _ClassVar[ProactiveFeedback.Action]
+        MUTE: _ClassVar[ProactiveFeedback.Action]
+    SHOWN: ProactiveFeedback.Action
+    DISMISSED: ProactiveFeedback.Action
+    REPLY: ProactiveFeedback.Action
+    QUIET_TODAY: ProactiveFeedback.Action
+    MUTE: ProactiveFeedback.Action
+    APPROACH_ID_FIELD_NUMBER: _ClassVar[int]
+    ACTION_FIELD_NUMBER: _ClassVar[int]
+    approach_id: str
+    action: ProactiveFeedback.Action
+    def __init__(self, approach_id: _Optional[str] = ..., action: _Optional[_Union[ProactiveFeedback.Action, str]] = ...) -> None: ...
 
 class BackendEvent(_message.Message):
     __slots__ = ("timestamp_ms", "emote", "state", "notification", "skill_ack", "privacy", "color_shift", "heartbeat", "position_hint")
@@ -227,7 +267,7 @@ class StateCommand(_message.Message):
     def __init__(self, state: _Optional[_Union[StateCommand.State, str]] = ..., params: _Optional[_Mapping[str, str]] = ...) -> None: ...
 
 class NotificationBubble(_message.Message):
-    __slots__ = ("text", "display_ms", "priority", "actionable", "action_label", "conversation_reply", "delivery_id")
+    __slots__ = ("text", "display_ms", "priority", "actionable", "action_label", "conversation_reply", "delivery_id", "proactive", "image_bmp", "approach_id")
     class Priority(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
         __slots__ = ()
         LOW: _ClassVar[NotificationBubble.Priority]
@@ -243,6 +283,9 @@ class NotificationBubble(_message.Message):
     ACTION_LABEL_FIELD_NUMBER: _ClassVar[int]
     CONVERSATION_REPLY_FIELD_NUMBER: _ClassVar[int]
     DELIVERY_ID_FIELD_NUMBER: _ClassVar[int]
+    PROACTIVE_FIELD_NUMBER: _ClassVar[int]
+    IMAGE_BMP_FIELD_NUMBER: _ClassVar[int]
+    APPROACH_ID_FIELD_NUMBER: _ClassVar[int]
     text: str
     display_ms: int
     priority: NotificationBubble.Priority
@@ -250,7 +293,10 @@ class NotificationBubble(_message.Message):
     action_label: str
     conversation_reply: bool
     delivery_id: str
-    def __init__(self, text: _Optional[str] = ..., display_ms: _Optional[int] = ..., priority: _Optional[_Union[NotificationBubble.Priority, str]] = ..., actionable: _Optional[bool] = ..., action_label: _Optional[str] = ..., conversation_reply: _Optional[bool] = ..., delivery_id: _Optional[str] = ...) -> None: ...
+    proactive: bool
+    image_bmp: bytes
+    approach_id: str
+    def __init__(self, text: _Optional[str] = ..., display_ms: _Optional[int] = ..., priority: _Optional[_Union[NotificationBubble.Priority, str]] = ..., actionable: _Optional[bool] = ..., action_label: _Optional[str] = ..., conversation_reply: _Optional[bool] = ..., delivery_id: _Optional[str] = ..., proactive: _Optional[bool] = ..., image_bmp: _Optional[bytes] = ..., approach_id: _Optional[str] = ...) -> None: ...
 
 class SkillAcknowledgment(_message.Message):
     __slots__ = ("skill_name", "success", "description", "error_message")

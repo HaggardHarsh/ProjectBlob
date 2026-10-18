@@ -83,7 +83,7 @@ class BlobServiceServicer(blob_service_pb2_grpc.BlobServiceServicer):
         async def read_requests():
             try:
                 async for req in request_iterator:
-                    await self.handle_frontend_event(req)
+                    await self.handle_frontend_event(req, client_id=client_id)
             except Exception:
                 logger.exception("Frontend event stream ended with an error")
             finally:
@@ -107,11 +107,13 @@ class BlobServiceServicer(blob_service_pb2_grpc.BlobServiceServicer):
             read_task.cancel()
             await asyncio.gather(read_task, return_exceptions=True)
             self.dispatcher.unregister_client(client_id)
+            if getattr(self.orchestrator, "proactive", None):
+                self.orchestrator.proactive.disconnect(client_id)
             self._stream_queues.pop(client_id, None)
             if not self._stream_queues:
                 self._streams_closed.set()
 
-    async def handle_frontend_event(self, event):
+    async def handle_frontend_event(self, event, *, client_id=None):
         if self._maintaining() and not event.HasField("heartbeat"):
             return
         if event.HasField('user_message'):
@@ -141,11 +143,15 @@ class BlobServiceServicer(blob_service_pb2_grpc.BlobServiceServicer):
             print(f"\nBlob: {outcome}\n")
             await self.dispatcher.broadcast(response)
         elif event.HasField('heartbeat'):
+            if getattr(self.orchestrator, "proactive", None):
+                self.orchestrator.proactive.presence(client_id, event.heartbeat)
             response = blob_service_pb2.BackendEvent()
             response.heartbeat.llm_loaded = True
             shield = getattr(getattr(self.orchestrator, "screen_sampler", None), "privacy_shield", None)
             response.heartbeat.privacy_shield_active = bool(shield and shield.is_capture_blocked())
             await self.dispatcher.broadcast(response)
+        elif event.HasField('proactive_feedback') and getattr(self.orchestrator, "proactive", None):
+            await self.orchestrator.proactive.feedback(client_id, event.proactive_feedback)
 
     async def _process_user_message(self, message):
         try:
@@ -208,6 +214,13 @@ class BlobServiceServicer(blob_service_pb2_grpc.BlobServiceServicer):
             return blob_service_pb2.ConfigUpdateResponse(success=False, error="Blob is updating.")
         controls = getattr(self.orchestrator, "controls", None)
         setting = next(iter(request.settings), "")
+        if controls and len(request.settings) == 1 and setting == "proactive_mode":
+            mode = request.settings[setting]
+            feature = getattr(self.orchestrator, "proactive", None)
+            if not feature or mode not in {"quiet", "off"}:
+                return blob_service_pb2.ConfigUpdateResponse(success=False, error="Use quiet or off for conversation invitations.")
+            await feature.command("/proactive " + mode)
+            return blob_service_pb2.ConfigUpdateResponse(success=True, effective_config={"proactive_mode": mode})
         if controls and len(request.settings) == 1 and setting in {"privacy_paused", "cloud_enabled"}:
             value = request.settings[setting]
             if value == "toggle":

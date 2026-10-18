@@ -114,4 +114,5 @@ jobs:
             .runtime/desktop/releases/*/validation.json
             .runtime/desktop/releases/*/backend-tests.xml
             .runtime/desktop/releases/*/x11-preview.png
+            .runtime/desktop/releases/*/proactive-overlay.json
           include-hidden-files: true

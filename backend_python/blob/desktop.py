@@ -7,8 +7,10 @@ import subprocess
 import sys
 
 
-def open_chat():
+def open_chat(*, conversation=False):
     chat = [sys.executable, "-m", "blob.client"]
+    if conversation:
+        chat.append("--conversation")
     for terminal, flags in (("xdg-terminal-exec", []), ("ptyxis", ["--"]), ("kgx", ["--"]), ("gnome-terminal", ["--"]),
                             ("konsole", ["-e"]), ("xfce4-terminal", ["-x"]), ("xterm", ["-e"])):
         executable = shutil.which(terminal)
@@ -29,9 +31,10 @@ def start_session():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--startup", action="store_true")
+    parser.add_argument("--conversation", action="store_true", help="Reply to Blob's current invitation")
     args = parser.parse_args()
     try:
-        start_session() if args.startup else open_chat()
+        start_session() if args.startup else open_chat(conversation=args.conversation)
     except (RuntimeError, OSError, subprocess.CalledProcessError) as exc:
         print(str(exc), file=sys.stderr)
         raise SystemExit(1)

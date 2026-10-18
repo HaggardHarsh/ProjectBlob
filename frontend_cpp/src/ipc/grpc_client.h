@@ -24,6 +24,10 @@ public:
     bool installSkill(const std::string& path);
     bool togglePrivacy();
     bool setCloudEnabled(bool enabled);
+    bool proactiveFeedback(const std::string& id, blob::ProactiveFeedback::Action action);
+    bool proactiveControl(bool quietToday);
+    bool proactiveControlPending() const { return proactiveChange_.load() != -1 || proactiveApplying_.load(); }
+    void desktopPresence(bool visible, int width, int height) { visible_ = visible; desktopWidth_ = width; desktopHeight_ = height; }
     std::optional<blob::BackendEvent> pollEvent() { return inbound_.tryPop(); }
     bool isConnected() const { return connected_.load(); }
 
@@ -39,6 +43,10 @@ private:
     std::atomic<bool> connected_{false};
     std::atomic<bool> privacyToggle_{false};
     std::atomic<int> cloudChange_{-1};
+    std::atomic<int> proactiveChange_{-1}; // Idempotent quiet/mute survives reconnects until confirmed.
+    std::atomic<bool> proactiveApplying_{false};
+    std::atomic<bool> visible_{false};
+    std::atomic<int> desktopWidth_{0}, desktopHeight_{0};
     std::mutex mutex_;
     std::condition_variable condition_;
     std::deque<blob::FrontendEvent> outbound_;

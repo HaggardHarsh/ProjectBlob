@@ -14,7 +14,7 @@ from blob.main import read_cli_line
 from blob.terminal import terminal_text
 
 
-async def run_client(*, message=None, status=False):
+async def run_client(*, message=None, status=False, conversation=False):
     config = BlobConfig.load()
     try:
         token = ipc_token(config.ipc_token_path)
@@ -60,6 +60,7 @@ async def run_client(*, message=None, status=False):
             while True:
                 event = pb.FrontendEvent()
                 event.heartbeat.frontend_uptime_ms = 0
+                event.heartbeat.client_kind = pb.HeartbeatPing.CHAT
                 yield event
                 await asyncio.sleep(5)
 
@@ -75,6 +76,8 @@ async def run_client(*, message=None, status=False):
                             disconnected = False
                         delay = 1
                         if event.HasField("notification"):
+                            if event.notification.proactive:
+                                continue  # Ephemeral invitations belong to the desktop bubble.
                             delivery_id = event.notification.delivery_id
                             if delivery_id:
                                 if delivery_id not in rendered_deliveries:
@@ -110,6 +113,13 @@ async def run_client(*, message=None, status=False):
             print("\033[22;0t\033]0;Blob Chat\007", end="", flush=True)
         print("Connected to Blob. Closing this terminal leaves Blob running. /quit disconnects.\n"
               "Privacy: /privacy status for settings; /privacy explain for data-sharing details.")
+        if conversation:
+            try:
+                current = await stub.SendUserMessage(pb.UserMessage(text="/proactive current"), metadata=metadata, timeout=3)
+                if current.text:
+                    print("\nBlob: " + terminal_text(current.text) + "\n")
+            except grpc.aio.AioRpcError:
+                pass
         try:
             while True:
                 try:
@@ -149,9 +159,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--send", metavar="MESSAGE", help="Send one message or local command")
     parser.add_argument("--status", action="store_true", help="Check the running backend")
+    parser.add_argument("--conversation", action="store_true", help="Show the invitation you selected to answer")
     args = parser.parse_args()
     try:
-        raise SystemExit(asyncio.run(run_client(message=args.send, status=args.status)))
+        raise SystemExit(asyncio.run(run_client(message=args.send, status=args.status, conversation=args.conversation)))
     except KeyboardInterrupt:
         print("\nChat disconnected. Blob continues running.")
 

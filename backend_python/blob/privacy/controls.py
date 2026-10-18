@@ -22,12 +22,13 @@ class PrivacyControls:
         maintenance = os.environ.get("BLOB_MAINTENANCE_PATH", "")
         self.maintenance_path = Path(maintenance) if maintenance else None
         self.state = {"paused": False, "cloud_enabled": False, "approved_folders": [], "disabled_skills": [],
-                      "awareness_enabled": False}
+                      "awareness_enabled": False, "proactive_enabled": False}
         if self.path.exists():
             data = json.loads(self.path.read_text())
             if (not isinstance(data, dict) or type(data.get("paused")) is not bool or
                     type(data.get("cloud_enabled")) is not bool or
                     ("awareness_enabled" in data and type(data["awareness_enabled"]) is not bool) or
+                    ("proactive_enabled" in data and type(data["proactive_enabled"]) is not bool) or
                     any(not isinstance(data.get(key), list) or
                         any(not isinstance(item, str) for item in data[key])
                         for key in ("approved_folders", "disabled_skills"))):

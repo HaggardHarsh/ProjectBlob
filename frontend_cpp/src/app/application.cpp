@@ -1,6 +1,7 @@
 #include "app/application.h"
 #include "app/settings.h"
 #include "ui/tray.h"
+#include "ui/conversation_bubble.h"
 #include "overlay/window.h"
 #include "overlay/renderer.h"
 #include "overlay/input.h"
@@ -11,6 +12,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <chrono>
 #include <cstdlib>
 #include <iostream>
 #include <optional>
@@ -21,7 +23,7 @@
 #include <sys/wait.h>
 #endif
 
-static void openChat() {
+static void openChat(bool conversation = false) {
 #ifdef __linux__
     const pid_t launcher = fork();
     if (launcher == 0) {
@@ -29,7 +31,8 @@ static void openChat() {
         if (child == 0) {
             const char* python = std::getenv("BLOB_CHAT_PYTHON");
             if (!python) python = access("venv/bin/python", X_OK) == 0 ? "venv/bin/python" : "python3";
-            execlp(python, python, "-m", "blob.desktop", static_cast<char*>(nullptr));
+            if (conversation) execlp(python, python, "-m", "blob.desktop", "--conversation", static_cast<char*>(nullptr));
+            else execlp(python, python, "-m", "blob.desktop", static_cast<char*>(nullptr));
             _exit(127);
         }
         _exit(child < 0 ? 1 : 0);
@@ -68,7 +71,7 @@ static BlobExpression expressionFor(blob::EmoteCommand::Emote emote) {
 }
 
 namespace {
-struct DesktopStatus { bool connected = false, shield = true, paused = false; };
+struct DesktopStatus { bool connected = false, shield = true, paused = false, cloud = false; };
 struct SdlRuntime {
     SdlRuntime() {
         if (!std::getenv("SDL_VIDEODRIVER") && std::getenv("DISPLAY")) SDL_setenv("SDL_VIDEODRIVER", "x11", 0);
@@ -135,6 +138,7 @@ int runDesktop(int argc, char** argv) {
     BlobPhysics physics(width, height);
     SystemTray tray;
     DesktopStatus status;
+    ConversationBubble bubble;
     if (!demo) client.start();
     else { status.connected = true; status.shield = false; }
     bool running = true, hovered = false, lastConnected = false;
@@ -156,6 +160,14 @@ int runDesktop(int argc, char** argv) {
         const Uint32 now = SDL_GetTicks();
         SDL_Event event{};
         while (SDL_PollEvent(&event)) {
+            if (auto action = bubble.handle(event)) {
+                if (*action == blob::ProactiveFeedback::QUIET_TODAY || *action == blob::ProactiveFeedback::MUTE)
+                    client.proactiveControl(*action == blob::ProactiveFeedback::QUIET_TODAY);
+                else client.proactiveFeedback(bubble.id(), *action);
+                bubble.hide();
+                if (*action == blob::ProactiveFeedback::REPLY) openChat(true);
+                continue;
+            }
             if (event.type == SDL_QUIT) { running = false; continue; }
             if (event.type == SDL_DROPBEGIN || event.type == SDL_DROPFILE || event.type == SDL_DROPCOMPLETE) {
                 auto drop = input.processEvent(event);
@@ -209,10 +221,24 @@ int runDesktop(int argc, char** argv) {
                 const auto& p = event->privacy();
                 if (p.controls_available()) {
                     status.paused = p.manual_pause();
+                    status.cloud = p.cloud_enabled();
                 }
                 status.shield = p.activated();
             } else if (event->has_notification()) {
-                speakingUntil = now + 1600;
+                const auto& notice = event->notification();
+                if (notice.proactive()) {
+                    const auto wallNow = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::system_clock::now().time_since_epoch()).count();
+                    if (notice.text().empty()) bubble.hide();
+                    else if (ConversationBubble::fresh(event->timestamp_ms(), wallNow) &&
+                             !status.shield && !status.paused && status.cloud && !client.proactiveControlPending() &&
+                             bubble.show(notice, window.getSDLWindow(), now)) {
+                        client.proactiveFeedback(notice.approach_id(), blob::ProactiveFeedback::SHOWN);
+                        expression = BlobExpression::CURIOUS;
+                        intensity = 0.45f; expressionUntil = now + 2500;
+                        speakingUntil = now + 1600;
+                    }
+                } else speakingUntil = now + 1600;
             } else if (event->has_skill_ack()) {
                 expression = event->skill_ack().success() ? BlobExpression::SUCCESS : BlobExpression::ERROR;
                 intensity = 0.7f; expressionUntil = now + 2200;
@@ -232,6 +258,13 @@ int runDesktop(int argc, char** argv) {
             std::cerr << "Backend disconnected. Check completed actions before retrying.\n";
         }
         status.connected = connected; lastConnected = connected;
+        SDL_Rect desktop{};
+        SDL_GetDisplayBounds(std::max(0, SDL_GetWindowDisplayIndex(window.getSDLWindow())), &desktop);
+        const Uint32 flags = SDL_GetWindowFlags(window.getSDLWindow());
+        const bool visible = !(flags & (SDL_WINDOW_HIDDEN | SDL_WINDOW_MINIMIZED));
+        client.desktopPresence(visible, desktop.w, desktop.h);
+        if (!connected || status.shield || status.paused || !status.cloud || !visible) bubble.hide();
+        bubble.update(window.getSDLWindow(), now);
         if (demo) {
             constexpr std::array poses{BlobExpression::IDLE, BlobExpression::HAPPY, BlobExpression::THINKING,
                 BlobExpression::PLAYFUL, BlobExpression::CELEBRATE, BlobExpression::MELTING};

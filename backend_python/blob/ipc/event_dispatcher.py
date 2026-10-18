@@ -19,3 +19,11 @@ class EventDispatcher:
             if queue.full():
                 queue.get_nowait()
             queue.put_nowait(event)
+
+    async def send_to(self, client_id, event):
+        """Low-priority invitations never evict a queued reply or reminder."""
+        queue = self.clients.get(client_id)
+        if queue is None or queue.full():
+            return False
+        queue.put_nowait(event)
+        return True

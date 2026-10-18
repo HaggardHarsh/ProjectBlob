@@ -40,6 +40,9 @@ def main():
     subprocess.run([str(python), "-c", "from PIL import Image; import sys; "
                     "image=Image.open(sys.argv[1]); assert image.getbbox(); image.save(sys.argv[2])",
                     str(candidate / "x11-preview.bmp"), str(candidate / "x11-preview.png")], check=True)
+    subprocess.run([str(python), str(project / "tools/validate_proactive.py"),
+                    "--binary", str(candidate / "frontend/blob_overlay"),
+                    "--report", str(candidate / "proactive-overlay.json")], check=True)
     with tempfile.TemporaryDirectory(prefix="blob-systemd-verify-") as runtime:
         subprocess.run(["systemd-analyze", "--user", "verify",
                         str(candidate / "desktop-preview/systemd/user/blob-backend.service"),
@@ -50,7 +53,7 @@ def main():
     report = {"python": platform.python_version(), "ubuntu_candidate": str(candidate),
               "backend_tests": [{key: suite.attrib.get(key) for key in ("tests", "failures", "errors", "skipped")}
                                 for suite in suites.iter("testsuite")],
-              "x11_overlay": True, "startup_syntax": True}
+              "x11_overlay": True, "proactive_overlay": True, "startup_syntax": True}
     (candidate / "validation.json").write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report))
 

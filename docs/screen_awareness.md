@@ -53,6 +53,9 @@ and writes no screen history, documents, or personal facts. The activity brief m
 be included in a normal cloud chat request when cloud assistance is enabled. Normal
 chat questions/replies remain subject to the existing conversation-memory behavior;
 a reply mentioning a recognized topic may therefore appear in conversation history.
+Separately opting into [occasional conversations](proactive_conversations.md) permits
+bounded background openings using a recognized topic from this brief. That feature
+does not capture additional frames or send raw OCR/pixels to the model.
 The observer does not promote screen-derived information into personal memory.
 Explicitly typed messages and selected attachments use their existing data-sharing
 rules; screen filtering does not rewrite those intentional inputs.

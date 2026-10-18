@@ -105,3 +105,9 @@ add_executable(blob_animation_smoke tests/animation_smoke.cpp src/app/settings.c
 target_include_directories(blob_animation_smoke PRIVATE src)
 target_link_libraries(blob_animation_smoke SDL2::SDL2)
 add_test(NAME blob_animation_smoke COMMAND blob_animation_smoke)
+
+add_executable(blob_bubble_smoke tests/conversation_bubble_smoke.cpp src/ui/conversation_bubble.cpp)
+target_include_directories(blob_bubble_smoke PRIVATE ${CMAKE_CURRENT_BINARY_DIR} src)
+target_link_libraries(blob_bubble_smoke SDL2::SDL2 blob_protocol)
+add_test(NAME blob_bubble_smoke COMMAND blob_bubble_smoke)
+set_tests_properties(blob_bubble_smoke PROPERTIES ENVIRONMENT "SDL_VIDEODRIVER=dummy")

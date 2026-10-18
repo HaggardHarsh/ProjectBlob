@@ -18,6 +18,7 @@ Blob is a living desktop companion — a small blue slime with expressive eyes t
 - **Automatic Screen Awareness** — Opt-in local active-window OCR, with a short-lived activity brief and sensitive-screen filtering. No background model calls or screenshot history.
 - **Persistent Memory** — Blob recalls conversations and consolidates durable user facts across sessions via ChromaDB.
 - **Living Personality** — A warm buddy by default, shown as a small, softly moving slime whose tiny eyes show its mood; Blob follows requests for a different tone.
+- **Occasional Conversations** — Opt-in speech bubbles, at most three a week, with longer pauses when ignored. `/proactive on`, `/proactive quiet`, `/proactive off`. [How it works](docs/proactive_conversations.md).
 - **Expandable Skills** — Built-in tools plus validated `.skill.yaml` files loaded at startup or dropped on Blob.
 - **No local GPU required** — Inference runs through the configured Nebius API.
 

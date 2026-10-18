@@ -696,11 +696,16 @@ class BlobOrchestrator:
         return self._results
 
     def _prune_recent_context(self, marker, identifiers):
-        """Remove affected pairs without erasing unrelated conversation or work."""
+        """Remove affected turns, including an assistant-initiated opening."""
         recent = list(getattr(self, "_recent_turns", ()))
+        groups = []
+        for item in recent:
+            if (not groups or item.get("role") == "user" or
+                    (item.get("role") == "assistant" and groups[-1][-1].get("role") == "assistant")):
+                groups.append([])
+            groups[-1].append(item)
         kept = []
-        for index in range(0, len(recent), 2):
-            pair = recent[index:index + 2]
+        for pair in groups:
             text = pair[0].get("content", "")
             if marker in text and any(identifier in text.split(marker, 1)[1] for identifier in identifiers):
                 continue
@@ -896,6 +901,15 @@ class BlobOrchestrator:
         return filtered
 
     async def handle_user_message(self, user_msg):
+        proactive = getattr(self, "proactive", None)
+        if proactive:
+            proactive.user_activity()
+        if user_msg.text.strip().casefold().split(maxsplit=1)[:1] == ["/proactive"]:
+            text = (await proactive.command(user_msg.text) if proactive else
+                    "Conversation invitations are unavailable. Check the backend's local history/settings before enabling them.")
+            if user_msg.text.strip().casefold() == "/proactive current":
+                return text if proactive else ""
+            return await self._send_direct_response(text, "IDLE")
         if not getattr(user_msg, "attachments", ()):
             try:
                 question, selected = parse_selected_files(user_msg.text)
@@ -963,6 +977,8 @@ class BlobOrchestrator:
             raise
 
     def clear_private_context(self):
+        if getattr(self, "proactive", None):
+            self.proactive.clear_context()
         if getattr(self, "awareness", None):
             self.awareness.clear()
         self._recent_turns.clear()
@@ -984,6 +1000,11 @@ class BlobOrchestrator:
         # File drops and terminal messages share one ordered conversation.
         async with self._conversation_lock():
             stripped = user_msg.text.strip()
+            proactive = getattr(self, "proactive", None)
+            if proactive and stripped and not stripped.startswith("/"):
+                opener = proactive.take_reply()
+                if opener:
+                    self._recent_turns.append({"role": "assistant", "content": opener})
             if stripped and stripped.split(maxsplit=1)[0].lower() in {"/skills", "/reminders"}:
                 result = await self._await_with_progress(
                     handle_skill_command(self.skill_registry, stripped), 3.0, "WAITING")
@@ -1063,6 +1084,8 @@ class BlobOrchestrator:
             return await self._handle_text_message(user_msg)
 
     async def handle_attachment_drop(self, paths):
+        if getattr(self, "proactive", None):
+            self.proactive.user_activity()
         controls = getattr(self, "controls", None)
         try:
             with controls.operation(cloud=True) if controls else nullcontext():

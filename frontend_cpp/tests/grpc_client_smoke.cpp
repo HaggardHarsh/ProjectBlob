@@ -21,6 +21,15 @@ int main(int argc, char** argv) {
         return 1;
     }
     if (argc == 3) {
+        const std::string mode(argv[2]);
+        if (mode == "--mute" || mode == "--quiet") {
+            client.proactiveControl(mode == "--quiet");
+            while (client.proactiveControlPending() && std::chrono::steady_clock::now() < deadline)
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            const bool completed = !client.proactiveControlPending();
+            client.stop();
+            return completed ? 0 : 1;
+        }
         if (!client.installSkill(argv[2])) return 1;
         bool installed = false;
         while (std::chrono::steady_clock::now() < deadline) {

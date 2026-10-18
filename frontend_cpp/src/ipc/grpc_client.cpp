@@ -81,6 +81,20 @@ bool GrpcClient::setCloudEnabled(bool enabled) {
     return true;
 }
 
+bool GrpcClient::proactiveFeedback(const std::string& id, blob::ProactiveFeedback::Action action) {
+    blob::FrontendEvent event;
+    event.mutable_proactive_feedback()->set_approach_id(id);
+    event.mutable_proactive_feedback()->set_action(action);
+    return enqueue(std::move(event));
+}
+
+bool GrpcClient::proactiveControl(bool quietToday) {
+    if (!running_) return false;
+    proactiveChange_ = quietToday ? 1 : 0;
+    condition_.notify_all();
+    return true;
+}
+
 void GrpcClient::run() {
     while (running_) {
         if (!channel_->WaitForConnected(std::chrono::system_clock::now() + 1s)) continue;
@@ -115,7 +129,7 @@ void GrpcClient::run() {
             bool hasEvent = false;
             {
                 std::unique_lock<std::mutex> lock(mutex_);
-                condition_.wait_for(lock, 5s, [&]() { return !running_ || !streamOpen || !outbound_.empty() || privacyToggle_ || cloudChange_ != -1; });
+                condition_.wait_for(lock, 5s, [&]() { return !running_ || !streamOpen || !outbound_.empty() || privacyToggle_ || cloudChange_ != -1 || proactiveChange_ != -1; });
                 if (!running_ || !streamOpen) break;
                 if (!outbound_.empty()) {
                     event = std::move(outbound_.front());
@@ -125,24 +139,43 @@ void GrpcClient::run() {
             }
             const bool toggle = privacyToggle_.exchange(false);
             const int cloud = cloudChange_.exchange(-1);
-            if (toggle || cloud != -1) {
+            proactiveApplying_ = proactiveChange_.load() != -1;
+            const int proactive = proactiveChange_.exchange(-1);
+            if (toggle || cloud != -1 || proactive != -1) {
                 grpc::ClientContext controlContext;
                 authorize(controlContext);
                 controlContext.set_deadline(std::chrono::system_clock::now() + 2s);
                 blob::ConfigUpdate request;
                 if (toggle) (*request.mutable_settings())["privacy_paused"] = "toggle";
-                else (*request.mutable_settings())["cloud_enabled"] = cloud ? "true" : "false";
+                else if (cloud != -1) (*request.mutable_settings())["cloud_enabled"] = cloud ? "true" : "false";
+                else (*request.mutable_settings())["proactive_mode"] = proactive ? "quiet" : "off";
                 // Preserve a simultaneous explicit cloud action for the next pass.
                 if (toggle && cloud != -1) cloudChange_ = cloud;
+                if ((toggle || cloud != -1) && proactive != -1) proactiveChange_ = proactive;
                 blob::ConfigUpdateResponse response;
                 const auto result = stub_->UpdateConfig(&controlContext, request, &response);
                 if (!result.ok() || !response.success()) {
-                    blob::BackendEvent failure;
-                    failure.mutable_notification()->set_text("That setting was not confirmed. Reconnect or check /privacy status before trying again.");
-                    inbound_.push(std::move(failure));
+                    if (!toggle && cloud == -1 && proactive != -1) {
+                        int empty = -1;
+                        proactiveChange_.compare_exchange_strong(empty, proactive);
+                        std::this_thread::sleep_for(1s);
+                    } else {
+                        blob::BackendEvent failure;
+                        failure.mutable_notification()->set_text("That setting was not confirmed. Reconnect or check /privacy status before trying again.");
+                        inbound_.push(std::move(failure));
+                    }
                 }
             }
-            if (!hasEvent) event.mutable_heartbeat()->set_frontend_uptime_ms(0);
+            proactiveApplying_ = false;
+            if (!hasEvent) {
+                auto* heartbeat = event.mutable_heartbeat();
+                heartbeat->set_frontend_uptime_ms(0);
+                heartbeat->set_client_kind(blob::HeartbeatPing::OVERLAY);
+                heartbeat->set_proactive_bubbles(true);
+                heartbeat->set_overlay_visible(visible_);
+                heartbeat->set_desktop_width(desktopWidth_);
+                heartbeat->set_desktop_height(desktopHeight_);
+            }
             if (!stream->Write(event)) {
                 // A failed write may already have reached the backend. Never replay it.
                 streamOpen = false;

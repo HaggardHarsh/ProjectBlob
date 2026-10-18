@@ -1,0 +1,112 @@
+{
+  "checked_at": "2026-10-19T00:29:21.294193+05:30",
+  "source_base_commit": "35c2c6c",
+  "tested_worktree": true,
+  "backend_full_suite": {
+    "passed": 794,
+    "failed": 0,
+    "dependency_warnings": 46
+  },
+  "final_proactive_and_chat_regressions": {
+    "passed": 61,
+    "failed": 0
+  },
+  "native_checks": {
+    "passed": 5,
+    "failed": 0,
+    "native_x11_focus_check": true
+  },
+  "real_model": {
+    "checks": [
+      {
+        "case": "social:day",
+        "passed": true,
+        "opening": "How has your day been so far?"
+      },
+      {
+        "case": "social:small_win",
+        "passed": true,
+        "opening": "What was a tiny bright spot in your day today?"
+      },
+      {
+        "case": "interest:photography",
+        "passed": true,
+        "opening": "What do you like most about taking photos?"
+      },
+      {
+        "case": "screen:Python",
+        "passed": true,
+        "opening": "Which Python feature interests you right now?"
+      },
+      {
+        "case": "social:unwind",
+        "passed": true,
+        "opening": "What activity helps you relax after a long day?"
+      },
+      {
+        "case": "private_memory_never_sent",
+        "passed": true
+      },
+      {
+        "case": "mute_makes_no_provider_call",
+        "passed": true
+      }
+    ],
+    "provider_calls": 5,
+    "passed": true
+  },
+  "compiled_overlay": {
+    "mode": "synthetic-real-cpp-overlay",
+    "real_provider_calls": 0,
+    "checks": [
+      {
+        "case": "real_overlay_reports_compatible_presence",
+        "passed": true
+      },
+      {
+        "case": "backend_sends_bounded_bubble",
+        "passed": true
+      },
+      {
+        "case": "compiled_overlay_decodes_renders_and_acknowledges",
+        "passed": true
+      },
+      {
+        "case": "invitation_does_not_create_user_memory",
+        "passed": true
+      },
+      {
+        "case": "same_session_cannot_offer_again",
+        "passed": true
+      },
+      {
+        "case": "mute_persists_and_prevents_further_inference",
+        "passed": true
+      }
+    ],
+    "passed": true
+  },
+  "installed_wheel_smoke": {
+    "version": "0.1.0",
+    "wheel_import": true,
+    "resources": true,
+    "ipc_import": true,
+    "cloud_opt_in": true,
+    "daemon_without_key": true,
+    "local_reminders": true,
+    "durable_reminder_ack": true,
+    "missing_key_message": true,
+    "openshell_policy": true
+  },
+  "running_application": {
+    "backend_health": "passed",
+    "backend_and_overlay_active": true,
+    "proactive_enabled": true,
+    "existing_cloud_and_awareness_choices_preserved": true
+  },
+  "limits": [
+    "Long-term conversational quality needs beta observation; time was accelerated in tests.",
+    "Presence/call/fullscreen detection is conservative metadata inference.",
+    "Fresh profiles default to opt-in; hosted CI will run on the next push."
+  ]
+}

@@ -39,6 +39,7 @@ message FrontendEvent {
     UserMessage user_message = 4;
     HeartbeatPing heartbeat = 5;
     AttachmentDrop attachment_drop = 6;
+    ProactiveFeedback proactive_feedback = 7;
   }
 }
 
@@ -82,6 +83,18 @@ message UserMessage {
 
 message HeartbeatPing {
   uint64 frontend_uptime_ms = 1;
+  enum ClientKind { UNKNOWN = 0; OVERLAY = 1; CHAT = 2; }
+  ClientKind client_kind = 2;
+  bool proactive_bubbles = 3;
+  bool overlay_visible = 4;
+  uint32 desktop_width = 5;
+  uint32 desktop_height = 6;
+}
+
+message ProactiveFeedback {
+  string approach_id = 1;
+  enum Action { SHOWN = 0; DISMISSED = 1; REPLY = 2; QUIET_TODAY = 3; MUTE = 4; }
+  Action action = 2;
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -166,6 +179,9 @@ message NotificationBubble {
   string action_label = 5; // text for the action button
   bool conversation_reply = 6; // Distinguish final replies from reminder notifications.
   string delivery_id = 7; // Durable reminder; acknowledge after rendering in chat.
+  bool proactive = 8; // Ephemeral invitation, never replayed as a reminder.
+  bytes image_bmp = 9; // Bounded speech-bubble artwork, rendered locally.
+  string approach_id = 10;
 }
 
 message SkillAcknowledgment {

@@ -124,6 +124,11 @@ async def main_async(*, daemon=False):
     awareness = ScreenAwareness(config, screen_sampler, ocr_processor, controls)
     orchestrator.awareness = awareness
     privacy_shield.awareness = awareness
+    from blob.proactive import ProactiveConversation
+    try:
+        orchestrator.proactive = ProactiveConversation(orchestrator)
+    except (OSError, ValueError):
+        logger.warning("Conversation invitations disabled: their local history needs review.")
     reminder_skill.prompt_waiting = lambda: getattr(orchestrator, "_cli_waiting_for_input", False)
     reminder_skill.start()
     
@@ -164,6 +169,8 @@ async def main_async(*, daemon=False):
         asyncio.create_task(orchestrator.semantic.consolidation_loop()),
         asyncio.create_task(awareness.run()),
     ]
+    if getattr(orchestrator, "proactive", None):
+        tasks.append(asyncio.create_task(orchestrator.proactive.run()))
     if not daemon:
         tasks.append(asyncio.create_task(cli_input_loop()))
     
