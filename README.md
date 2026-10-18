@@ -21,6 +21,11 @@ Blob is a living desktop companion — a small blue slime with expressive eyes t
 - **Expandable Skills** — Built-in tools plus validated `.skill.yaml` files loaded at startup or dropped on Blob.
 - **No local GPU required** — Inference runs through the configured Nebius API.
 
+Release preparation is tracked in [launch readiness](docs/launch_readiness.md).
+Automated checks build the backend package, test a fresh installation, and build
+the Linux overlay. The pinned release-test baseline is Linux x86-64 / Python 3.14;
+this does not establish support for every platform listed below.
+
 ---
 
 ## Architecture
@@ -58,7 +63,7 @@ the local transport remains the default. NemoClaw managed inference is separate.
 | **Vision model** | `zai-org/GLM-5.3-Flash` via Nebius |
 | **Memory** | ChromaDB (local vector store) + relevance-gated recall |
 | **Camera** | Optional OpenCV face and full-body detection with local face enrollment |
-| **Frontend** | C++ · SDL2 renderer · optional X11 system tray |
+| **Frontend** | C++ · SDL2 animated overlay · optional X11 system tray |
 | **Backend** | Python 3.11+ · asyncio · gRPC |
 | **Skills** | ReAct loop with built-in tools and validated YAML command skills |
 
@@ -70,7 +75,7 @@ the local transport remains the default. NemoClaw managed inference is separate.
 - **GPU**: ❌ **Not required** — inference runs on Nebius cloud API
 - **Python**: 3.11+
 - **C++ Compiler**: GCC 12+ or Clang 15+
-- **System packages**: `SDL2`, `gRPC`, `Protobuf`; X11 development headers for the optional tray icon
+- **System packages**: `SDL2` (2.0.18+), `gRPC`, `Protobuf`; X11 development headers for the optional tray icon
 - **Screen capture**: A desktop screenshot portal on Wayland; `gnome-screenshot` or `grim` can serve as fallbacks. Install `backend_python[ocr]` separately if you want Blob to read text in captures.
 - **Nebius API Key**: Free at [studio.nebius.ai](https://studio.nebius.ai)
 
@@ -118,7 +123,18 @@ make run-backend-only   # Terminal 1: Python AI backend + CLI chat
 make run-frontend       # Terminal 2: C++ slime overlay
 ```
 
-Chat at the backend's `Blob>` terminal prompt. The small desktop slime shows emotions and accepts dropped files. Drag it to move it; click for a little jiggle. Right-click Blob or its optional X11 tray icon to toggle privacy pause. Double-click Blob or left-click its tray icon to open a reconnecting chat terminal. Drop a `.skill.yaml` file onto Blob to install it.
+Double-click Blob or left-click its tray icon to open terminal chat. The slime
+reacts to pokes and dragging and accepts dropped files. Right-click Blob or its
+tray icon to toggle privacy pause. Use terminal commands for cloud and privacy
+settings. `make chat` also opens terminal chat. Drop a `.skill.yaml` file onto Blob
+to install it.
+See [desktop frontend](docs/desktop_frontend.md).
+
+New installations start with cloud assistance **off**, even if an API key is set.
+Read `/privacy explain`, then use `/privacy cloud on` to enable provider requests
+and background memory consolidation. Local commands and reminders work without an
+API key. Existing saved cloud settings are preserved on upgrade. Automatic screen
+awareness remains a separate opt-in.
 
 ### Always-on desktop mode and privacy controls
 
@@ -135,6 +151,7 @@ protects every RPC; the server accepts only loopback or Unix-socket addresses.
 
 ```text
 /privacy status
+/privacy explain
 /privacy pause
 /privacy resume
 /privacy cloud off
@@ -397,7 +414,7 @@ Blob enforces a **zero-trust privacy shield**:
 2. **Sensitive app detection**: Banking sites, password managers, and incognito windows trigger an automatic blindfold
 3. **Screen captures are temporary**: Command-line capture backends may briefly write a temporary PNG, which Blob removes after loading it.
 4. **Memory is local**: ChromaDB uses `~/.blob/memory/chromadb/` by default for new installations.
-5. **Configurable blacklist**: Edit `backend_python/data/blacklist.yaml` to add your own patterns
+5. **Configurable blacklist**: Edit `backend_python/blob/data/blacklist.yaml` to add your own patterns
 
 ---
 

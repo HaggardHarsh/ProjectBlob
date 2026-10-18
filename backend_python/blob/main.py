@@ -136,14 +136,9 @@ async def main_async(*, daemon=False):
     
     # Simple CLI debug input loop
     async def cli_input_loop():
-        print("\n\033[92m╔══════════════════════════════════════════════╗\033[0m")
-        print("\033[92m║   🟦 Project Blob — Rimuru AI Companion 🟦   ║\033[0m")
-        print("\033[92m╚══════════════════════════════════════════════╝\033[0m")
-        print("\033[90mType a message to chat. Ctrl+C to quit.\033[0m\n")
-        print("\033[90mDrop PDFs or images onto Blob to analyze them here. /files lists them; /files clear detaches them.\033[0m\n")
-        print("\033[90mSaved files survive restarts. /files saved lists copies; /files forget <id|all> deletes them.\033[0m\n")
-        print("\033[90mCompleted file answers survive source deletion. /results lists them; /results show <id> reopens one.\033[0m\n")
-        print("\033[90m/skills lists tools. /reminders lists reminders; /reminders help shows scheduling commands.\033[0m\n")
+        print("\nBlob — Cloud assistance: " + ("on" if controls.cloud_enabled else "off"))
+        print("Type a message to chat. Ctrl+C to quit.")
+        print("Privacy: /privacy status for settings; /privacy explain for data-sharing details.\n")
         while True:
             try:
                 orchestrator._cli_waiting_for_input = True

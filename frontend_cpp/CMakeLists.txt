@@ -7,6 +7,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # ─── Find Dependencies ───
 find_package(SDL2 REQUIRED CONFIG)
+if(DEFINED SDL2_VERSION AND SDL2_VERSION VERSION_LESS "2.0.18")
+    message(FATAL_ERROR "Blob needs SDL 2.0.18 or newer for smooth geometry rendering")
+endif()
 find_package(gRPC CONFIG REQUIRED)
 find_package(X11 QUIET)
 
@@ -93,3 +96,12 @@ add_executable(blob_attachment_drop_smoke
 target_include_directories(blob_attachment_drop_smoke PRIVATE ${CMAKE_CURRENT_BINARY_DIR} src)
 target_link_libraries(blob_attachment_drop_smoke SDL2::SDL2 blob_protocol)
 add_test(NAME blob_attachment_drop_smoke COMMAND blob_attachment_drop_smoke)
+
+add_test(NAME blob_desktop_headless COMMAND blob_overlay --demo --frames 3)
+set_tests_properties(blob_desktop_headless PROPERTIES ENVIRONMENT "SDL_VIDEODRIVER=dummy")
+
+add_executable(blob_animation_smoke tests/animation_smoke.cpp src/app/settings.cpp
+    src/blob/animation.cpp src/blob/physics.cpp)
+target_include_directories(blob_animation_smoke PRIVATE src)
+target_link_libraries(blob_animation_smoke SDL2::SDL2)
+add_test(NAME blob_animation_smoke COMMAND blob_animation_smoke)

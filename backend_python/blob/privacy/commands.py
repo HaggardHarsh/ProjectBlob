@@ -4,7 +4,14 @@ import json
 import shlex
 
 
-PRIVACY_HELP = """/privacy status | pause | resume | cloud on|off
+DATA_SHARING_NOTICE = """Blob stores conversation memory, selected document copies, generated answers, reminders and enrolled face samples locally. Local stores are not encrypted by Blob.
+Cloud assistance sends your messages, relevant recalled memories, selected document text/images and tool results to the configured AI provider (Nebius by default). Web searches send queries to the search provider; page reading and browser lookups contact the selected websites.
+Automatic screen shielding blocks screen capture and some storage; it does not turn off cloud chat. /privacy pause blocks new cloud requests, capture, camera and memory writes. Local reminders continue. /privacy cloud off blocks cloud assistance and web tools.
+Automatic screen awareness is off until /awareness on. Camera access occurs only on request. Enabling cloud assistance also permits background memory consolidation of eligible user statements.
+Use /memory, /files saved, /results, /reminders and /camera list to inspect each store; their deletion commands are separate. Data already sent to providers cannot be recalled by Blob.
+New installations start with cloud assistance off. Use /privacy cloud on to enable it after reviewing this notice, or leave it off for local commands."""
+
+PRIVACY_HELP = """/privacy status | explain | pause | resume | cloud on|off
 /privacy folders | allow /path/to/folder | revoke /path/to/folder
 /privacy disable <skill> | enable <skill>
 Privacy pause blocks cloud requests, capture, camera and new memory writes.
@@ -22,6 +29,8 @@ async def handle_control_command(orchestrator, command):
         parts = shlex.split(command)
         verb = parts[1].lower() if len(parts) > 1 else "status"
         if parts[0].lower() == "/privacy":
+            if verb == "explain" and len(parts) == 2:
+                return DATA_SHARING_NOTICE
             if verb in {"status", "folders"} and len(parts) <= 2:
                 return json.dumps(controls.state, indent=2)
             if verb in {"pause", "resume"} and len(parts) == 2:
@@ -38,7 +47,11 @@ async def handle_control_command(orchestrator, command):
                 controls.update(cloud_enabled=parts[2] == "on")
                 if not controls.cloud_enabled:
                     controls.cancel_requests()
-                return "Cloud assistance " + parts[2] + "."
+                shield = getattr(getattr(orchestrator, "screen_sampler", None), "privacy_shield", None)
+                if shield:
+                    await shield._broadcast_state(shield.is_capture_blocked(), "Cloud settings updated")
+                return ("Cloud assistance on. Messages, relevant memories, selected content and tool results may now go to your AI provider. Web tools contact search providers and websites. Background memory consolidation is enabled. Use /privacy explain for details or /privacy cloud off to stop new requests."
+                        if controls.cloud_enabled else "Cloud assistance off.")
             if verb == "allow" and len(parts) == 3:
                 return f"Approved read-only folder: {controls.approve(parts[2])}"
             if verb == "revoke" and len(parts) == 3:

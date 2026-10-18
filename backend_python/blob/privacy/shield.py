@@ -25,6 +25,10 @@ class PrivacyShield:
         event = blob_service_pb2.BackendEvent()
         event.privacy.activated = active
         event.privacy.reason = reason
+        if getattr(self, "controls", None):
+            event.privacy.controls_available = True
+            event.privacy.manual_pause = self.controls.paused
+            event.privacy.cloud_enabled = self.controls.cloud_enabled
         await self.event_dispatcher.broadcast(event)
 
     def is_capture_blocked(self) -> bool:

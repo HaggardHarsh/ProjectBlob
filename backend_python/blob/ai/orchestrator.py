@@ -14,7 +14,7 @@ from contextlib import nullcontext
 from blob.privacy.controls import PrivacyBlocked
 from blob.privacy.commands import handle_control_command
 from blob.privacy.screen_filter import app_category
-from blob.ai.llm_engine import NebiusEngine
+from blob.ai.llm_engine import NebiusEngine, ProviderConfigurationError
 from blob.ai.response_format import FORMAT_CORRECTION, FORMAT_FAILURE, correction_messages, display_text, has_tool_protocol
 from blob.ai.web_grounding import OFFICIAL_DOMAINS, live_product_query, mentions_requested_product, product_names, requested_system_tools
 from blob.ai.attachments import AttachmentReader, AttachmentError, MAX_IMAGES, parse_selected_files
@@ -890,6 +890,10 @@ class BlobOrchestrator:
                     conversation_id=getattr(user_msg, "conversation_id", ""))
         controls = getattr(self, "controls", None)
         command = user_msg.text.strip().split(maxsplit=1)[0].lower() if user_msg.text.strip() else ""
+        if controls and user_msg.text.strip().lower() == "/stop":
+            controls.cancel_requests()
+            return await self._send_direct_response(
+                "Stop requested. Completed actions were not undone.", "IDLE")
         camera_action = _requested_camera_action(user_msg.text, getattr(self, "_last_camera_action", None))
         if command != "/camera" and camera_action is None:
             self._last_camera_action = None
@@ -928,7 +932,12 @@ class BlobOrchestrator:
         try:
             # Paused local controls do not need a tracked operation.
             with controls.operation(cloud=not local) if controls and not controls.paused else nullcontext():
+                if not local and isinstance(getattr(self, "llm", None), NebiusEngine):
+                    self.llm.validate_configuration()
                 return await self._handle_user_message(user_msg)
+        except ProviderConfigurationError as exc:
+            self._clear_thinking()
+            return await self._send_direct_response(str(exc), "CONFUSED")
         except PrivacyBlocked as exc:
             return await self._send_direct_response(str(exc), "IDLE")
         except asyncio.CancelledError:
@@ -1032,7 +1041,12 @@ class BlobOrchestrator:
         controls = getattr(self, "controls", None)
         try:
             with controls.operation(cloud=True) if controls else nullcontext():
+                if isinstance(getattr(self, "llm", None), NebiusEngine):
+                    self.llm.validate_configuration()
                 return await self._handle_attachment_drop(paths)
+        except ProviderConfigurationError as exc:
+            self._clear_thinking()
+            return await self._send_direct_response(str(exc), "CONFUSED")
         except PrivacyBlocked as exc:
             return await self._send_direct_response(str(exc), "IDLE")
         except asyncio.CancelledError:
@@ -1859,6 +1873,7 @@ class BlobOrchestrator:
         # Dispatch text response to frontend
         resp_event = blob_service_pb2.BackendEvent()
         resp_event.notification.text = final_response
+        resp_event.notification.conversation_reply = True
         await self.event_dispatcher.broadcast(resp_event)
 
         self._clear_thinking()
@@ -1881,6 +1896,7 @@ class BlobOrchestrator:
         await self.dispatch_emote(emote)
         event = blob_service_pb2.BackendEvent()
         event.notification.text = text
+        event.notification.conversation_reply = True
         await self.event_dispatcher.broadcast(event)
         print(f"\nBlob: {text}\n")
         return text

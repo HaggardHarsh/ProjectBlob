@@ -20,7 +20,8 @@ BlobPose targetPose(BlobExpression expression, float intensity, float t, float a
         case BlobExpression::IDLE:
         case BlobExpression::WAITING:
         case BlobExpression::CURIOUS:
-            p.gazeX = (std::sin(t * 0.71f) > 0.78f ? 1.0f : 0.0f) * weight;
+            p.gazeX = 0.55f * std::sin(t * 0.53f) * std::sin(t * 0.19f);
+            p.gazeY = 0.15f * std::sin(t * 0.41f);
             if (expression == BlobExpression::CURIOUS) {
                 p.lean = 0.05f * weight; p.eyeSize = 1.12f; p.mouthSmile = 0.9f;
             }
@@ -195,19 +196,37 @@ void AnimationController::setBlend(BlobExpression secondary, float amount) {
     blend_ = unit(amount);
 }
 
+void AnimationController::setAttention(float x, float y, bool hovered) {
+    attentionX_ = std::clamp(x, -1.0f, 1.0f);
+    attentionY_ = std::clamp(y, -1.0f, 1.0f);
+    hovered_ = hovered;
+}
+
 void AnimationController::update(float dt) {
+    if (!std::isfinite(dt) || dt <= 0.0f) return;
     dt = std::clamp(dt, 0.0f, 0.05f);
     time_ += dt;
     expressionTime_ += dt;
-    BlobPose target = targetPose(expression_, intensity_, time_, expressionTime_);
+    const float motionTime = reducedMotion_ ? 0.0f : time_;
+    const float age = reducedMotion_ ? 2.0f : expressionTime_;
+    BlobPose target = targetPose(expression_, intensity_, motionTime, age);
     if (blend_ > 0.0f) {
-        const BlobPose second = targetPose(secondary_, intensity_, time_, expressionTime_);
+        const BlobPose second = targetPose(secondary_, intensity_, motionTime, age);
 #define MIX(field) target.field += (second.field - target.field) * blend_
         MIX(height); MIX(width); MIX(lift); MIX(lean); MIX(shake); MIX(arms); MIX(melt);
         MIX(eyeOpen); MIX(eyeSize); MIX(eyeTilt); MIX(eyeAsymmetry); MIX(gazeX); MIX(gazeY);
         MIX(mouthSmile); MIX(mouthOpen); MIX(mouthRound); MIX(mouthWidth); MIX(mouthSkew);
         MIX(blush); MIX(sweat); MIX(bubbles); MIX(workFlow); MIX(sparkles); MIX(glitch);
 #undef MIX
+    }
+    if (hovered_ && (expression_ == BlobExpression::IDLE || expression_ == BlobExpression::LISTENING)) {
+        target.gazeX = attentionX_;
+        target.gazeY = attentionY_;
+        target.eyeSize += 0.06f;
+        target.mouthSmile += 0.12f;
+    }
+    if (reducedMotion_) {
+        target.shake = target.lift = target.lean = target.glitch = 0.0f;
     }
     const float speed = expression_ == BlobExpression::SHOCKED || expression_ == BlobExpression::EXTREME_SHOCK
                             ? 24.0f : expression_ == BlobExpression::MELTING ? 5.0f : 10.0f;
@@ -218,8 +237,13 @@ void AnimationController::update(float dt) {
     BLEND(mouthSmile); BLEND(mouthOpen); BLEND(mouthRound); BLEND(mouthWidth); BLEND(mouthSkew);
     BLEND(blush); BLEND(sweat); BLEND(bubbles); BLEND(workFlow); BLEND(sparkles); BLEND(glitch);
 #undef BLEND
-    if (expression_ == BlobExpression::IDLE || expression_ == BlobExpression::WAITING) {
-        const float cycle = std::fmod(time_ + 0.18f * std::sin(time_ * 0.29f), 4.7f);
-        if (cycle < 0.11f) pose_.eyeOpen *= std::max(0.05f, cycle / 0.11f);
+    if (!reducedMotion_ && (expression_ == BlobExpression::IDLE || expression_ == BlobExpression::WAITING ||
+                           expression_ == BlobExpression::LISTENING)) {
+        const float cycle = std::fmod(time_ + 0.12f * std::sin(time_ * 0.31f), 4.9f);
+        // Close and reopen within one short blink, without accumulating closure.
+        if (cycle > 3.7f && cycle < 3.9f) {
+            const float closure = std::sin((cycle - 3.7f) / 0.2f * 3.14159265f);
+            pose_.eyeOpen *= 1.0f - 0.95f * closure;
+        }
     }
 }

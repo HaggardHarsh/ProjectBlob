@@ -1,11 +1,14 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "blob-backend"
 version = "0.1.0"
 description = "Project Blob AI Backend"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
     "grpcio>=1.59.0",
@@ -26,7 +29,7 @@ dependencies = [
 ocr = ["easyocr>=1.7.1"]
 vision = ["opencv-contrib-python>=4.8,<5"]
 web = ["aiohttp>=3.12,<4", "ddgs>=9,<10", "playwright>=1.49,<2"]
-dev = ["pytest>=7.4.0", "pytest-asyncio>=0.21.0"]
+dev = ["pytest>=7.4.0", "pytest-asyncio>=0.21.0", "build>=1.2", "setuptools>=77.0.3"]
 
 [project.scripts]
 blob-backend = "blob.main:main"
@@ -39,4 +42,4 @@ include = ["blob*"]
 exclude = ["data*", "tests*"]
 
 [tool.setuptools.package-data]
-blob = ["../data/*.yaml"]
+blob = ["data/*.yaml"]

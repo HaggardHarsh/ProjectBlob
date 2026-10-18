@@ -34,6 +34,8 @@ public:
     void stampShape(const std::vector<Vec2>& vertices, float cx, float cy);
 
     SDL_Surface* getShapeSurface() const { return shapeSurface_; }
+    SDL_Renderer* native() const { return sdlRenderer_; }
+    void drawShadow(float cx, float baseline, float rx, float lift);
 
 private:
     void fillCircle(int cx, int cy, int r, Color color);
@@ -43,5 +45,6 @@ private:
 
     SDL_Renderer* sdlRenderer_ = nullptr;
     SDL_Surface*  shapeSurface_ = nullptr;
+    SDL_Texture* scene_ = nullptr;
     int width_, height_;
 };

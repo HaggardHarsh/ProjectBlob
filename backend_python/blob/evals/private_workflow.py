@@ -57,6 +57,8 @@ def make_assistant(root, events, calls, *, live, model=None, memory_model=None):
     if not live:
         config.nebius_api_key = "offline-evaluation"
     controls = PrivacyControls(config.privacy_settings_path)
+    # The evaluation's synthetic store must opt in just like a new installation.
+    controls.update(cloud_enabled=True)
     registry = SkillRegistry(config.skills_dir_path, controls=controls)
     reminder = ReminderSkill(config.reminders_db_path)
     reminder.set_dispatcher(events)

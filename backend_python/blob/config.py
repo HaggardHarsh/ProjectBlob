@@ -10,6 +10,15 @@ try:
 except ImportError:
     pass
 
+
+def default_resource(filename):
+    # Retain existing customized defaults in source checkouts; installed wheels
+    # own their resources inside the package, never in a generic site-packages/data.
+    legacy = Path(__file__).resolve().parents[1] / "data" / filename
+    checkout = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    return str(legacy if checkout.is_file() and legacy.is_file() else Path(__file__).resolve().parent / "data" / filename)
+
+
 class BlobConfig(BaseModel):
     ipc_address: str = Field(default="localhost:50051")
     ipc_token_path: str = Field(default_factory=lambda: str(Path.home() / ".blob/ipc.token"))
@@ -28,7 +37,7 @@ class BlobConfig(BaseModel):
     openshell_workspace: str = Field(default="default", pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$")
     openshell_config_dir: str = ""
     openshell_image: str = "localhost/blob-hermes:783637e3"
-    openshell_policy_path: str = Field(default_factory=lambda: str(Path(__file__).resolve().parents[2] / "deploy/openshell/policy.yaml"))
+    openshell_policy_path: str = Field(default_factory=lambda: default_resource("openshell_policy.yaml"))
     hermes_python: str = Field(default_factory=lambda: str(Path(__file__).resolve().parents[2] / ".runtime/hermes-venv/bin/python"))
     hermes_source_path: str = Field(default_factory=lambda: str(Path(__file__).resolve().parents[2] / ".runtime/hermes"))
     agent_timeout_seconds: int = Field(default=120, ge=5, le=600)
@@ -36,8 +45,8 @@ class BlobConfig(BaseModel):
     web_search_provider: Literal["duckduckgo", "brave"] = "duckduckgo"
     brave_search_api_key: str = Field(default="", repr=False)
     memory_db_path: str = Field(default_factory=lambda: str(Path.home() / ".blob/memory/chromadb"))
-    blacklist_path: str = Field(default_factory=lambda: str(Path(__file__).resolve().parents[1] / "data/blacklist.yaml"))
-    personality_path: str = Field(default_factory=lambda: str(Path(__file__).resolve().parents[1] / "data/blob_personality.yaml"))
+    blacklist_path: str = Field(default_factory=lambda: default_resource("blacklist.yaml"))
+    personality_path: str = Field(default_factory=lambda: default_resource("blob_personality.yaml"))
     camera_enabled: bool = True
     camera_device_index: int = 0
     face_db_path: str = Field(default_factory=lambda: str(Path.home() / ".blob/faces"))

@@ -9,6 +9,11 @@ from contextlib import nullcontext
 
 logger = logging.getLogger(__name__)
 
+
+class ProviderConfigurationError(ValueError):
+    """A provider request cannot start until the user configures credentials."""
+
+
 class LLMEngine(abc.ABC):
     @abc.abstractmethod
     async def generate(self, prompt: str, context: str, system_prompt: str, tools: list = None) -> str:
@@ -25,12 +30,31 @@ class LLMEngine(abc.ABC):
 
 class NebiusEngine(LLMEngine):
     def __init__(self, api_key: str, base_url: str, model_name: str, *, controls=None):
-        self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        self._api_key = api_key
+        self._base_url = base_url
+        self._client = None
         self.model_name = model_name
         self._vision_model = None
         self._vision_checked = False
         self.controls = controls
         self.chat_thinking_enabled = os.environ.get("BLOB_CHAT_THINKING", "").lower() in {"1", "true", "yes", "on"}
+
+    def validate_configuration(self):
+        if not self._api_key.strip() or self._api_key in {"your_nebius_api_key_here", "your_key_here"}:
+            raise ProviderConfigurationError(
+                "Cloud assistance needs an API key. Set NEBIUS_API_KEY in your private .env file and restart Blob. "
+                "Local commands still work; /privacy cloud off disables cloud assistance.")
+
+    @property
+    def client(self):
+        if self._client is None:
+            self.validate_configuration()
+            self._client = AsyncOpenAI(api_key=self._api_key, base_url=self._base_url)
+        return self._client
+
+    @client.setter
+    def client(self, client):
+        self._client = client
 
     async def _create(self, **kwargs):
         controls = getattr(self, "controls", None)

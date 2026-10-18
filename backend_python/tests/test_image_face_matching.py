@@ -133,6 +133,7 @@ def photo_chat(tmp_path):
     instance.config.documents_dir_path = str(tmp_path / "documents")
     instance.config.memory_db_path = str(tmp_path / "memory")
     instance.controls = PrivacyControls(tmp_path / "privacy.json")
+    instance.controls.update(cloud_enabled=True)
     vision = SimpleNamespace(enabled=True, match_image=MagicMock(return_value={
         "enrolled": True, "faces": [{"name": "Cloudie"}]}),
         scan=MagicMock(side_effect=AssertionError("Photo opened webcam")), enroll=MagicMock())

@@ -1,5 +1,6 @@
 #include "window.h"
 #include <iostream>
+#include <algorithm>
 
 OverlayWindow::OverlayWindow(int w, int h) : width_(w), height_(h) {
     // SDL_CreateShapedWindow creates a non-rectangular window whose visible
@@ -24,26 +25,33 @@ OverlayWindow::OverlayWindow(int w, int h) : width_(w), height_(h) {
         }
     }
 
-    SDL_Rect usable{};
-    const int display = SDL_GetWindowDisplayIndex(window_);
-    if (display >= 0 && SDL_GetDisplayUsableBounds(display, &usable) == 0) {
-        SDL_SetWindowPosition(window_, usable.x + usable.w - width_ - 24,
-                             usable.y + usable.h - height_ - 24);
-    }
+    resetPosition();
     SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
 }
 
 OverlayWindow::~OverlayWindow() {
+    if (scaledShape_) SDL_FreeSurface(scaledShape_);
     if (window_) SDL_DestroyWindow(window_);
 }
 
 void OverlayWindow::updateShape(SDL_Surface* shapeSurface) {
     if (!shapeSurface) return;
     if (SDL_IsShapedWindow(window_)) {
+        SDL_Surface* mask = shapeSurface;
+        if (shapeSurface->w != width_ || shapeSurface->h != height_) {
+            if (!scaledShape_ || scaledShape_->w != width_ || scaledShape_->h != height_) {
+                if (scaledShape_) SDL_FreeSurface(scaledShape_);
+                scaledShape_ = SDL_CreateRGBSurfaceWithFormat(0, width_, height_, 32, SDL_PIXELFORMAT_RGBA32);
+            }
+            if (!scaledShape_) return;
+            SDL_SetSurfaceBlendMode(shapeSurface, SDL_BLENDMODE_NONE);
+            SDL_BlitScaled(shapeSurface, nullptr, scaledShape_, nullptr);
+            mask = scaledShape_;
+        }
         SDL_WindowShapeMode mode;
         mode.mode = ShapeModeBinarizeAlpha;
         mode.parameters.binarizationCutoff = 1;
-        SDL_SetWindowShape(window_, shapeSurface, &mode);
+        SDL_SetWindowShape(window_, mask, &mode);
         shapedOnce_ = true;
     }
 }
@@ -76,4 +84,36 @@ void OverlayWindow::updateDragRelative(int xrel, int yrel) {
 void OverlayWindow::stopDrag() {
     dragging_ = false;
     SDL_CaptureMouse(SDL_FALSE);
+}
+
+void OverlayWindow::resetPosition() {
+    SDL_Rect usable{};
+    int display = SDL_GetWindowDisplayIndex(window_);
+    if (SDL_GetDisplayUsableBounds(std::max(0, display), &usable) == 0)
+        SDL_SetWindowPosition(window_, usable.x + std::max(0, usable.w - width_ - 24),
+                             usable.y + std::max(0, usable.h - height_ - 24));
+}
+
+void OverlayWindow::restorePosition(int x, int y) {
+    for (int display = 0; display < SDL_GetNumVideoDisplays(); ++display) {
+        SDL_Rect area{};
+        if (SDL_GetDisplayUsableBounds(display, &area)) continue;
+        const long long right = static_cast<long long>(x) + width_;
+        const long long bottom = static_cast<long long>(y) + height_;
+        if (right > area.x && x < static_cast<long long>(area.x) + area.w &&
+            bottom > area.y && y < static_cast<long long>(area.y) + area.h) {
+            SDL_SetWindowPosition(window_, std::clamp(x, area.x, area.x + std::max(0, area.w - width_)),
+                                 std::clamp(y, area.y, area.y + std::max(0, area.h - height_)));
+            return;
+        }
+    }
+    resetPosition();
+}
+
+void OverlayWindow::resize(int width, int height) {
+    int x, y; SDL_GetWindowPosition(window_, &x, &y);
+    const int previousW = width_, previousH = height_;
+    width_ = width; height_ = height;
+    SDL_SetWindowSize(window_, width, height);
+    restorePosition(x + previousW - width, y + previousH - height);
 }

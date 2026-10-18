@@ -39,8 +39,9 @@ void GrpcClient::stop() {
 
 bool GrpcClient::enqueue(blob::FrontendEvent event) {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (!running_ || outbound_.size() >= 100) return false;
-    outbound_.push_back(std::move(event));
+    if (!running_ || !connected_ || outbound_.size() >= 100) return false;
+    if (event.has_user_message() && event.user_message().text() == "/stop") outbound_.push_front(std::move(event));
+    else outbound_.push_back(std::move(event));
     condition_.notify_one();
     return true;
 }
@@ -66,9 +67,18 @@ bool GrpcClient::installSkill(const std::string& path) {
     return enqueue(std::move(event));
 }
 
-void GrpcClient::togglePrivacy() {
+bool GrpcClient::togglePrivacy() {
+    if (!connected_) return false;
     privacyToggle_ = true;
     condition_.notify_all();
+    return true;
+}
+
+bool GrpcClient::setCloudEnabled(bool enabled) {
+    if (!connected_) return false;
+    cloudChange_ = enabled ? 1 : 0;
+    condition_.notify_all();
+    return true;
 }
 
 void GrpcClient::run() {
@@ -105,7 +115,7 @@ void GrpcClient::run() {
             bool hasEvent = false;
             {
                 std::unique_lock<std::mutex> lock(mutex_);
-                condition_.wait_for(lock, 5s, [&]() { return !running_ || !streamOpen || !outbound_.empty() || privacyToggle_; });
+                condition_.wait_for(lock, 5s, [&]() { return !running_ || !streamOpen || !outbound_.empty() || privacyToggle_ || cloudChange_ != -1; });
                 if (!running_ || !streamOpen) break;
                 if (!outbound_.empty()) {
                     event = std::move(outbound_.front());
@@ -113,21 +123,28 @@ void GrpcClient::run() {
                     hasEvent = true;
                 }
             }
-            if (privacyToggle_.exchange(false)) {
+            const bool toggle = privacyToggle_.exchange(false);
+            const int cloud = cloudChange_.exchange(-1);
+            if (toggle || cloud != -1) {
                 grpc::ClientContext controlContext;
                 authorize(controlContext);
                 controlContext.set_deadline(std::chrono::system_clock::now() + 2s);
                 blob::ConfigUpdate request;
-                (*request.mutable_settings())["privacy_paused"] = "toggle";
+                if (toggle) (*request.mutable_settings())["privacy_paused"] = "toggle";
+                else (*request.mutable_settings())["cloud_enabled"] = cloud ? "true" : "false";
+                // Preserve a simultaneous explicit cloud action for the next pass.
+                if (toggle && cloud != -1) cloudChange_ = cloud;
                 blob::ConfigUpdateResponse response;
-                stub_->UpdateConfig(&controlContext, request, &response);
+                const auto result = stub_->UpdateConfig(&controlContext, request, &response);
+                if (!result.ok() || !response.success()) {
+                    blob::BackendEvent failure;
+                    failure.mutable_notification()->set_text("That setting was not confirmed. Reconnect or check /privacy status before trying again.");
+                    inbound_.push(std::move(failure));
+                }
             }
             if (!hasEvent) event.mutable_heartbeat()->set_frontend_uptime_ms(0);
             if (!stream->Write(event)) {
-                if (hasEvent) {
-                    std::lock_guard<std::mutex> lock(mutex_);
-                    outbound_.push_front(std::move(event));
-                }
+                // A failed write may already have reached the backend. Never replay it.
                 streamOpen = false;
                 break;
             }
@@ -140,6 +157,12 @@ void GrpcClient::run() {
             activeContext_ = nullptr;
         }
         connected_ = false;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            outbound_.clear();
+        }
+        privacyToggle_ = false;
+        cloudChange_ = -1;
         if (running_) std::this_thread::sleep_for(500ms);
     }
 }

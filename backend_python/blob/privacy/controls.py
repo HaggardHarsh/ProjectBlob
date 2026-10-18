@@ -19,7 +19,7 @@ class PrivacyControls:
         self.lock = threading.RLock()
         self.tasks = set()
         self.generation = 0
-        self.state = {"paused": False, "cloud_enabled": True, "approved_folders": [], "disabled_skills": [],
+        self.state = {"paused": False, "cloud_enabled": False, "approved_folders": [], "disabled_skills": [],
                       "awareness_enabled": False}
         if self.path.exists():
             data = json.loads(self.path.read_text())
@@ -87,7 +87,7 @@ class PrivacyControls:
         if self.paused:
             raise PrivacyBlocked("Privacy pause is active. Use /privacy resume to continue.")
         if cloud and not self.cloud_enabled:
-            raise PrivacyBlocked("Cloud assistance is off. Local commands still work; use /privacy cloud on to enable it.")
+            raise PrivacyBlocked("Cloud assistance is off. Local commands still work. /privacy explain describes data sharing; /privacy cloud on enables it.")
 
     @contextmanager
     def writing(self):

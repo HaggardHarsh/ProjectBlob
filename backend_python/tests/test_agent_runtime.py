@@ -127,6 +127,7 @@ async def test_cloud_off_prevents_starting_worker(tmp_path):
 @pytest.mark.asyncio
 async def test_privacy_pause_cancels_the_worker_and_its_child_process(tmp_path):
     controls = PrivacyControls(tmp_path / "private" / "privacy.json")
+    controls.update(cloud_enabled=True)
     marker = tmp_path / "pids"
     runtime = bridge(tmp_path, f'''
 import subprocess

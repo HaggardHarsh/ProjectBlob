@@ -19,15 +19,22 @@ public:
     void applyForce(Vec2 force);
     void jiggle();
     void squash(float amount);
+    void setReducedMotion(bool value) { reducedMotion_ = value; }
+    void setDrag(float horizontal) { dragTarget_ = std::clamp(horizontal, -1.0f, 1.0f); }
 
 private:
+    float poseCenterY() const;
     float radiusX_;
     float topRadiusY_;
     float bottomRadiusY_;
     float centerX_;
     float centerY_;
+    float windowHeight_;
     float time_ = 0.0f;
     float wobble_ = 0.0f;
     float squash_ = 0.0f;
+    float wobbleVelocity_ = 0.0f;
+    float dragTarget_ = 0.0f, drag_ = 0.0f;
+    bool reducedMotion_ = false;
     BlobPose pose_{};
 };

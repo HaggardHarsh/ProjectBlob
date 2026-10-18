@@ -44,6 +44,8 @@ def make_assistant(root, runtime, *, live):
     # Same fast vision model for both runtimes; timeout recovery is checked separately.
     config.vision_model_name = "openbmb/MiniCPM-V-4_5"
     controls = PrivacyControls(root / "privacy.json")
+    # This isolated evaluation explicitly opts in for its synthetic requests.
+    controls.update(cloud_enabled=True)
     registry = SkillRegistry(root / "skills", controls=controls)
     registry.register(ReminderSkill(root / "reminders.sqlite3"))
     camera = SimpleNamespace(scan_calls=0)

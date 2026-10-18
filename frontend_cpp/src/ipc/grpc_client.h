@@ -22,7 +22,8 @@ public:
     bool sendMessage(const std::string& text);
     bool attachFiles(const std::vector<std::string>& paths);
     bool installSkill(const std::string& path);
-    void togglePrivacy();
+    bool togglePrivacy();
+    bool setCloudEnabled(bool enabled);
     std::optional<blob::BackendEvent> pollEvent() { return inbound_.tryPop(); }
     bool isConnected() const { return connected_.load(); }
 
@@ -37,6 +38,7 @@ private:
     std::atomic<bool> running_{false};
     std::atomic<bool> connected_{false};
     std::atomic<bool> privacyToggle_{false};
+    std::atomic<int> cloudChange_{-1};
     std::mutex mutex_;
     std::condition_variable condition_;
     std::deque<blob::FrontendEvent> outbound_;

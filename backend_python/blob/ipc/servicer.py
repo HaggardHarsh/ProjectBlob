@@ -55,6 +55,11 @@ class BlobServiceServicer(blob_service_pb2_grpc.BlobServiceServicer):
         if shield:
             initial = blob_service_pb2.BackendEvent()
             initial.privacy.activated = shield.is_capture_blocked()
+            controls = getattr(self.orchestrator, "controls", None)
+            if controls:
+                initial.privacy.controls_available = True
+                initial.privacy.manual_pause = controls.paused
+                initial.privacy.cloud_enabled = controls.cloud_enabled
             queue.put_nowait(initial)
         
         async def read_requests():
@@ -129,6 +134,7 @@ class BlobServiceServicer(blob_service_pb2_grpc.BlobServiceServicer):
             await self.dispatcher.broadcast(emote)
             response = blob_service_pb2.BackendEvent()
             response.notification.text = "Blob could not process that message. Check the backend logs."
+            response.notification.conversation_reply = True
             await self.dispatcher.broadcast(response)
 
     async def _process_attachment_drop(self, paths):
@@ -171,12 +177,18 @@ class BlobServiceServicer(blob_service_pb2_grpc.BlobServiceServicer):
     async def UpdateConfig(self, request, context):
         await self._authorize(context)
         controls = getattr(self.orchestrator, "controls", None)
-        if controls and set(request.settings) == {"privacy_paused"}:
-            value = request.settings["privacy_paused"]
+        setting = next(iter(request.settings), "")
+        if controls and len(request.settings) == 1 and setting in {"privacy_paused", "cloud_enabled"}:
+            value = request.settings[setting]
             if value == "toggle":
+                if setting != "privacy_paused":
+                    return blob_service_pb2.ConfigUpdateResponse(success=False, error="Cloud mode requires an explicit true or false value.")
                 value = "false" if controls.paused else "true"
             if value in {"true", "false"}:
-                command = "/privacy pause" if value == "true" else "/privacy resume"
+                command = (("/privacy pause" if value == "true" else "/privacy resume") if setting == "privacy_paused" else
+                           ("/privacy cloud on" if value == "true" else "/privacy cloud off"))
                 text = await self.orchestrator.handle_user_message(blob_service_pb2.UserMessage(text=command))
-                return blob_service_pb2.ConfigUpdateResponse(success=True, effective_config={"privacy_paused": str(controls.paused).lower()})
-        return blob_service_pb2.ConfigUpdateResponse(success=False, error="Only the local privacy_paused setting can be updated here.")
+                actual = controls.paused if setting == "privacy_paused" else controls.cloud_enabled
+                return blob_service_pb2.ConfigUpdateResponse(success=str(actual).lower() == value,
+                    effective_config={setting: str(actual).lower()})
+        return blob_service_pb2.ConfigUpdateResponse(success=False, error="Only local privacy_paused or cloud_enabled settings can be updated here.")

@@ -69,6 +69,7 @@ async def test_browser_blocks_password_fields_and_transactions(browser):
 @pytest.mark.parametrize("changes", [{"paused": True}, {"cloud_enabled": False}, {"disabled_skills": ["browser"]}])
 async def test_idle_browser_closes_on_privacy_changes(browser, tmp_path, changes):
     browser.controls = PrivacyControls(tmp_path / "private/privacy.json")
+    browser.controls.update(cloud_enabled=True)
     await browser.async_execute({"action": "open", "url": "https://lookup.example/"})
     browser.controls.update(**changes)
     for _ in range(30):

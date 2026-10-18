@@ -215,7 +215,7 @@ class StateCommand(_message.Message):
     def __init__(self, state: _Optional[_Union[StateCommand.State, str]] = ..., params: _Optional[_Mapping[str, str]] = ...) -> None: ...
 
 class NotificationBubble(_message.Message):
-    __slots__ = ("text", "display_ms", "priority", "actionable", "action_label")
+    __slots__ = ("text", "display_ms", "priority", "actionable", "action_label", "conversation_reply")
     class Priority(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
         __slots__ = ()
         LOW: _ClassVar[NotificationBubble.Priority]
@@ -229,12 +229,14 @@ class NotificationBubble(_message.Message):
     PRIORITY_FIELD_NUMBER: _ClassVar[int]
     ACTIONABLE_FIELD_NUMBER: _ClassVar[int]
     ACTION_LABEL_FIELD_NUMBER: _ClassVar[int]
+    CONVERSATION_REPLY_FIELD_NUMBER: _ClassVar[int]
     text: str
     display_ms: int
     priority: NotificationBubble.Priority
     actionable: bool
     action_label: str
-    def __init__(self, text: _Optional[str] = ..., display_ms: _Optional[int] = ..., priority: _Optional[_Union[NotificationBubble.Priority, str]] = ..., actionable: _Optional[bool] = ..., action_label: _Optional[str] = ...) -> None: ...
+    conversation_reply: bool
+    def __init__(self, text: _Optional[str] = ..., display_ms: _Optional[int] = ..., priority: _Optional[_Union[NotificationBubble.Priority, str]] = ..., actionable: _Optional[bool] = ..., action_label: _Optional[str] = ..., conversation_reply: _Optional[bool] = ...) -> None: ...
 
 class SkillAcknowledgment(_message.Message):
     __slots__ = ("skill_name", "success", "description", "error_message")
@@ -249,14 +251,20 @@ class SkillAcknowledgment(_message.Message):
     def __init__(self, skill_name: _Optional[str] = ..., success: _Optional[bool] = ..., description: _Optional[str] = ..., error_message: _Optional[str] = ...) -> None: ...
 
 class PrivacyShieldEvent(_message.Message):
-    __slots__ = ("activated", "reason", "blocked_process")
+    __slots__ = ("activated", "reason", "blocked_process", "controls_available", "manual_pause", "cloud_enabled")
     ACTIVATED_FIELD_NUMBER: _ClassVar[int]
     REASON_FIELD_NUMBER: _ClassVar[int]
     BLOCKED_PROCESS_FIELD_NUMBER: _ClassVar[int]
+    CONTROLS_AVAILABLE_FIELD_NUMBER: _ClassVar[int]
+    MANUAL_PAUSE_FIELD_NUMBER: _ClassVar[int]
+    CLOUD_ENABLED_FIELD_NUMBER: _ClassVar[int]
     activated: bool
     reason: str
     blocked_process: str
-    def __init__(self, activated: _Optional[bool] = ..., reason: _Optional[str] = ..., blocked_process: _Optional[str] = ...) -> None: ...
+    controls_available: bool
+    manual_pause: bool
+    cloud_enabled: bool
+    def __init__(self, activated: _Optional[bool] = ..., reason: _Optional[str] = ..., blocked_process: _Optional[str] = ..., controls_available: _Optional[bool] = ..., manual_pause: _Optional[bool] = ..., cloud_enabled: _Optional[bool] = ...) -> None: ...
 
 class ColorShiftEvent(_message.Message):
     __slots__ = ("r", "g", "b", "a", "transition_ms")

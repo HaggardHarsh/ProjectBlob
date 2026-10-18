@@ -7,6 +7,7 @@ void BlobStateMachine::update(float dt) {
 }
 
 void BlobStateMachine::changeState(BlobState newState) {
+    if (newState == currentState) return;
     currentState = newState;
     stateTime = 0.0f;
 }

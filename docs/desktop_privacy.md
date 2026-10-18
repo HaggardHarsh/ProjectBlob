@@ -30,10 +30,11 @@ Notifications are delivered to connected clients; this version does not replay
 notifications that arrived while all chat clients were closed.
 
 The overlay sleeps when disconnected and shows its existing blindfold while privacy
-is active. Right-click toggles manual pause; double-click opens chat. On desktops with
-an X11 tray, left-click opens chat and right-click toggles pause. Opening a terminal
-from the overlay requires a supported terminal launcher. The desktop application
-launcher and `make chat` work independently of the tray.
+is active. Right-click toggles manual pause; double-click opens terminal chat.
+On desktops with an X11 tray, left-click opens terminal chat and right-click
+toggles pause. Terminal chat requires a supported terminal launcher. The desktop
+application launcher and `make chat` work independently of the tray. Privacy and
+cloud settings use the terminal commands below. See [desktop controls](desktop_frontend.md).
 
 Useful local commands:
 
@@ -57,6 +58,14 @@ transcripts do not enter the journal. Operational errors use standard error.
 Settings are saved atomically under `~/.blob/privacy.json` with mode 0600 in a
 private directory. `BLOB_PRIVACY_SETTINGS_PATH` selects another private location.
 All changes are explicit local commands; models cannot change these settings.
+
+Fresh installations default to cloud assistance off. `/privacy explain` describes
+provider requests, web traffic, local storage and separate deletion controls without
+making an AI request. `/privacy cloud on` is the explicit opt-in; its reply repeats
+the main sharing behavior. An API key alone does not enable cloud assistance.
+Existing privacy JSON files retain their saved cloud setting on upgrade. With no
+API key configured, the daemon and local commands still start; cloud conversation
+requests return a setup message before preparing context or contacting a provider.
 
 `/privacy pause` persists manual pause, cancels active/queued conversation work,
 and clears recent conversation and recalled context. Capture, camera operations,

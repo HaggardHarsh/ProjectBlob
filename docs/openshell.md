@@ -23,7 +23,8 @@ remain on the host. No host directory is mounted into the sandbox. Every model
 request and tool call returns through Blob's existing privacy checks and skill
 authorization. Inference continues through the configured Nebius client.
 
-`deploy/openshell/policy.yaml` requires Landlock, runs as UID/GID 1000, permits
+`deploy/openshell/policy.yaml` (also shipped as `blob/data/openshell_policy.yaml`
+in the backend package) requires Landlock, runs as UID/GID 1000, permits
 writing only `/tmp`, and has no network rules. The adapter rejects a policy that
 relaxes these requirements. The image contains the pinned Hermes source and two
 worker files; the build tool excludes untracked files, `.env`, host memory and

@@ -154,6 +154,7 @@ def test_command_namespace_blocks_unapproved_files_and_masks_secrets(tmp_path):
 @pytest.mark.asyncio
 async def test_pause_cancels_active_and_queued_chat_without_waiting_for_conversation(tmp_path):
     controls = PrivacyControls(tmp_path / "privacy.json")
+    controls.update(cloud_enabled=True)
     instance = orchestrator(controls)
     started = asyncio.Event()
 
@@ -267,6 +268,7 @@ async def test_inflight_consolidation_cannot_restore_deleted_memories(tmp_path):
 @pytest.mark.asyncio
 async def test_cancelled_cloud_consolidation_leaves_worker_available(tmp_path):
     controls = PrivacyControls(tmp_path / "privacy.json")
+    controls.update(cloud_enabled=True)
     store = store_at(tmp_path / "db", controls)
     store.store("User: I prefer Python.", {"consolidated": False})
     started = asyncio.Event()

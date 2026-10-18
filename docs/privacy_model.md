@@ -11,6 +11,11 @@ Manual privacy pause and cloud-off controls are separate from the automatic wind
 blacklist. See [desktop privacy controls](desktop_privacy.md) for their behavior,
 folder permissions, personal memory deletion, and authenticated local IPC.
 
+New installations start with cloud assistance off. Read `/privacy explain` and use
+`/privacy cloud on` to enable it explicitly. Cloud use includes background memory
+consolidation when eligible statements exist. Existing saved preferences are
+preserved on upgrade. Starting Blob and using local commands require no API key.
+
 ## User-selected attachments
 
 The overlay forwards only files you drop onto Blob. Dropping files triggers
@@ -60,7 +65,7 @@ sent and saved to the document library while it is active.
 ## Screen capture
 
 The `screen_capture` skill runs only when called. It checks the active window
-against `backend_python/data/blacklist.yaml` before capture and again before
+against `backend_python/blob/data/blacklist.yaml` before capture and again before
 OCR. The privacy shield also suppresses screen context and new episodic memory
 while a blacklisted window is active. `gnome-screenshot` and `grim` can write a
 temporary PNG during capture; Blob loads and removes that file immediately.

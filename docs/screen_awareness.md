@@ -42,7 +42,7 @@ stops a sample without permanently stopping the observer after resume.
 
 Capture is blocked for sensitive app/window patterns, including password managers,
 private browsing, banking/payment screens, inboxes, common messaging apps, credential
-files, and the configurable `backend_python/data/blacklist.yaml`. Unknown window
+files, and the configurable `backend_python/blob/data/blacklist.yaml`. Unknown window
 metadata fails closed. OCR containing credential/payment/private-message markers is
 discarded. Other text has identifiable email/URL/long-number patterns and labeled
 personal-information lines removed. These are conservative heuristics with possible

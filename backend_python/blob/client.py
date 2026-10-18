@@ -90,8 +90,8 @@ async def run_client(*, message=None, status=False):
         watcher = asyncio.create_task(notifications())
         if sys.stdout.isatty():
             print("\033[22;0t\033]0;Blob Chat\007", end="", flush=True)
-        print("Connected chat client. Closing this terminal leaves Blob running. /quit disconnects.\n"
-              "Messages and selected context use Nebius. /privacy shows local controls; /memory manages stored facts.")
+        print("Connected to Blob. Closing this terminal leaves Blob running. /quit disconnects.\n"
+              "Privacy: /privacy status for settings; /privacy explain for data-sharing details.")
         try:
             while True:
                 try:

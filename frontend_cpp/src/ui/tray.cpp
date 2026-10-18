@@ -1,6 +1,7 @@
 #include "tray.h"
 
 #ifdef BLOB_HAVE_X11
+#include <X11/Xlib.h>
 #include <X11/Xatom.h>
 #include <SDL2/SDL.h>
 #include <cstdio>

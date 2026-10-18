@@ -47,7 +47,7 @@ def reference_sheet(source: Path, names: list[str], output: Path, columns: int,
         background = (248, 251, 253) if light else (36, 51, 65)
         draw.rounded_rectangle((x + 8, y + 8, x + tile_w - 8, y + tile_h - 8),
                                radius=16, fill=background)
-        image = character(source, name).resize((132 * scale, 116 * scale), Image.Resampling.NEAREST)
+        image = character(source, name).resize((132 * scale, 116 * scale), Image.Resampling.LANCZOS)
         page.paste(image, (x + 12, y + 12), image)
         draw.text((x + 14, y + 116 * scale + 17), name.replace("_", " ").title(),
                   fill=(35, 58, 74) if light else (238, 246, 250), font=font)
@@ -57,7 +57,7 @@ def reference_sheet(source: Path, names: list[str], output: Path, columns: int,
 def motion_gif(source: Path, prefix: str, output: Path) -> None:
     frames = []
     for path in sorted(source.glob(prefix + "_*.bmp")):
-        image = character(source, path.stem).resize((396, 348), Image.Resampling.NEAREST)
+        image = character(source, path.stem).resize((396, 348), Image.Resampling.LANCZOS)
         frame = Image.new("RGB", (792, 348), (248, 251, 253))
         ImageDraw.Draw(frame).rectangle((396, 0, 792, 348), fill=(36, 51, 65))
         frame.paste(image, (0, 0), image)
@@ -70,8 +70,9 @@ def motion_gif(source: Path, prefix: str, output: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=FRONTEND / "preview")
+    parser.add_argument("--build-dir", type=Path, default=FRONTEND / "build")
     args = parser.parse_args()
-    binary = FRONTEND / "build" / "blob_render_smoke"
+    binary = args.build_dir / "blob_render_smoke"
     if not binary.exists():
         parser.error("Build the frontend first: cmake --build frontend_cpp/build -j4")
     output = args.output.resolve()

@@ -24,6 +24,9 @@ public:
     void updateDragRelative(int xrel, int yrel);
     void stopDrag();
     bool isDragging() const { return dragging_; }
+    void resize(int width, int height);
+    void restorePosition(int x, int y);
+    void resetPosition();
 
     SDL_Window* getSDLWindow() const { return window_; }
     int getWidth() const { return width_; }
@@ -36,4 +39,5 @@ private:
     int dragWinX_ = 0, dragWinY_ = 0;
     int dragMouseX_ = 0, dragMouseY_ = 0;
     bool shapedOnce_ = false;
+    SDL_Surface* scaledShape_ = nullptr;
 };
