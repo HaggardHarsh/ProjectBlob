@@ -68,8 +68,42 @@
     "physical reboot",
     "suspend/resume",
     "native Wayland",
-    "real train seat inventory adapter",
-    "hosted GitHub Actions"
+    "real train seat inventory adapter"
   ],
-  "ci_publication": "published in 51b0d28; hosted frontend passed; runner-scoped Chromium AppArmor fix awaiting verification"
+  "ci_publication": "published; all four hosted jobs passed for 1df3dc4; main branch protection not enabled",
+  "hosted_ci": {
+    "run_id": 39148230491,
+    "url": "https://github.com/HaggardHarsh/ProjectBlob/actions/runs/39148230491",
+    "commit": "1df3dc4",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "name": "installer",
+        "conclusion": "success",
+        "html_url": "https://github.com/HaggardHarsh/ProjectBlob/actions/runs/39148230491/job/117736370034"
+      },
+      {
+        "name": "backend (3.12, requirements/linux-py312.lock)",
+        "conclusion": "success",
+        "html_url": "https://github.com/HaggardHarsh/ProjectBlob/actions/runs/39148230491/job/117736370215"
+      },
+      {
+        "name": "backend (3.14, requirements/linux-py314.lock)",
+        "conclusion": "success",
+        "html_url": "https://github.com/HaggardHarsh/ProjectBlob/actions/runs/39148230491/job/117736370248"
+      },
+      {
+        "name": "frontend",
+        "conclusion": "success",
+        "html_url": "https://github.com/HaggardHarsh/ProjectBlob/actions/runs/39148230491/job/117736370266"
+      }
+    ],
+    "backend_per_python": {
+      "tests": 655,
+      "passed": 652,
+      "skipped": 3,
+      "failed": 0
+    },
+    "main_branch_protected": false
+  }
 }

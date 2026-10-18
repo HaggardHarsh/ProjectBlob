@@ -7,8 +7,8 @@ Verified locally on 2026-10-17, Linux x86-64 / CPython 3.14. These checks do not
 establish Windows/macOS support, full desktop lifecycle reliability, or that all
 launch blockers are closed. A GitHub Actions workflow was prepared locally;
 publication was initially rejected because the saved token lacked workflow
-permission. It has since been published in `51b0d28`; hosted results still need
-verification. See the current launch evidence linked above.
+permission. It has since been published in `51b0d28`; all four hosted jobs passed
+for `1df3dc4`. See [current CI evidence](ci.md).
 
 | Check | Result |
 | --- | --- |

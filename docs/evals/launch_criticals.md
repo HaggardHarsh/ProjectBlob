@@ -61,11 +61,9 @@ the local review and synthetic fixtures do not prove semantic accuracy or immuni
 to every injection. Native distribution artifacts, license notices and measured
 latency/usage budgets remain separate rollout work.
 
-The workflow was subsequently published on `main` in commit `51b0d28`, targeting
-Ubuntu 24.04/Python 3.12 and 3.14. The earlier workflow-permission blocker is resolved.
-Actions read access is now available. The first hosted frontend job passed, while
-Chromium browser tests reported Ubuntu AppArmor user-namespace restrictions.
-The workflow now loads a runner-only profile for Playwright's Chromium executables,
-keeping Chromium sandboxing enabled without a global user-namespace policy change.
-Full hosted results and required branch checks remain unverified while the corrected
-workflow runs; local/container evidence alone does not establish a hosted pass.
+The workflow was subsequently published on `main` in `51b0d28`. All four hosted
+jobs passed for `1df3dc4`: Python 3.12/3.14 (652 passed, 3 environment skips each),
+packaging, the C++ frontend and the stock Ubuntu installer. The earlier credential
+and runner sandbox blockers are resolved. See [hosted CI evidence](ci.md) for the
+run link, scoped AppArmor fixture and browser cleanup regression. Branch protection
+requiring successful checks on `main` remains a separate repository setting.

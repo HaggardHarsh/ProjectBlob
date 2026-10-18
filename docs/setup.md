@@ -146,6 +146,12 @@ journalctl --user -u blob-backend -u blob-overlay -n 80
 An Ubuntu/Debian machine missing browser libraries should rerun with
 `--install-system-deps`. On other distributions, use the missing-library report
 and install the corresponding native packages before retrying without that flag.
+If Chromium reports no usable sandbox on Ubuntu with restricted AppArmor user
+namespaces, configure a profile for its actual executable using the
+[Chromium guidance](https://chromium.googlesource.com/chromium/src/+/main/docs/security/apparmor-userns-restrictions.md),
+then retry setup. The CI profile targets only `/home/runner` and is not a desktop
+policy. Setup never bypasses the browser sandbox or changes the global namespace
+restriction.
 Existing manual installation and `make desktop-install` remain available; see
 [desktop lifecycle](desktop_privacy.md). The source installer is a first step
 toward distribution, not a signed standalone application package.
