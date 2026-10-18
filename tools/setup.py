@@ -27,10 +27,10 @@ class SetupError(RuntimeError):
     pass
 
 
-def run(command, *, cwd=PROJECT, env=None):
+def run(command, *, cwd=PROJECT, env=None, timeout=None):
     command = [str(part) for part in command]
     print("+ " + shlex.join(command), flush=True)
-    subprocess.run(command, cwd=cwd, env=env, check=True)
+    subprocess.run(command, cwd=cwd, env=env, check=True, timeout=timeout)
 
 
 def candidate_environment():
@@ -55,9 +55,13 @@ def preflight(args):
         if not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
             raise SetupError("Run setup in your desktop session, or use --prepare-only.")
         # Check before apt, downloads or builds: never replace an existing installation.
-        if os.path.lexists(PROJECT / "venv") or os.path.lexists(PROJECT / ".runtime/desktop/current"):
-            raise SetupError("An installation already exists. It was left unchanged. Use --prepare-only to verify a separate build.")
-        require_fresh_desktop(desktop_targets())
+        if getattr(args, "update", False):
+            from manage_install import Installation
+            Installation(PROJECT).require_owned()
+        else:
+            if os.path.lexists(PROJECT / "venv") or os.path.lexists(PROJECT / ".runtime/desktop/current"):
+                raise SetupError("An installation already exists. It was left unchanged. Use --update for a managed installation or --prepare-only to verify a separate build.")
+            require_fresh_desktop(desktop_targets())
     if args.install_system_deps and not args.check:
         distro = platform.freedesktop_os_release()
         family = {distro.get("ID", ""), *distro.get("ID_LIKE", "").split()}
@@ -76,8 +80,8 @@ def preflight(args):
     # A temporary configure catches missing headers, libraries and incompatible SDL.
     with tempfile.TemporaryDirectory(prefix="blob-setup-check-") as directory:
         run(["cmake", "-S", PROJECT / "frontend_cpp", "-B", directory, "-DCMAKE_BUILD_TYPE=Release"])
-    if sys.version_info[:2] != (3, 14):
-        print("Python 3.14 has the pinned dependency baseline. This Python version will resolve dependencies and must pass the same local checks.", flush=True)
+    if sys.version_info[:2] not in {(3, 12), (3, 14)}:
+        print("Python 3.12 and 3.14 have pinned dependency baselines. This Python version will resolve dependencies and must pass the same local checks.", flush=True)
 
 
 def prepare(args):
@@ -91,32 +95,42 @@ def prepare(args):
     print(f"Building separately in {candidate}", flush=True)
     run([sys.executable, "-m", "venv", candidate / "venv"], env=env)
     pip = [python, "-m", "pip"]
-    locked = sys.version_info[:2] == (3, 14)
+    locked = sys.version_info[:2] in {(3, 12), (3, 14)}
+    lock = PROJECT / f"requirements/linux-py{sys.version_info[0]}{sys.version_info[1]}.lock"
     if locked:
-        run([*pip, "install", "-r", PROJECT / "requirements/linux-py314.lock"], env=env)
+        run([*pip, "install", "-r", lock], env=env)
     else:
         run([*pip, "install", "--upgrade", "pip", "setuptools>=77.0.3"], env=env)
     extras = "web,vision,ocr" if args.ocr else "web,vision"
     install = [*pip, "install", "--no-build-isolation"]
     if locked:
-        install.extend(["-c", PROJECT / "requirements/linux-py314.lock"])
+        install.extend(["-c", lock])
     run([*install, f"{PROJECT / 'backend_python'}[{extras}]"], env=env)
     run([*pip, "check"], env=env)
     if locked:
         run([python, PROJECT / "tools/lock_dependencies.py", "--check"], env=env)
+    # Chroma otherwise downloads its local embedding model on the first memory
+    # write, delaying the first chat after an apparently successful install.
+    run([python, "-c", "from chromadb.utils.embedding_functions import DefaultEmbeddingFunction\n"
+         "vectors = DefaultEmbeddingFunction()(['Blob installation check'])\n"
+         "assert len(vectors) == 1 and len(vectors[0]) > 0"], cwd=candidate, env=env, timeout=600)
     run([python, PROJECT / "tools/release_smoke.py", "--source-root", PROJECT], cwd=candidate, env=env)
     browser = [python, "-m", "playwright", "install"]
     if args.install_system_deps:
         browser.append("--with-deps")
     run([*browser, "chromium"], cwd=candidate, env=env)
     # Launch Chromium with an in-memory document; no website or personal browser profile.
-    run([python, "-c", "from playwright.sync_api import sync_playwright\n"
+    browser_check = [python, "-c", "from playwright.sync_api import sync_playwright\n"
          "with sync_playwright() as p:\n"
-         "    browser = p.chromium.launch()\n"
+         "    browser = p.chromium.launch(chromium_sandbox=True)\n"
          "    page = browser.new_page()\n"
          "    page.set_content('<title>Blob setup check</title>')\n"
          "    assert page.title() == 'Blob setup check'\n"
-         "    browser.close()"], cwd=candidate, env=env)
+         "    browser.close()"]
+    try:
+        run(browser_check, cwd=candidate, env=env)
+    except subprocess.CalledProcessError as exc:
+        raise SetupError("Chromium's sandbox could not start. Check the reported missing libraries or OS user-namespace/AppArmor restrictions before retrying.") from exc
     run(["cmake", "-S", PROJECT / "frontend_cpp", "-B", build, "-DCMAKE_BUILD_TYPE=Release"], env=env)
     run(["cmake", "--build", build, "--parallel", args.jobs], env=env)
     run(["ctest", "--test-dir", build, "--output-on-failure"], env=env)
@@ -127,6 +141,7 @@ def prepare(args):
         "created_at": datetime.now(timezone.utc).isoformat(),
         "python": platform.python_version(), "extras": extras, "pinned_baseline": locked,
         "project": str(PROJECT), "verified": True,
+        "maintenance_supported": True,
     }, indent=2) + "\n")
     return candidate
 
@@ -166,7 +181,9 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true", help="Check prerequisites without installing or downloading")
     parser.add_argument("--install-system-deps", action="store_true", help="Install Ubuntu/Debian OS and Chromium libraries using sudo")
-    parser.add_argument("--prepare-only", action="store_true", help="Build and verify separately; leave running services and startup files unchanged")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--prepare-only", action="store_true", help="Build and verify separately; leave running services and startup files unchanged")
+    mode.add_argument("--update", action="store_true", help="Prepare, back up and replace a managed installation with rollback on probe failure")
     parser.add_argument("--ocr", action="store_true", help="Also install optional EasyOCR and its larger dependencies")
     parser.add_argument("--jobs", type=int, default=2, help="Parallel C++ build jobs (default: 2)")
     args = parser.parse_args(argv)
@@ -180,6 +197,10 @@ def main(argv=None):
         candidate = prepare(args)
         if args.prepare_only:
             print(f"Verified build: {candidate}\nDesktop startup and the running Blob were left unchanged.")
+        elif args.update:
+            from manage_install import Installation
+            backup = Installation(PROJECT).upgrade(candidate)
+            print(f"Blob updated. Recovery backup: {backup}")
         else:
             configure_key()
             activate(candidate)
@@ -187,8 +208,10 @@ def main(argv=None):
                   "Cloud assistance starts off on fresh profiles. Add NEBIUS_API_KEY to .env when ready,\n"
                   "then read /privacy explain and use /privacy cloud on in Blob Chat.")
         return 0
-    except (SetupError, RuntimeError, OSError, subprocess.CalledProcessError, KeyboardInterrupt) as exc:
-        print(f"Setup stopped: {exc}\nNo existing installation was replaced. Fix the reported issue and rerun setup.", file=sys.stderr)
+    except (ValueError, RuntimeError, OSError, subprocess.SubprocessError, KeyboardInterrupt) as exc:
+        recovery = ("Use python3 tools/manage_install.py status to inspect the runtime and recovery state."
+                    if args.update else "No existing installation was replaced. Fix the reported issue and rerun setup.")
+        print(f"Setup stopped: {exc}\n{recovery}", file=sys.stderr)
         return 1
 
 

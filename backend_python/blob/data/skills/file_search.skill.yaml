@@ -1,0 +1,83 @@
+skill:
+  name: "Local File Search"
+  version: "1.0.0"
+  description: "Search for files on the local filesystem by name, extension, or content"
+  author: "BlobBuiltins"
+  color: "#FFB300"
+  icon: "folder-search"
+
+  permissions:
+    - filesystem.read    # Read-only file access
+    - shell.execute      # Run find/grep commands
+
+  triggers:
+    - "find file"
+    - "search for"
+    - "where is"
+    - "locate"
+    - "find files named"
+    - "search my files"
+
+  tools:
+    - name: "find_by_name"
+      description: "Find files matching a name pattern"
+      command: "find {directory} -maxdepth 5 -iname '*{pattern}*' -type f"
+      args:
+        - name: "pattern"
+          description: "Filename pattern to search for"
+          required: true
+        - name: "directory"
+          description: "Starting directory"
+          required: false
+          default: "~"
+
+    - name: "find_by_extension"
+      description: "Find files with a specific extension"
+      command: "find {directory} -maxdepth 5 -name '*.{ext}' -type f"
+      args:
+        - name: "ext"
+          description: "File extension (e.g., py, cpp, md)"
+          required: true
+        - name: "directory"
+          description: "Starting directory"
+          required: false
+          default: "~"
+
+    - name: "find_by_content"
+      description: "Search for files containing specific text"
+      command: "grep -rl --include='*.{ext}' '{text}' {directory}"
+      args:
+        - name: "text"
+          description: "Text to search for in file contents"
+          required: true
+        - name: "ext"
+          description: "File extension filter (e.g., py, txt)"
+          required: false
+          default: "*"
+        - name: "directory"
+          description: "Starting directory"
+          required: false
+          default: "~"
+
+    - name: "recent_files"
+      description: "Find recently modified files"
+      command: "find {directory} -maxdepth 3 -type f -mmin -{minutes}"
+      args:
+        - name: "minutes"
+          description: "Files modified within this many minutes"
+          type: integer
+          minimum: 1
+          maximum: 10080
+          required: false
+          default: 60
+        - name: "directory"
+          description: "Starting directory"
+          required: false
+          default: "~"
+
+  response_template: |
+    I found these files:
+    {result}
+
+  emote_on_success: "PROUD"
+  emote_on_failure: "CONFUSED"

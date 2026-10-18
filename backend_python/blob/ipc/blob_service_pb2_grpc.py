@@ -62,6 +62,11 @@ class BlobServiceStub:
                 request_serializer=blob__service__pb2.ConfigUpdate.SerializeToString,
                 response_deserializer=blob__service__pb2.ConfigUpdateResponse.FromString,
                 _registered_method=True)
+        self.AcknowledgeNotification = channel.unary_unary(
+                '/blob.BlobService/AcknowledgeNotification',
+                request_serializer=blob__service__pb2.NotificationAck.SerializeToString,
+                response_deserializer=blob__service__pb2.NotificationAckResponse.FromString,
+                _registered_method=True)
 
 
 class BlobServiceServicer:
@@ -102,6 +107,12 @@ class BlobServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def AcknowledgeNotification(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_BlobServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -129,6 +140,11 @@ def add_BlobServiceServicer_to_server(servicer, server):
                     servicer.UpdateConfig,
                     request_deserializer=blob__service__pb2.ConfigUpdate.FromString,
                     response_serializer=blob__service__pb2.ConfigUpdateResponse.SerializeToString,
+            ),
+            'AcknowledgeNotification': grpc.unary_unary_rpc_method_handler(
+                    servicer.AcknowledgeNotification,
+                    request_deserializer=blob__service__pb2.NotificationAck.FromString,
+                    response_serializer=blob__service__pb2.NotificationAckResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -269,6 +285,33 @@ class BlobService:
             '/blob.BlobService/UpdateConfig',
             blob__service__pb2.ConfigUpdate.SerializeToString,
             blob__service__pb2.ConfigUpdateResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def AcknowledgeNotification(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/blob.BlobService/AcknowledgeNotification',
+            blob__service__pb2.NotificationAck.SerializeToString,
+            blob__service__pb2.NotificationAckResponse.FromString,
             options,
             channel_credentials,
             insecure,

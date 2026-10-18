@@ -77,6 +77,11 @@ class BrowserSkill(SkillInterface):
             try:
                 self._check()
                 public_url(route.request.url)
+                if route.request.method not in {"GET", "HEAD"}:
+                    # Arbitrary pages can disguise a write as a lookup button.
+                    # A temporary unauthenticated session is not a guarantee
+                    # that POST/PUT/DELETE has no external side effects.
+                    raise ValueError("This browser permits read-only HTTP requests.")
             except (ValueError, PrivacyBlocked):
                 await route.abort()
             else:

@@ -131,7 +131,7 @@ class WebSearchSkill(SkillInterface):
                     continue
                 results.append({"title": str(row.get("title", ""))[:160], "url": url,
                                 "snippet": str(row.get("body") or row.get("description", ""))[:350]})
-            return web_result({"provider": provider, "results": results,
+            return web_result({"provider": provider, "query": query, "results": results,
                                "note": "Search snippets are not live inventory. Open the source to verify; no results does not prove absence."})
         except ImportError:
             return SkillResult("Web dependencies are missing. Install backend_python[web].", False, "WORRIED")

@@ -7,6 +7,18 @@ from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
+class NotificationAck(_message.Message):
+    __slots__ = ("delivery_id",)
+    DELIVERY_ID_FIELD_NUMBER: _ClassVar[int]
+    delivery_id: str
+    def __init__(self, delivery_id: _Optional[str] = ...) -> None: ...
+
+class NotificationAckResponse(_message.Message):
+    __slots__ = ("acknowledged",)
+    ACKNOWLEDGED_FIELD_NUMBER: _ClassVar[int]
+    acknowledged: bool
+    def __init__(self, acknowledged: _Optional[bool] = ...) -> None: ...
+
 class FrontendEvent(_message.Message):
     __slots__ = ("timestamp_ms", "user_interaction", "skill_pill_drop", "overlay_state", "user_message", "heartbeat", "attachment_drop")
     TIMESTAMP_MS_FIELD_NUMBER: _ClassVar[int]
@@ -215,7 +227,7 @@ class StateCommand(_message.Message):
     def __init__(self, state: _Optional[_Union[StateCommand.State, str]] = ..., params: _Optional[_Mapping[str, str]] = ...) -> None: ...
 
 class NotificationBubble(_message.Message):
-    __slots__ = ("text", "display_ms", "priority", "actionable", "action_label", "conversation_reply")
+    __slots__ = ("text", "display_ms", "priority", "actionable", "action_label", "conversation_reply", "delivery_id")
     class Priority(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
         __slots__ = ()
         LOW: _ClassVar[NotificationBubble.Priority]
@@ -230,13 +242,15 @@ class NotificationBubble(_message.Message):
     ACTIONABLE_FIELD_NUMBER: _ClassVar[int]
     ACTION_LABEL_FIELD_NUMBER: _ClassVar[int]
     CONVERSATION_REPLY_FIELD_NUMBER: _ClassVar[int]
+    DELIVERY_ID_FIELD_NUMBER: _ClassVar[int]
     text: str
     display_ms: int
     priority: NotificationBubble.Priority
     actionable: bool
     action_label: str
     conversation_reply: bool
-    def __init__(self, text: _Optional[str] = ..., display_ms: _Optional[int] = ..., priority: _Optional[_Union[NotificationBubble.Priority, str]] = ..., actionable: _Optional[bool] = ..., action_label: _Optional[str] = ..., conversation_reply: _Optional[bool] = ...) -> None: ...
+    delivery_id: str
+    def __init__(self, text: _Optional[str] = ..., display_ms: _Optional[int] = ..., priority: _Optional[_Union[NotificationBubble.Priority, str]] = ..., actionable: _Optional[bool] = ..., action_label: _Optional[str] = ..., conversation_reply: _Optional[bool] = ..., delivery_id: _Optional[str] = ...) -> None: ...
 
 class SkillAcknowledgment(_message.Message):
     __slots__ = ("skill_name", "success", "description", "error_message")

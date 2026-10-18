@@ -1,0 +1,22 @@
+FROM docker.io/library/ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv sudo ca-certificates systemd dbus-user-session xvfb xauth desktop-file-utils && rm -rf /var/lib/apt/lists/*
+RUN useradd --create-home --uid 1001 blobtest && printf 'blobtest ALL=(ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/blob-validation && chmod 440 /etc/sudoers.d/blob-validation
+
+WORKDIR /home/blobtest/ProjectBlob
+COPY --chown=1001:1001 backend_python/ backend_python/
+COPY --chown=1001:1001 frontend_cpp/ frontend_cpp/
+COPY --chown=1001:1001 proto/ proto/
+COPY --chown=1001:1001 tools/ tools/
+COPY --chown=1001:1001 requirements/ requirements/
+COPY --chown=1001:1001 skills/ skills/
+COPY --chown=1001:1001 deploy/openshell/policy.yaml deploy/openshell/policy.yaml
+RUN chown blobtest:blobtest /home/blobtest/ProjectBlob
+USER blobtest
+RUN python3 tools/setup.py --prepare-only --install-system-deps
+RUN python3 tools/validate_ubuntu_candidate.py
+
+USER root
+ENV container=podman
+CMD ["/sbin/init"]

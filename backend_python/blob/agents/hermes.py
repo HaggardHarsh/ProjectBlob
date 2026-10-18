@@ -92,14 +92,25 @@ class HermesAgentWrapper:
                             process.kill()
                 except ProcessLookupError:
                     pass
-                await process.wait()
         finally:
             try:
                 if self._transport is not None:
+                    # A remote worker can inherit the CLI's output pipe. On
+                    # Python 3.12, wait() then waits for that pipe to close too;
+                    # stop the remote sandbox before waiting for the CLI.
                     await self._transport.close()
             finally:
-                if profile is not None:
-                    profile.cleanup()
+                try:
+                    if process is not None:
+                        try:
+                            await asyncio.wait_for(process.wait(), timeout=3)
+                        except asyncio.TimeoutError:
+                            # A failed remote cleanup must retain its error and
+                            # sandbox name, without leaving a pipe wait unbounded.
+                            process._transport.close()
+                finally:
+                    if profile is not None:
+                        profile.cleanup()
 
     async def _ensure_worker(self):
         if self.worker_ready:

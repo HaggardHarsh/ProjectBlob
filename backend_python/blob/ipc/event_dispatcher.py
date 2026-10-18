@@ -15,5 +15,7 @@ class EventDispatcher:
             del self.clients[client_id]
 
     async def broadcast(self, event):
-        for queue in self.clients.values():
-            await queue.put(event)
+        for queue in tuple(self.clients.values()):
+            if queue.full():
+                queue.get_nowait()
+            queue.put_nowait(event)

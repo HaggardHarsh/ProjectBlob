@@ -1,6 +1,7 @@
 import re
 import logging
 from datetime import datetime, timedelta
+from blob.terminal import terminal_text
 
 logger = logging.getLogger(__name__)
 
@@ -82,9 +83,19 @@ class GuardrailsEngine:
         self.config = config
         
     def sanitize_input(self, text: str) -> str:
-        # PII stripping regex or NemoClaw integration
-        return text
+        # Sharing consent is enforced by PrivacyControls. Preserve user-selected
+        # content; this is control-character normalization, not PII detection.
+        return terminal_text(text)
         
     def filter_output(self, text: str) -> str:
-        # Check against harmful content
+        text = terminal_text(text)
+        for name in ("nebius_api_key", "brave_search_api_key"):
+            secret = getattr(self.config, name, "")
+            if isinstance(secret, str) and len(secret) >= 8:
+                text = text.replace(secret, "[credential redacted]")
         return text
+
+    def preview_buffer_chars(self):
+        return max([32, *(len(value) for value in (
+            getattr(self.config, "nebius_api_key", ""), getattr(self.config, "brave_search_api_key", ""))
+            if isinstance(value, str))])

@@ -24,10 +24,24 @@ class BlobServiceServicer(blob_service_pb2_grpc.BlobServiceServicer):
             if not secrets.compare_digest(value, self.token):
                 await context.abort(grpc.StatusCode.UNAUTHENTICATED, "A valid local Blob IPC credential is required.")
 
+    def _reminder(self):
+        skills = getattr(getattr(self.orchestrator, "skill_registry", None), "skills", {})
+        return skills.get("reminder") if isinstance(skills, dict) else None
+
+    def _maintaining(self):
+        controls = getattr(self.orchestrator, "controls", None)
+        return getattr(controls, "maintaining", lambda: False)() is True
+
     def _start_work(self, coroutine):
         task = asyncio.create_task(coroutine)
         self._work_tasks.add(task)
         task.add_done_callback(self._work_tasks.discard)
+
+    @staticmethod
+    def _finish_queue(queue):
+        if queue.full():
+            queue.get_nowait()
+        queue.put_nowait(None)
 
     async def close_streams(self):
         """Finish event streams before stopping the gRPC server."""
@@ -36,7 +50,7 @@ class BlobServiceServicer(blob_service_pb2_grpc.BlobServiceServicer):
             task.cancel()
         await asyncio.gather(*self._work_tasks, return_exceptions=True)
         for queue in tuple(self._stream_queues.values()):
-            queue.put_nowait(None)
+            self._finish_queue(queue)
         try:
             await asyncio.wait_for(self._streams_closed.wait(), timeout=4)
         except asyncio.TimeoutError:
@@ -46,11 +60,14 @@ class BlobServiceServicer(blob_service_pb2_grpc.BlobServiceServicer):
         await self._authorize(context)
         if self._stopping:
             return
+        reminder = self._reminder()
+        pending = reminder.pending_notifications() if reminder is not None and not self._maintaining() else []
         client_id = id(context)
-        queue = asyncio.Queue()
+        queue = asyncio.Queue(maxsize=128)
         self._stream_queues[client_id] = queue
         self._streams_closed.clear()
         self.dispatcher.register_client(client_id, queue)
+        initial_events = []
         shield = self.orchestrator.screen_sampler.privacy_shield if getattr(self.orchestrator, "screen_sampler", None) else None
         if shield:
             initial = blob_service_pb2.BackendEvent()
@@ -60,7 +77,8 @@ class BlobServiceServicer(blob_service_pb2_grpc.BlobServiceServicer):
                 initial.privacy.controls_available = True
                 initial.privacy.manual_pause = controls.paused
                 initial.privacy.cloud_enabled = controls.cloud_enabled
-            queue.put_nowait(initial)
+            initial_events.append(initial)
+        initial_events.extend(pending)
         
         async def read_requests():
             try:
@@ -69,11 +87,15 @@ class BlobServiceServicer(blob_service_pb2_grpc.BlobServiceServicer):
             except Exception:
                 logger.exception("Frontend event stream ended with an error")
             finally:
-                queue.put_nowait(None)
+                self._finish_queue(queue)
                 
         read_task = asyncio.create_task(read_requests())
         
         try:
+            for event in initial_events:
+                if self._stopping:
+                    break
+                yield event
             while True:
                 resp = await queue.get()
                 if resp is None:
@@ -90,6 +112,8 @@ class BlobServiceServicer(blob_service_pb2_grpc.BlobServiceServicer):
                 self._streams_closed.set()
 
     async def handle_frontend_event(self, event):
+        if self._maintaining() and not event.HasField("heartbeat"):
+            return
         if event.HasField('user_message'):
             self._start_work(self._process_user_message(event.user_message))
         elif event.HasField('attachment_drop'):
@@ -150,6 +174,8 @@ class BlobServiceServicer(blob_service_pb2_grpc.BlobServiceServicer):
 
     async def RegisterSkill(self, request, context):
         await self._authorize(context)
+        if self._maintaining():
+            return blob_service_pb2.SkillRegistrationResponse(success=False, error="Blob is updating.")
         try:
             controls = getattr(self.orchestrator, "controls", None)
             if controls:
@@ -171,11 +197,15 @@ class BlobServiceServicer(blob_service_pb2_grpc.BlobServiceServicer):
 
     async def SendUserMessage(self, request, context):
         await self._authorize(context)
+        if self._maintaining():
+            return blob_service_pb2.AssistantResponse(text="Blob is updating. Please retry when maintenance finishes.")
         text = await self.orchestrator.handle_user_message(request)
         return blob_service_pb2.AssistantResponse(text=text or "")
 
     async def UpdateConfig(self, request, context):
         await self._authorize(context)
+        if self._maintaining():
+            return blob_service_pb2.ConfigUpdateResponse(success=False, error="Blob is updating.")
         controls = getattr(self.orchestrator, "controls", None)
         setting = next(iter(request.settings), "")
         if controls and len(request.settings) == 1 and setting in {"privacy_paused", "cloud_enabled"}:
@@ -192,3 +222,11 @@ class BlobServiceServicer(blob_service_pb2_grpc.BlobServiceServicer):
                 return blob_service_pb2.ConfigUpdateResponse(success=str(actual).lower() == value,
                     effective_config={setting: str(actual).lower()})
         return blob_service_pb2.ConfigUpdateResponse(success=False, error="Only local privacy_paused or cloud_enabled settings can be updated here.")
+
+    async def AcknowledgeNotification(self, request, context):
+        await self._authorize(context)
+        if self._maintaining():
+            return blob_service_pb2.NotificationAckResponse(acknowledged=False)
+        reminder = self._reminder()
+        acknowledged = bool(reminder and reminder.store.acknowledge(request.delivery_id))
+        return blob_service_pb2.NotificationAckResponse(acknowledged=acknowledged)

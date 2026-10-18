@@ -11,6 +11,7 @@ from blob.config import BlobConfig
 from blob.ipc.auth import ipc_token
 from blob.ipc import blob_service_pb2 as pb, blob_service_pb2_grpc as rpc
 from blob.main import read_cli_line
+from blob.terminal import terminal_text
 
 
 async def run_client(*, message=None, status=False):
@@ -35,7 +36,7 @@ async def run_client(*, message=None, status=False):
         if message is not None:
             try:
                 response = await stub.SendUserMessage(pb.UserMessage(text=message), metadata=metadata, timeout=180)
-                print(response.text)
+                print(terminal_text(response.text))
                 return 0
             except grpc.aio.AioRpcError as exc:
                 print(f"Request failed: {exc.code().name}. It may have run; check state before retrying an action.")
@@ -43,6 +44,7 @@ async def run_client(*, message=None, status=False):
 
         waiting = deque(maxlen=30)
         reply_echoes = deque(maxlen=30)
+        rendered_deliveries = deque(maxlen=1000)
         busy = False
 
         def consume_reply_echo(text):
@@ -65,25 +67,41 @@ async def run_client(*, message=None, status=False):
             delay = 1
             disconnected = False
             while True:
+                stream = stub.EventStream(heartbeats(), metadata=metadata)
                 try:
-                    async for event in stub.EventStream(heartbeats(), metadata=metadata):
+                    async for event in stream:
                         if disconnected:
                             print("\nBlob backend reconnected.")
                             disconnected = False
                         delay = 1
                         if event.HasField("notification"):
+                            delivery_id = event.notification.delivery_id
+                            if delivery_id:
+                                if delivery_id not in rendered_deliveries:
+                                    print("\nBlob: " + terminal_text(event.notification.text) + "\nBlob> ", end="", flush=True)
+                                    rendered_deliveries.append(delivery_id)
+                                # A crash between rendering and acknowledgement
+                                # may replay it; never acknowledge queued/unseen text.
+                                await stub.AcknowledgeNotification(pb.NotificationAck(delivery_id=delivery_id),
+                                                                  metadata=metadata, timeout=5)
+                                continue
                             if consume_reply_echo(event.notification.text):
                                 continue
                             if busy:
                                 waiting.append(event.notification.text)
                             else:
-                                print("\nBlob: " + event.notification.text + "\nBlob> ", end="", flush=True)
+                                print("\nBlob: " + terminal_text(event.notification.text) + "\nBlob> ", end="", flush=True)
                 except grpc.aio.AioRpcError as exc:
-                    # Disconnected streams do not replay missed notifications.
+                    # Durable reminders replay until acknowledged. Ordinary
+                    # replies are not replayed or automatically resent.
                     reply_echoes.clear()
                     if not disconnected:
                         print(f"\nBlob backend disconnected ({exc.code().name}); reconnecting.\nBlob> ", end="", flush=True)
                     disconnected = True
+                finally:
+                    cancel = getattr(stream, "cancel", None)
+                    if cancel:
+                        cancel()
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, 5)
 
@@ -107,7 +125,7 @@ async def run_client(*, message=None, status=False):
                 try:
                     response = await stub.SendUserMessage(pb.UserMessage(text=line), metadata=metadata, timeout=180)
                     answer = response.text
-                    print("\nBlob: " + answer + "\n")
+                    print("\nBlob: " + terminal_text(answer) + "\n")
                 except grpc.aio.AioRpcError as exc:
                     print(f"Backend request failed ({exc.code().name}). It may have run; check before retrying an action.")
                 finally:
@@ -117,7 +135,7 @@ async def run_client(*, message=None, status=False):
                     while waiting:
                         notification = waiting.popleft()
                         if not consume_reply_echo(notification):
-                            print("\nBlob: " + notification)
+                            print("\nBlob: " + terminal_text(notification))
         finally:
             if sys.stdout.isatty():
                 print("\033[23;0t", end="", flush=True)

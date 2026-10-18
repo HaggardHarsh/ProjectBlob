@@ -15,6 +15,15 @@ service BlobService {
   rpc GetBlobState(Empty) returns (BlobState);
   rpc SendUserMessage(UserMessage) returns (AssistantResponse);
   rpc UpdateConfig(ConfigUpdate) returns (ConfigUpdateResponse);
+  rpc AcknowledgeNotification(NotificationAck) returns (NotificationAckResponse);
+}
+
+message NotificationAck {
+  string delivery_id = 1;
+}
+
+message NotificationAckResponse {
+  bool acknowledged = 1;
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -156,6 +165,7 @@ message NotificationBubble {
   bool actionable = 4;     // show accept/dismiss buttons
   string action_label = 5; // text for the action button
   bool conversation_reply = 6; // Distinguish final replies from reminder notifications.
+  string delivery_id = 7; // Durable reminder; acknowledge after rendering in chat.
 }
 
 message SkillAcknowledgment {

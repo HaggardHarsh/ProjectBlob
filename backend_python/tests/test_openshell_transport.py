@@ -92,7 +92,7 @@ async def test_sandbox_worker_reuses_bridge_and_close_stops_remote_process(opens
         assert runtime.last_run["worker_reused"]
         assert runtime.transport_status["sandbox_name"] == name
     finally:
-        await runtime.close()
+        await asyncio.wait_for(runtime.close(), timeout=5)
     commands = events(root)
     assert [args[args.index("sandbox") + 1] for args in commands] == ["create", "exec", "stop", "delete"]
     create, execute, stop, delete = commands

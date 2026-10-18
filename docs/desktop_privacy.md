@@ -30,8 +30,13 @@ stream after backend restart; a failed action is never automatically resent beca
 it could already have executed. Session conversation context lasts for the backend
 process; personal memory survives its restart. Streamed previews remain available in
 foreground backend mode; the reconnecting client displays completed replies.
-Notifications are delivered to connected clients; this version does not replay
-notifications that arrived while all chat clients were closed.
+Reminders are committed to a durable local outbox before publication. Unread
+deliveries replay when terminal chat connects, including after a backend restart.
+Chat acknowledges only after printing and flushing the reminder. Delivery is at
+least once: a crash after display but before acknowledgement can repeat it.
+Repeating reminders coalesce unread occurrences; an old acknowledgement cannot
+remove a newer occurrence. Other transient notifications and conversation replies
+are not replayed. The overlay alone does not provide an OS notification history.
 
 The overlay sleeps when disconnected and shows its existing blindfold while privacy
 is active. Right-click toggles manual pause; double-click opens terminal chat.

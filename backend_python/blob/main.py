@@ -88,6 +88,7 @@ async def main_async(*, daemon=False):
     
     # Reminder skill (needs dispatcher for async notifications)
     reminder_skill = ReminderSkill(config.reminders_db_path)
+    reminder_skill.maintaining = controls.maintaining
     reminder_skill.set_dispatcher(event_dispatcher)
     skill_registry.register(reminder_skill)
     
@@ -105,7 +106,7 @@ async def main_async(*, daemon=False):
     camera_vision.controls = controls
     skill_registry.register(CameraSkill(camera_vision))
 
-    bundled_skills = Path(__file__).resolve().parents[2] / "skills"
+    bundled_skills = Path(__file__).resolve().parent / "data/skills"
     skill_registry.load_directory(bundled_skills)
     skill_registry.load_directory(config.skills_dir_path)
     

@@ -3,6 +3,7 @@
 import asyncio
 from datetime import datetime
 import logging
+import sys
 import time
 
 from blob.skills.base import SkillInterface, SkillResult
@@ -32,6 +33,7 @@ class ReminderSkill(SkillInterface):
         self._worker = None
         self._closed = False
         self.prompt_waiting = lambda: False
+        self.maintaining = lambda: False
 
     @property
     def name(self):
@@ -73,31 +75,53 @@ class ReminderSkill(SkillInterface):
     def _date(timestamp):
         return datetime.fromtimestamp(timestamp).astimezone().strftime("%a, %Y-%m-%d %H:%M:%S %Z (%z)")
 
-    async def _fire_reminder(self, record):
+    def notification_event(self, record):
+        from blob.ipc import blob_service_pb2
         message = record["message"]
         overdue = self._now() - record["due_at"] > 60
         text = ("⏰ Overdue reminder" if overdue else "⏰ REMINDER") + f" [{record['id']}]: {message}"
         if overdue:
             text += f" (was due {self._date(record['due_at'])})"
+        if record.get("occurrences", 1) > 1:
+            text += f" ({record['occurrences']} occurrences pending)"
+        event = blob_service_pb2.BackendEvent()
+        event.notification.text = text
+        event.notification.delivery_id = record["delivery_id"]
+        return event
+
+    def pending_notifications(self):
+        return [self.notification_event(record) for record in self.store.pending_deliveries()]
+
+    async def _fire_reminder(self, record):
+        event = self.notification_event(record)
+        text = event.notification.text
         print(f"\n\033[93m{text}\033[0m\n", flush=True)
+        if sys.stdout.isatty():
+            self.store.acknowledge(record["delivery_id"])
         if self.dispatcher is not None:
             from blob.ipc import blob_service_pb2
             try:
-                evt = blob_service_pb2.BackendEvent()
-                evt.notification.text = text
-                await self.dispatcher.broadcast(evt)
+                await self.dispatcher.broadcast(event)
                 emote = blob_service_pb2.BackendEvent()
                 emote.emote.emote = blob_service_pb2.EmoteCommand.HAPPY
                 await self.dispatcher.broadcast(emote)
             except Exception:
-                logger.exception("Could not send reminder to overlay; it was shown in the terminal")
+                logger.exception("Could not broadcast reminder; pending delivery is retained")
         if self.prompt_waiting():
             print("Blob> ", end="", flush=True)
 
     async def _run(self):
+        replayed = False
         while True:
+            if self.maintaining():
+                await asyncio.sleep(0.25)
+                continue
             self._wake.clear()
             try:
+                if not replayed:
+                    for record in self.store.pending_deliveries():
+                        await self._fire_reminder(record)
+                    replayed = True
                 while due := self.store.take_due(self._now()):
                     await self._fire_reminder(due[0])
                 pending = self.store.pending()
@@ -127,12 +151,18 @@ class ReminderSkill(SkillInterface):
                 raise ValueError(f"Unexpected arguments for reminder action '{action}'.")
             if action == "list":
                 pending = self.store.pending()
-                if not pending:
+                missed = self.store.pending_deliveries()
+                if not pending and not missed:
                     return SkillResult("No reminders scheduled.", True)
                 lines = [f"{r['id']} · {self._date(r['due_at'])} · {r['message']}"
                          + (f" · repeats every {r['repeat_minutes']:g} minutes" if r["repeat_minutes"] is not None else "")
                          for r in pending]
-                return SkillResult("Scheduled reminders:\n" + "\n".join(lines), True)
+                text = "Scheduled reminders:\n" + "\n".join(lines) if pending else "No reminders scheduled."
+                if missed:
+                    text += "\nPending deliveries (cancel or snooze by reminder ID):\n" + "\n".join(
+                        f"{r['id']} · due {self._date(r['due_at'])} · {r['message']} · {r['occurrences']} occurrence(s)"
+                        for r in missed)
+                return SkillResult(text, True)
             now = self._now()
             if action in {"cancel", "snooze"}:
                 identifier = args.get("id")

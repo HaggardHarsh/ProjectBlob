@@ -16,6 +16,12 @@ async def check_daemon(root):
     import grpc
     from blob.ipc import blob_service_pb2 as pb, blob_service_pb2_grpc as rpc
     from blob.ipc.auth import ipc_token
+    from blob.skills.reminder_store import ReminderStore
+
+    store = ReminderStore(root / "reminders.sqlite3")
+    store.add("synthetic unread delivery", 1, None, 0)
+    delivery_id = store.take_due(2)[0]["delivery_id"]
+    store.close()
 
     env = {key: value for key, value in os.environ.items()
            if not key.startswith(("BLOB_", "NEBIUS_", "OPENAI_")) and key != "PYTHONPATH"}
@@ -41,6 +47,17 @@ async def check_daemon(root):
                 assert "Cloud assistance is off" in await send("Hello")
                 assert "synthetic release reminder" in await send("/reminders add 5 synthetic release reminder")
                 assert "synthetic release reminder" in await send("/reminders")
+                stream = stub.EventStream(metadata=metadata)
+                await stream.write(pb.FrontendEvent(heartbeat=pb.HeartbeatPing()))
+                try:
+                    while True:
+                        event = await asyncio.wait_for(stream.read(), timeout=5)
+                        if event.HasField("notification") and event.notification.delivery_id == delivery_id:
+                            break
+                    assert (await stub.AcknowledgeNotification(pb.NotificationAck(delivery_id=delivery_id), metadata=metadata)).acknowledged
+                finally:
+                    stream.cancel()
+                assert "synthetic unread delivery" not in await send("/reminders")
                 await send("/privacy cloud on")
                 assert "needs an API key" in await send("Hello")
         finally:
@@ -78,6 +95,14 @@ def main():
     assert Path(config.openshell_policy_path).read_bytes() == (source / "deploy/openshell/policy.yaml").read_bytes(), "Packaged OpenShell policy differs from reviewed deployment policy"
     assert blob_service_pb2.UserMessage(text="synthetic").text == "synthetic"
     assert blob_service_pb2_grpc.BlobServiceStub
+    from blob.skills.registry import SkillRegistry
+    bundled = Path(blob.__file__).resolve().parent / "data/skills"
+    with tempfile.TemporaryDirectory(prefix="blob-bundled-skills-") as directory:
+        registry = SkillRegistry(directory)
+        assert registry.load_directory(bundled) == []
+        assert len(registry.skills) == 12, "Bundled skill definitions missing from installed package"
+    for path in bundled.glob("*.skill.yaml"):
+        assert path.read_bytes() == (source / "skills" / path.name).read_bytes(), "Bundled skill differs from reviewed definition"
     with tempfile.TemporaryDirectory(prefix="blob-release-smoke-") as directory:
         controls = PrivacyControls(Path(directory) / "private/privacy.json")
         assert not controls.cloud_enabled and not controls.state["awareness_enabled"]
@@ -93,7 +118,8 @@ def main():
         asyncio.run(check_daemon(Path(directory)))
     print(json.dumps({"version": blob.__version__, "wheel_import": True, "resources": True,
                       "ipc_import": True, "cloud_opt_in": True, "daemon_without_key": True,
-                      "local_reminders": True, "missing_key_message": True, "openshell_policy": True}))
+                      "local_reminders": True, "durable_reminder_ack": True,
+                      "missing_key_message": True, "openshell_policy": True}))
 
 
 if __name__ == "__main__":

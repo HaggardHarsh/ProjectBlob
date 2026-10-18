@@ -43,4 +43,4 @@ include = ["blob*"]
 exclude = ["data*", "tests*"]
 
 [tool.setuptools.package-data]
-blob = ["data/*.yaml"]
+blob = ["data/*.yaml", "data/skills/*.skill.yaml"]

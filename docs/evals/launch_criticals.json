@@ -1,0 +1,75 @@
+{
+  "date": "2026-10-18",
+  "scope": "synthetic stores and disposable Ubuntu container; existing workstation services not replaced",
+  "python314_installed_wheel": [
+    {
+      "tests": 631,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ],
+  "ubuntu2404_python312_installed_wheel": [
+    {
+      "tests": 631,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 3
+    }
+  ],
+  "ubuntu_skips": [
+    {
+      "test": "test_real_hermes_core_roundtrip_uses_native_tool_receipts",
+      "reason": "separate Hermes runtime not installed"
+    },
+    {
+      "test": "test_real_warm_worker_clears_history_tools_and_files_between_turns",
+      "reason": "separate Hermes runtime not installed"
+    },
+    {
+      "test": "test_command_namespace_blocks_unapproved_files_and_masks_secrets",
+      "reason": "Host disallows unprivileged namespaces; tools fail closed"
+    }
+  ],
+  "frontend_ctest": {
+    "passed": 4,
+    "failed": 0
+  },
+  "installed_smoke": {
+    "version": "0.1.0",
+    "wheel_import": true,
+    "resources": true,
+    "ipc_import": true,
+    "cloud_opt_in": true,
+    "daemon_without_key": true,
+    "local_reminders": true,
+    "durable_reminder_ack": true,
+    "missing_key_message": true,
+    "openshell_policy": true
+  },
+  "managed_update": {
+    "update_preserves_privacy_reminders_and_activity": true,
+    "previous_runtime_rollback_and_newer_safety_backup": true,
+    "failed_candidate_restores_checked_data_and_services": true,
+    "interrupted_transaction_recovery": true,
+    "uninstall_reinstall_retains_data_credentials_and_backups": true,
+    "scope": "disposable Ubuntu systemd user session with Xvfb; synthetic stores only"
+  },
+  "initial_desktop": {
+    "fresh_activation": true,
+    "authenticated_chat": true,
+    "crash_restart": true,
+    "privacy_and_reminder_persistence": true,
+    "autostart_entry_point": true,
+    "container_restart_and_startup": true
+  },
+  "not_verified": [
+    "physical GNOME login/logout",
+    "physical reboot",
+    "suspend/resume",
+    "native Wayland",
+    "real train seat inventory adapter",
+    "hosted GitHub Actions"
+  ],
+  "ci_publication": "deferred by user; credential lacks workflow permission"
+}

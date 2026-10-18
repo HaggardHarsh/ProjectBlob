@@ -23,7 +23,7 @@ Blob is a living desktop companion — a small blue slime with expressive eyes t
 
 Release preparation is tracked in [launch readiness](docs/launch_readiness.md).
 Automated checks build the backend package, test a fresh installation, and build
-the Linux overlay. The pinned release-test baseline is Linux x86-64 / Python 3.14;
+the Linux overlay. The pinned release-test baselines are Linux x86-64 / Python 3.12 and 3.14;
 this does not establish support for every platform listed below.
 
 ---
@@ -100,11 +100,14 @@ desktop login startup. It optionally asks for your API key without displaying it
 Double-click the slime or open **Blob Chat** from your application launcher to chat.
 Cloud assistance stays off on fresh profiles until `/privacy cloud on`.
 
-The installer refuses to replace an existing installation. Use
+The fresh installer refuses to replace an existing installation. Managed installs
+can use `python3 tools/setup.py --update` for a separately verified update with a
+recovery backup. `python3 tools/manage_install.py` provides status, backup,
+rollback, interrupted recovery and uninstall retaining data. Use
 `python3 tools/setup.py --check` to check native prerequisites, or
 `python3 tools/setup.py --prepare-only` to build and verify a separate candidate
 without changing desktop startup. If native libraries are already installed,
-omit `--install-system-deps`. Python 3.14 uses the pinned dependency baseline;
+omit `--install-system-deps`. Python 3.12 and 3.14 use pinned dependency baselines;
 other supported Python versions resolve dependencies and must pass local checks.
 See [setup, recovery and current limits](docs/setup.md).
 

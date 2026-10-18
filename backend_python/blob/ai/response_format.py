@@ -1,6 +1,7 @@
 """Keep provider serialization tokens out of replies and tool execution."""
 
 import re
+from blob.terminal import terminal_text
 
 PROTOCOL_MARKER = re.compile(r"<\|(?:tool_|im_|start_header_id|end_header_id|eot_id|python_tag)", re.I)
 FORMAT_CORRECTION = (
@@ -22,7 +23,7 @@ def display_text(text):
     match = PROTOCOL_MARKER.search(text)
     if match:
         text = text[:match.start()]
-    return re.sub(r"<(\/?)\|emote>", r"<\1emote>", text, flags=re.I)
+    return terminal_text(re.sub(r"<(\/?)\|emote>", r"<\1emote>", text, flags=re.I))
 
 
 def correction_messages(messages):

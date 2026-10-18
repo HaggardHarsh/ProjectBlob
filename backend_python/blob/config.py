@@ -1,4 +1,5 @@
 import os
+import json
 from pathlib import Path
 from typing import Literal
 import yaml
@@ -65,6 +66,15 @@ class BlobConfig(BaseModel):
         if os.path.exists(config_path):
             with open(config_path, "r") as f:
                 data = yaml.safe_load(f) or {}
+        pinned = Path(config_path).absolute().parent / ".runtime/desktop/runtime-paths.json"
+        if pinned.is_file():
+            paths = json.loads(pinned.read_text())
+            allowed = {"memory_db_path", "privacy_settings_path", "reminders_db_path", "documents_dir_path",
+                       "face_db_path", "skills_dir_path", "blacklist_path", "personality_path", "ipc_address", "ipc_token_path"}
+            if not isinstance(paths, dict) or set(paths) - allowed or any(not isinstance(value, str) for value in paths.values()):
+                raise ValueError("Invalid managed runtime path settings")
+            for key, value in paths.items():
+                data.setdefault(key, value)
         if "memory_db_path" not in data and "BLOB_MEMORY_DB_PATH" not in os.environ:
             # Keep installations that used the original working-directory path readable.
             legacy = Path(__file__).resolve().parents[1] / "data/chroma_db"
@@ -120,6 +130,9 @@ class BlobConfig(BaseModel):
             data["reminders_db_path"] = os.environ["BLOB_REMINDERS_DB_PATH"]
         if "BLOB_DOCUMENTS_DIR_PATH" in os.environ:
             data["documents_dir_path"] = os.environ["BLOB_DOCUMENTS_DIR_PATH"]
+        for variable, field in (("BLOB_BLACKLIST_PATH", "blacklist_path"), ("BLOB_PERSONALITY_PATH", "personality_path")):
+            if variable in os.environ:
+                data[field] = os.environ[variable]
         config = cls(**data)
         config.memory_db_path = str(Path(config.memory_db_path).expanduser().resolve())
         config.face_db_path = str(Path(config.face_db_path).expanduser().resolve())

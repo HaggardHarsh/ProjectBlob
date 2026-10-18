@@ -1,5 +1,8 @@
 # Source installer verification
 
+Historical workstation preparation results. Later clean Ubuntu, managed-update
+and recovery evidence is recorded in [launch-critical verification](launch_criticals.md).
+
 Verified on 2026-10-18 on the existing Fedora 44 / Linux x86-64 / CPython 3.14
 development machine. The prepare-only path created a fresh isolated virtual
 environment and independent frontend build; it did not replace the running
@@ -18,7 +21,7 @@ were used.
 | Installer-specific tests after final logic changes | 17 passed; include existing-install refusal, prepare failure, masked key storage, startup/health failure cleanup and exclusive file creation. |
 | Existing backend and overlay | Both remained active after verification. |
 
-Automatic Ubuntu/Debian apt installation and live fresh desktop activation were
+At the time of this run, automatic Ubuntu/Debian apt installation and live fresh desktop activation were
 not run on this personal workstation. A clean Ubuntu desktop install, login/reboot
 and compositor checks remain required. The non-3.14 resolver branch has ordering
 test coverage but has not yet been exercised in a real Python 3.12 environment.

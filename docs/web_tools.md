@@ -59,6 +59,17 @@ results may need another snapshot while loading. Downloaded bodies, snapshots,
 links and tool output are bounded and report omissions. Web text is evidence,
 never instructions to change the user's task.
 
+Explicit general web requests and recognized current-information questions also
+retrieve and read sources before inference. Search snippets alone do not verify
+an answer. Final live answers require links to pages actually read; failed source
+checks produce a verification message. A citation check cannot establish that
+every sentence is factually correct.
+
+Model search queries come from public user input, rather than recalled private
+context. Model page opens use user-supplied or checked tool URLs, and form values
+must occur in the public request. Ask for missing form values explicitly. These
+constraints can limit automatic query rewriting and date-format conversion.
+
 Within a task, earlier browser snapshots are reduced to URL/time metadata once
 a newer snapshot is available. Earlier action arguments, failures, source-page
 reads and the latest view remain available. Both runtimes use the configured
@@ -71,6 +82,12 @@ windows are unavailable. Sign-in, CAPTCHA, purchases, messages and account chang
 require manual handling. Recognizable transaction controls are rejected; this is
 not a guarantee that every website side effect can be classified. Use this for
 public information and lookup forms, not authenticated or consequential actions.
+
+The browser permits only GET and HEAD requests. POST-based forms, mutating fetch
+requests and other methods are blocked even when a button looks harmless. Some
+otherwise read-only enquiry sites therefore require a manual check. GET requests
+can still have side effects on poorly designed sites; there is no universal
+transaction classifier.
 
 Only public HTTP/HTTPS on standard ports is supported. The reader validates every
 redirect and resolves through checked public IPs, without host proxies or cookies.
@@ -93,6 +110,11 @@ Train-seat checks require train, journey date, origin, destination, class and
 quota. Search snippets and prediction scores are not live inventory. Sites may
 require login, CAPTCHA or block automation; Blob must report an unverified result
 when it cannot complete the enquiry.
+
+There is currently no validated site-specific train inventory adapter. Blob
+therefore does not certify live seats from generic page text, even when a page
+contains matching train/date words and availability numbers; it returns a source
+for manual verification. Browser fixture results do not change this release limit.
 
 ```bash
 venv/bin/python -m pytest backend_python/tests/test_web_tools.py backend_python/tests/test_web_browser.py -q

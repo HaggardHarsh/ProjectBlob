@@ -68,6 +68,7 @@ def test_prepare_verifies_packages_daemon_browser_and_native_build_before_startu
     native_test = next(i for i, command in enumerate(joined) if command.startswith("ctest "))
     startup = next(i for i, command in enumerate(joined) if "install_desktop.py" in command)
     assert smoke < browser < native_test < startup
+    assert any("chromium_sandbox=True" in command for command in joined)
     assert "--stage-dir" in commands[startup]
     assert not any("systemctl" in command for command in commands)
     assert not (module.PROJECT / ".runtime/desktop/current").exists()
@@ -216,3 +217,14 @@ def test_startup_health_requires_both_services(desktop_module, monkeypatch, tmp_
     with pytest.raises(RuntimeError, match="did not become ready"):
         desktop_module.wait_ready(tmp_path, sys.executable)
     assert len(calls) == 1
+
+
+def test_startup_health_uses_captured_custom_ipc_environment(desktop_module, monkeypatch, tmp_path):
+    environment = {"BLOB_IPC_ADDRESS": "unix:/synthetic/custom.sock"}
+    def ready(command, **kwargs):
+        if command[0] == "systemctl":
+            return SimpleNamespace(returncode=0, stdout="active\nactive\n")
+        assert kwargs["env"] == environment
+        return SimpleNamespace(returncode=0)
+    monkeypatch.setattr(desktop_module.subprocess, "run", ready)
+    desktop_module.wait_ready(tmp_path, sys.executable, environment)

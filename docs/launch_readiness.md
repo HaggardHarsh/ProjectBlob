@@ -1,47 +1,32 @@
 # Launch readiness
 
-Target: a Linux desktop beta. This is a release-work tracker, not a production
-readiness certification. Backend metadata permits Python 3.11+, while the pinned
-release-test baseline currently covers Linux x86-64 / CPython 3.14 only. Hermes
-and OpenShell require their separately documented installation and verification.
+Target: an Ubuntu/Linux x86-64 desktop beta. This tracker records implementation
+and evidence; it is not production certification. Version-pinned dependency
+baselines cover CPython 3.12 and 3.14. Hermes/OpenShell remain separate optional
+installations. Voice and other operating systems are outside the initial beta.
 
-## Implemented release foundations
+## Critical work
 
-- `tools/setup.py` combines Linux source installation and isolated backend,
-  Chromium and C++ verification before fresh desktop activation. It refuses to
-  replace existing installs and rolls back fresh startup files on activation
-  failure. Automatic native packages target Ubuntu/Debian; clean-machine testing
-  across supported distributions remains required. See [setup](setup.md).
-- The C++ overlay has smoother rendering, spring motion, reduced-motion support,
-  restored position and size preferences. Chat and privacy/cloud controls use the
-  terminal, with no separate frontend panels. See [desktop frontend](desktop_frontend.md).
-- New installations start with cloud assistance off. `/privacy explain` describes
-  sharing and storage locally; `/privacy cloud on` enables cloud assistance and
-  background memory consolidation. Existing saved choices remain intact.
-- The backend starts without provider credentials. Missing or example keys produce
-  a setup message for cloud conversation requests, without dispatching inference.
-- Default configuration files and the reviewed OpenShell policy ship inside the
-  backend package. The installed-wheel check verifies the policy matches the
-  deployment copy. Existing custom
-  files in a source checkout's old `backend_python/data` directory retain priority.
-- MIT license text is present in the repository and backend distribution.
-- `requirements/linux-py314.lock` pins the installed dependency closure for
-  `[dev,web,vision]`, including transitive dependencies and build tools. It excludes
-  unrelated local packages and credentials. This is a version snapshot, not a
-  hashed lock or a lock for native libraries, OCR, Hermes or OpenShell.
-- `.github/workflows/checks.yml` runs backend regressions with real Chromium,
-  builds an sdist and then a wheel from it, exercises the installed wheel outside
-  the checkout, and builds/tests the overlay on Ubuntu 22.04. It needs no provider
-  keys and does not publish or deploy. Repository branch-protection settings must
-  separately require these checks. Hosted CI execution still needs verification.
+| Area | Implemented | Remaining release gate |
+| --- | --- | --- |
+| Tool and retrieval boundaries | Host-derived request permissions, public search queries, checked URLs, literal form values, shell-command constraints, terminal control filtering and known-key redaction. Both agent runtimes use the policy. | Independent adversarial review. These controls do not prove resistance to every prompt injection. See [security review](evals/security_review.md). |
+| Factual grounding | General current-information retrieval before inference; actual source reads and checked citations required for live answers. Failed verification returns a clear message. | Repeated live provider/site evaluations. Citations alone do not prove every fact; train inventory remains unsupported without a validated enquiry adapter. |
+| Reminders and reconnect | Atomic SQLite outbox, replay on chat reconnect, display-before-ack, repeat coalescing and stale-ack protection. Slow clients cannot block dispatch or shutdown. | Real desktop sleep/wake and extended disconnected sessions. Delivery is at least once; an overlay alone does not provide an OS notification history. |
+| Updates and recovery | Separate verified runtime, stopped-store backups, hash/SQLite checks, maintenance admission control, health probe, pre-commit restore, explicit point-in-time rollback, interrupted recovery and uninstall retaining data. | Longer beta use with representative large stores. Editable/manual installs require a reviewed migration to managed runtimes. See [setup](setup.md). |
+| Fresh installation and lifecycle | Clean Ubuntu 24.04/Python 3.12 installation, sandboxed Chromium, embedding warmup, installed-wheel checks, virtual X11 overlay, real systemd user activation/crash restart and disposable container restart/startup exercised. | Physical clean Ubuntu PC: GNOME login/logout, reboot, suspend/resume and native Wayland. A container/Xvfb session does not certify these. |
+| CI publishing | Local workflow prepared for Ubuntu 24.04/Python 3.12 and 3.14, package checks, installer and frontend jobs. | **Publishing explicitly deferred by the user.** The saved GitHub token lacks workflow permission; hosted runs and required branch checks remain unverified. |
 
-## Reproduce the release checks
+See [verification evidence](evals/launch_criticals.md) for exact test scope and
+limits. The existing workstation installation was not switched during this work.
 
-Use a **separate** virtual environment on Linux x86-64 / CPython 3.14:
+## Reproduce backend and packaging checks
+
+Use a separate environment on Linux x86-64 with Python 3.12 or 3.14. Substitute
+`312`/`3.12` together, or `314`/`3.14` together:
 
 ```bash
-python3.14 -m venv /tmp/blob-release-check
-/tmp/blob-release-check/bin/python -m pip install -r requirements/linux-py314.lock
+python3.12 -m venv /tmp/blob-release-check
+/tmp/blob-release-check/bin/python -m pip install -r requirements/linux-py312.lock
 /tmp/blob-release-check/bin/python -m pip install --no-build-isolation --no-deps -e 'backend_python[dev,web,vision]'
 /tmp/blob-release-check/bin/python -m pip check
 /tmp/blob-release-check/bin/python tools/lock_dependencies.py --check
@@ -52,33 +37,26 @@ python3.14 -m venv /tmp/blob-release-check
 /tmp/blob-release-check/bin/python -m pip install --no-deps /tmp/blob-dist/*.whl
 ```
 
-Then, from a directory outside the checkout, run its absolute
-`tools/release_smoke.py` path using that interpreter and pass
-`--source-root /absolute/path/to/ProjectBlob`. The smoke test checks packaged
-resources, IPC imports, fresh cloud defaults, preference persistence, and a real
-daemon with authenticated local IPC, no API key, and synthetic local reminders.
-It uses temporary stores and never enables provider inference. It must be allowed
-to create local sockets. Native build checks use `make frontend test-frontend`.
+From outside `backend_python`, run the checkout's absolute `tools/release_smoke.py`
+path with that interpreter and `--source-root /absolute/path/to/ProjectBlob`.
+It exercises packaged resources, bundled skill definitions, authenticated IPC,
+cloud opt-in, missing-key responses and durable reminders with synthetic stores.
+No real provider calls or personal data are needed. Native checks use
+`make frontend test-frontend` or a separate CMake build directory.
 
-To update dependency versions, resolve them in a clean environment, run the
-regressions, then run `python tools/lock_dependencies.py` and review the diff. Do
-not regenerate the lock from an arbitrary personal environment or bypass conflicts.
+Locks are version snapshots, not hashed locks, native-library locks or locks for
+OCR/Hermes/OpenShell. Regenerate only after resolving and testing on the target
+baseline: `python tools/lock_dependencies.py`. Do not snapshot an arbitrary
+personal environment.
 
-## Remaining rollout gates
+## Other rollout work
 
-| Priority | Work | Evidence required |
-| --- | --- | --- |
-| P0 | Tool and retrieval security review | Malicious web/PDF content cannot expand permissions or disclose private context through tools; review browser side effects and the pass-through general guardrail methods. |
-| P0 | Broader factual grounding | Current-information workflows cite checked sources or report verification failure; no unsupported action-success claims. |
-| P0 | Lifecycle and durable reminders | Clean login/reboot/suspend/reconnect tests; notification recovery across crash windows and disconnected clients. |
-| P0 | Data upgrades and recovery | Backups, migrations, restore and rollback exercised on previous-version stores; disk-full and interrupted-write behavior verified. |
-| P0 | User-facing setup and controls | Validate the source installer on clean supported machines; finish update/uninstall, visible cancellation, settings and data removal flows. |
-| P1 | Latency and usage controls | Measured response deadlines, API usage reporting and configurable budgets; clear quota, rate-limit and model-unavailable errors. |
-| P1 | Release distribution and support | Native dependencies and artifacts documented, checksums, dependency license notices, update/uninstall path, support and bug-report instructions. |
-| P1 | Beta validation | Repeated end-to-end workflows and extended desktop sessions on supported machines; acknowledge untested platforms and websites. |
+- Measured response deadlines, usage reporting and configurable budgets.
+- Distribution artifacts, checksums, dependency license notices and support/bug
+  reporting instructions. The source installer is not a signed standalone app.
+- Repeated public-site workflows and longer desktop beta sessions.
+- Review cancellation, settings and deletion commands with new users. Live-store
+  deletion does not erase retained recovery backups.
 
-General guardrail methods are still placeholders; existing privacy, network and
-tool controls remain separate mechanisms. A passing regression suite does not
-establish resistance to all prompt injection or reliability on arbitrary sites.
-Train-seat lookups remain experimental until a supported real enquiry is verified.
-Voice and wider platform support are outside the initial beta's release gate.
+Release requires the outstanding gates above to be tested or the beta scope to be
+explicitly narrowed. Passing regressions is not sufficient to declare final launch.

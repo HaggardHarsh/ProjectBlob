@@ -4,7 +4,7 @@ The source installer combines environment creation, Python packages, browser
 installation, the C++ build, smoke checks and desktop startup. It targets a fresh
 Linux x86-64 desktop with CPython 3.11+. Automatic OS package installation targets
 Ubuntu/Debian; other Linux distributions need their native dependencies installed
-manually. Python 3.14 has a version-pinned dependency baseline. Other accepted
+manually. Python 3.12 and 3.14 have version-pinned dependency baselines. Other accepted
 Python versions resolve dependencies rather than reusing a lock from a different
 Python version. Passing local checks does not establish full platform support.
 
@@ -57,7 +57,8 @@ creates a separate candidate under `.runtime/desktop/releases/` and checks:
 - A real authenticated local daemon using temporary stores: cloud-off defaults,
   reminders, and the response to a missing provider key. This uses no personal
   stores or provider requests.
-- Chromium launching with an in-memory test page and a fresh temporary profile.
+- The local embedding model downloaded and warmed before first chat.
+- Chromium launching with its OS sandbox, an in-memory page and a temporary profile.
 - The C++ build and its rendering, attachment IPC, headless and animation tests.
 - Rendering desktop startup files before installing them.
 
@@ -78,9 +79,54 @@ python3 tools/setup.py --prepare-only
 ```
 
 The fresh installer refuses an existing checkout `venv`, managed installation,
-Blob startup file, or loaded Blob service. It does not upgrade a running install
-in place. Use `--prepare-only` to verify a candidate while continuing to use your
-existing Blob; a general update/rollback flow remains future work.
+Blob startup file, or loaded Blob service. A managed installation can be updated:
+
+```bash
+python3 tools/setup.py --update
+python3 tools/manage_install.py status
+```
+
+Update prepares and verifies a separate runtime before stopping the services.
+During maintenance, new chat work and reminder acknowledgements are blocked.
+It snapshots the configured memory, documents/results, reminders, privacy settings,
+face samples, custom skills, personality/blacklist, configuration and startup files.
+It checks backup hashes and SQLite integrity, preserves data locations and startup
+choices, starts the candidate, and commits only after authenticated readiness.
+A failed pre-commit probe restores the previous runtime, startup files and stores.
+Old runtimes remain available for recovery; this uses additional disk space.
+
+```bash
+# Briefly stop services, make a checked backup, then restore their prior activity:
+python3 tools/manage_install.py backup
+
+# Explicit point-in-time restore of BOTH code and data; makes a newer safety backup:
+python3 tools/manage_install.py rollback /absolute/path/to/backup --restore-data
+
+# Recover an interrupted transaction that did not commit:
+python3 tools/manage_install.py recover
+
+# Finish restoring service activity after a durable commit was interrupted:
+python3 tools/manage_install.py resume-commit
+
+# Remove Blob's startup integration; retain personal data, credentials and backups:
+python3 tools/manage_install.py uninstall
+```
+
+Backups live under `~/.blob/install_backups/<installation-id>/` in private `0700`
+directories. They contain sensitive local data and may include `.env` credentials;
+they are not encrypted. Keep them private and review their timestamps before
+restoring. Deletion commands for live stores do not erase old backup copies.
+There is no automatic purge. Uninstall retains runtime files, configuration and
+data, so a later fresh setup at the same checkout path can reuse them.
+
+Automatic updates require an immutable managed previous runtime. An older editable
+or manual installation can use backup and uninstall, but must use `--prepare-only`
+and a separately reviewed migration to a managed install. Custom service drop-ins,
+startup files belonging to another checkout, symlinked data and broad shared data
+directories are refused rather than overwritten. Do not run another manual backend
+or edit stores during maintenance. If an operation stops, inspect `status` and its
+transaction/backup before choosing recovery; rollback deliberately resets data to
+the backup time.
 
 Failed preparations leave their candidate directory for inspection and can be
 retried. They do not switch the active environment, start services, or rewrite
@@ -103,4 +149,4 @@ and install the corresponding native packages before retrying without that flag.
 Existing manual installation and `make desktop-install` remain available; see
 [desktop lifecycle](desktop_privacy.md). The source installer is a first step
 toward distribution, not a signed standalone application package.
-See [verification results](evals/setup.md) for tested paths and remaining checks.
+See [verification results](evals/launch_criticals.md) for tested paths and remaining checks.

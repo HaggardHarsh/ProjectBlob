@@ -1,9 +1,13 @@
 # Release foundation verification
 
+Historical foundation results. See [launch-critical verification](launch_criticals.md)
+for later Ubuntu 24.04 checks and the current CI publishing status.
+
 Verified locally on 2026-10-17, Linux x86-64 / CPython 3.14. These checks do not
 establish Windows/macOS support, full desktop lifecycle reliability, or that all
-launch blockers are closed. The GitHub Actions workflow has been added but has
-not yet run on a hosted runner.
+launch blockers are closed. A GitHub Actions workflow was prepared locally;
+publication was rejected because the saved token lacks workflow permission and
+has since been deferred by the user. It has not run on a hosted runner.
 
 | Check | Result |
 | --- | --- |
@@ -21,7 +25,7 @@ The default blacklist and personality now live inside the backend package; the
 packaged OpenShell policy is compared with its reviewed deployment copy.
 
 The lock pins dependency versions for the release-test profile; it does not pin
-native packages or verify distribution hashes. CI exercises an Ubuntu 22.04
-baseline, while these local results were obtained on the existing development
+native packages or verify distribution hashes. The original draft targeted Ubuntu
+22.04; the current pending workflow targets Ubuntu 24.04. These local results were obtained on the existing development
 machine. See [launch readiness](../launch_readiness.md) for remaining gates and
 reproduction commands.

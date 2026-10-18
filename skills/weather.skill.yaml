@@ -38,6 +38,6 @@ skill:
   response_template: |
     Here's the weather for {location}:
     {result}
-    
+
   emote_on_success: "HAPPY"
   emote_on_failure: "CONFUSED"

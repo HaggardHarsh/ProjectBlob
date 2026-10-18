@@ -19,6 +19,8 @@ class PrivacyControls:
         self.lock = threading.RLock()
         self.tasks = set()
         self.generation = 0
+        maintenance = os.environ.get("BLOB_MAINTENANCE_PATH", "")
+        self.maintenance_path = Path(maintenance) if maintenance else None
         self.state = {"paused": False, "cloud_enabled": False, "approved_folders": [], "disabled_skills": [],
                       "awareness_enabled": False}
         if self.path.exists():
@@ -35,6 +37,9 @@ class PrivacyControls:
     @property
     def paused(self):
         return self.state["paused"]
+
+    def maintaining(self):
+        return bool(self.maintenance_path and self.maintenance_path.exists())
 
     @property
     def cloud_enabled(self):
@@ -84,6 +89,8 @@ class PrivacyControls:
                 self.tasks.discard(task)
 
     def check(self, *, cloud=False):
+        if self.maintaining():
+            raise PrivacyBlocked("Blob is updating. Please retry when maintenance finishes.")
         if self.paused:
             raise PrivacyBlocked("Privacy pause is active. Use /privacy resume to continue.")
         if cloud and not self.cloud_enabled:

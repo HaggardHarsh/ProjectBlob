@@ -1,11 +1,20 @@
 """Install per-user desktop startup. --stage-dir renders files for review/testing."""
 
 import argparse
+import json
 import os
 from pathlib import Path
 import subprocess
 import sys
 import time
+
+RUNTIME_PATH_VARIABLES = {
+    "memory_db_path": "BLOB_MEMORY_DB_PATH", "privacy_settings_path": "BLOB_PRIVACY_SETTINGS_PATH",
+    "reminders_db_path": "BLOB_REMINDERS_DB_PATH", "documents_dir_path": "BLOB_DOCUMENTS_DIR_PATH",
+    "face_db_path": "BLOB_FACE_DB_PATH", "skills_dir_path": "BLOB_SKILLS_DIR_PATH",
+    "blacklist_path": "BLOB_BLACKLIST_PATH", "personality_path": "BLOB_PERSONALITY_PATH",
+    "ipc_address": "BLOB_IPC_ADDRESS", "ipc_token_path": "BLOB_IPC_TOKEN_PATH",
+}
 
 
 def unit_quote(value):
@@ -16,7 +25,7 @@ def desktop_quote(value):
     return '"' + str(value).replace("\\", "\\\\\\\\").replace('"', '\\"').replace("`", "\\`").replace("$", "\\$").replace("%", "%%") + '"'
 
 
-def render(project, interpreter, *, overlay=None):
+def render(project, interpreter, *, overlay=None, runtime_paths=None):
     project, interpreter = Path(project).resolve(), Path(interpreter).absolute()
     overlay = Path(overlay).absolute() if overlay else project / "frontend_cpp/build/blob_overlay"
     if any(char in str(project) + str(interpreter) + str(overlay) for char in "\n\r"):
@@ -24,6 +33,12 @@ def render(project, interpreter, *, overlay=None):
     desktop_path = str(project).replace("\\", "\\\\")
     from blob.config import BlobConfig
     config = BlobConfig.load(str(project / "config.yaml"))
+    runtime_paths = runtime_paths or {}
+    if (set(runtime_paths) - RUNTIME_PATH_VARIABLES.keys() or any(not isinstance(value, str) or
+            any(char in value for char in "\n\r\0") for value in runtime_paths.values())):
+        raise ValueError("Invalid runtime path overrides.")
+    path_environment = "\n".join("Environment=" + unit_quote(RUNTIME_PATH_VARIABLES[key] + "=" + value)
+                                 for key, value in sorted(runtime_paths.items()))
     base = f"""[Unit]
 Description=Project Blob backend
 PartOf=graphical-session.target
@@ -39,6 +54,8 @@ Restart=on-failure
 RestartSec=3
 TimeoutStopSec=15
 UMask=0077
+Environment={unit_quote('BLOB_MAINTENANCE_PATH=' + str(project / '.runtime/desktop/maintenance'))}
+{path_environment}
 NoNewPrivileges=yes
 StandardInput=null
 # Replies are delivered through authenticated IPC; don't archive chat in the journal.
@@ -65,8 +82,8 @@ RestartSec=3
 UMask=0077
 NoNewPrivileges=yes
 Environment={unit_quote('BLOB_CHAT_PYTHON=' + str(interpreter))}
-Environment={unit_quote('BLOB_IPC_ADDRESS=' + config.ipc_address)}
-Environment={unit_quote('BLOB_IPC_TOKEN_PATH=' + config.ipc_token_path)}
+Environment={unit_quote('BLOB_IPC_ADDRESS=' + runtime_paths.get('ipc_address', config.ipc_address))}
+Environment={unit_quote('BLOB_IPC_TOKEN_PATH=' + runtime_paths.get('ipc_token_path', config.ipc_token_path))}
 
 [Install]
 WantedBy=graphical-session.target
@@ -113,7 +130,7 @@ def require_fresh_desktop(targets):
             raise RuntimeError(f"Existing service left unchanged: {name}. Use --prepare-only to verify a separate build.")
 
 
-def wait_ready(project, interpreter):
+def wait_ready(project, interpreter, env=None):
     deadline = time.monotonic() + 45
     while time.monotonic() < deadline:
         active = subprocess.run(["systemctl", "--user", "is-active",
@@ -122,7 +139,7 @@ def wait_ready(project, interpreter):
         if active.returncode == 0 and active.stdout.split() == ["active", "active"]:
             try:
                 ready = subprocess.run([str(interpreter), "-m", "blob.client", "--status"], cwd=project,
-                                       capture_output=True, timeout=8, check=False)
+                                       capture_output=True, timeout=8, check=False, env=env)
                 if ready.returncode == 0:
                     return
             except subprocess.TimeoutExpired:
@@ -131,8 +148,8 @@ def wait_ready(project, interpreter):
     raise RuntimeError("Blob startup did not become ready. Check journalctl --user -u blob-backend -u blob-overlay. Fresh startup files will be removed.")
 
 
-def install(project, interpreter, *, stage_dir=None, overlay=None, fresh=False):
-    files = render(project, interpreter, overlay=overlay)
+def install(project, interpreter, *, stage_dir=None, overlay=None, fresh=False, runtime_paths=None):
+    files = render(project, interpreter, overlay=overlay, runtime_paths=runtime_paths)
     targets = {name: Path(stage_dir) / name for name in files} if stage_dir else desktop_targets()
     if fresh and not stage_dir:
         require_fresh_desktop(targets)
@@ -178,12 +195,14 @@ def main():
     parser.add_argument("--stage-dir", type=Path)
     parser.add_argument("--overlay", type=Path, help="Use an independently built overlay")
     parser.add_argument("--fresh", action="store_true", help="Refuse existing startup files; roll back fresh startup on failure")
+    parser.add_argument("--runtime-paths", type=Path, help="Private path overrides captured by the update manager")
     args = parser.parse_args()
     project = Path(__file__).resolve().parents[1]
     overlay = args.overlay or project / "frontend_cpp/build/blob_overlay"
     if not overlay.is_file():
         parser.error("Build the frontend with make frontend first.")
-    install(project, sys.executable, stage_dir=args.stage_dir, overlay=overlay, fresh=args.fresh)
+    runtime_paths = json.loads(args.runtime_paths.read_text()) if args.runtime_paths else None
+    install(project, sys.executable, stage_dir=args.stage_dir, overlay=overlay, fresh=args.fresh, runtime_paths=runtime_paths)
 
 
 if __name__ == "__main__":

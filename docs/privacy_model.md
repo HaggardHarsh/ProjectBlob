@@ -133,11 +133,32 @@ The database file is private (`0600`); newly created parent directories use
 `0700`. Direct `/reminders` commands do not send their contents to the provider.
 Natural-language reminder requests use the normal cloud chat path. Reminders
 are created or changed only on an explicit request. Cancelling one deletes its
-record; completed one-time reminders are removed rather than archived.
+record and any unread delivery. Completed one-time reminders remain in the local
+delivery outbox until acknowledged after display, then are removed.
 
 Blob cannot notify while its backend is closed. On startup it delivers overdue
 reminders once, with their original due time, and advances repeating reminders
-past missed intervals. A due record is removed or advanced before notification
-to prevent duplicate delivery; a process crash between that commit and printing
-can lose that notification. Stop Blob and remove the reminder database to erase
-all reminder records.
+past missed intervals. Schedule advancement and the pending delivery are committed
+in the same SQLite transaction. Unread deliveries survive a crash and replay on
+chat reconnect. A crash between display and acknowledgement may repeat a reminder;
+this is at-least-once delivery. Repeated unread occurrences coalesce, and stale
+acknowledgements cannot erase a newer occurrence. Stop Blob and remove the reminder
+database and its SQLite sidecars to erase live reminder records. Managed installation
+backups retain separate copies until explicitly deleted; see [setup](setup.md).
+
+## Model tool boundaries
+
+The host derives model tool authority from the current user's request, separately
+from retrieved pages, documents, recalled memories and model instructions. Web
+search queries are derived by the host from public user input. Model page opens
+must use a URL supplied by the user or returned by a checked tool; form text must
+come from the public request. Shell commands require the user's literal command
+or a matching fixed diagnostic, in addition to the existing command sandbox.
+These rules also apply to native Hermes tool calls. Direct `/skills run` requests
+remain explicit local authority and retain the existing privacy/network checks.
+
+Input/output filtering removes terminal control sequences. Output filtering
+redacts configured Nebius and Brave credentials, including streamed fragments.
+This is not general PII detection, encryption, or a guarantee against every form
+of prompt injection. Local skill installation is trusted code installation.
+Read [the threat review](evals/security_review.md) for tested boundaries and limits.

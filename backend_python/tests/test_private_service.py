@@ -132,7 +132,9 @@ def test_command_namespace_blocks_unapproved_files_and_masks_secrets(tmp_path):
     (allowed / "escape.txt").symlink_to(other / "secret.txt")
     controls.approve(allowed)
     probe = run_command(["cat", str(allowed / "read.txt")], controls=controls)
-    if probe.returncode and ("Operation not permitted" in probe.stdout or "Creating new namespace failed" in probe.stdout):
+    unavailable = ("Operation not permitted", "Creating new namespace failed",
+                   "Can't mount proc on /newroot/proc: Permission denied")
+    if probe.returncode and any(message in probe.stdout for message in unavailable):
         pytest.skip("Host disallows unprivileged namespaces; tools fail closed")
     assert probe.returncode == 0 and probe.stdout == "approved content"
     assert run_command(["cat", str(other / "secret.txt")], controls=controls).returncode != 0

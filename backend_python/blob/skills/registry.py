@@ -79,11 +79,18 @@ class SkillRegistry:
             if source == "model" and (not info["model_callable"] or name == "camera"):
                 raise ValueError("This skill requires an explicit terminal command.")
             values = validate_arguments(info["arguments"], args)
+            from blob.ai.tool_policy import MODEL_POLICY
+            policy = MODEL_POLICY.get() if source == "model" else None
+            if policy:
+                values = policy.arguments(name, values)
             requires_cloud = getattr(self.skills[name], "requires_cloud", False)
             with self.controls.operation(cloud=True) if self.controls and requires_cloud else nullcontext():
-                result = await asyncio.wait_for(self.skills[name].async_execute(values), info["timeout_seconds"])
+                cached = policy.read_results.get(values.get("url")) if policy and name == "web_read" else None
+                result = cached or await asyncio.wait_for(self.skills[name].async_execute(values), info["timeout_seconds"])
                 if self.controls and requires_cloud:
                     self.controls.check(cloud=True)
+            if policy:
+                policy.observe(name, result, values)
             if not isinstance(result, SkillResult) or not isinstance(result.output, str) or type(result.success) is not bool:
                 raise ValueError("The skill returned an invalid result.")
             if len(result.output.encode("utf-8")) > 8000:
