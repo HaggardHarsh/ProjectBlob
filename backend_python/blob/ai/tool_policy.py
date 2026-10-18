@@ -5,17 +5,28 @@ from dataclasses import dataclass, field
 import json
 import re
 
-from blob.ai.web_grounding import live_product_query, live_travel_request, requested_system_tools
+from blob.ai.web_grounding import declines_web_lookup, live_product_query, live_travel_request, requested_system_tools
 from blob.ai.response_format import FORMAT_FAILURE
 from blob.skills.web_network import public_url
 
 
 MODEL_POLICY = ContextVar("blob_model_tool_policy", default=None)
-URL = re.compile(r"https?://[^\s<>\"\[\]()]+", re.I)
+URL = re.compile(r"https?://[^\s<>\"\[\]()【】《》“”‘’]+", re.I)
 EXPLICIT_WEB = re.compile(r"https?://|\b(?:web|internet|online|website|browser)\b", re.I)
 PUBLIC_REQUEST = re.compile(r"\b(?:latest|recent|today.s|news|availability)\b|"
     r"\bcurrent\s+(?:version|release|price|pricing|status|president|prime minister|ceo|score|rate|exchange|schedule)\b", re.I)
-FOLLOWUP = re.compile(r"\b(?:it|that|this|those|they|there|more|first|second|next|again)\b", re.I)
+FOLLOWUP = re.compile(
+    r"^\s*(?:what\s+(?:about|does|is|are)|how\s+(?:about|much|good)|"
+    r"(?:is|are|does|do|can|could)\s+(?:it|that|this|those|they)|"
+    r"(?:please\s+)?(?:read|open|check|compare|verify|search|look\s+up)\b|"
+    r"(?:tell|show)\s+me\s+more\b|more\s+(?:details?|information)\b|"
+    r"and\s+(?:on|for)\b|(?:make|change)\s+that\b)", re.I)
+REFERENT = re.compile(r"\b(?:it|its|that|this|those|they|them|their|there|more|first|second|next|again)\b", re.I)
+DATE_FOLLOWUP = re.compile(
+    r"\s*(?:what about|how about|and(?: on| for)?|on|for)\s+"
+    r"(?:(?:the|on|for|instead|tomorrow|today|next|week|monday|tuesday|wednesday|thursday|friday|saturday|sunday|"
+    r"jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|"
+    r"oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|\d{1,4}(?:st|nd|rd|th)?)\b|[-/.,?!\s])+", re.I)
 
 
 def normalized(value):
@@ -42,10 +53,13 @@ class ModelToolPolicy:
         if files:
             policy.allowed.add("file_search")
         product = live_product_query(request, recent)
-        public = required_tool is None and bool(product or live_travel_request(request) or EXPLICIT_WEB.search(request) or (
+        declined = declines_web_lookup(request)
+        public = not declined and required_tool is None and bool(product or live_travel_request(request) or EXPLICIT_WEB.search(request) or (
             PUBLIC_REQUEST.search(request) and not requested_system_tools(request) and
             not re.search(r"\b(?:my|our|remember|saved|forget)\b", request, re.I)))
-        followup = bool(previous and FOLLOWUP.search(request) and
+        referenced_followup = FOLLOWUP.search(request) and (REFERENT.search(request) or (
+            previous and live_travel_request(previous.public_input) and DATE_FOLLOWUP.fullmatch(request)))
+        followup = bool(previous and not declined and (product or referenced_followup) and
                         not re.search(r"\b(?:my|our|remember|saved|forget)\b", request, re.I))
         if public or (followup and required_tool is None):
             policy.allowed.update({"web_search", "web_read", "browser"})
@@ -143,9 +157,12 @@ class ModelToolPolicy:
             # before emitting a seat claim, even when a page contains numbers.
             return ("I found a source page, but couldn't verify live seats for that train and date. "
                     "Please check the enquiry manually: " + next(iter(self.verified)))
-        cited = {value.rstrip(".,;!?") for value in URL.findall(answer)}
+        cited = {value.rstrip(".,;!?\u200b\u200c\u200d\u2060\ufeff") for value in URL.findall(answer)}
         if not cited.intersection(self.verified):
             return "I retrieved a source, but couldn't produce a properly sourced answer. Please retry or check " + next(iter(self.verified))
         if cited - set(self.verified):
             return "The answer included an unverified source link. Please retry or check " + next(iter(self.verified))
         return answer
+
+    def missing_citation(self, answer):
+        return bool(self.query and self.verified and answer != FORMAT_FAILURE and not URL.search(answer))

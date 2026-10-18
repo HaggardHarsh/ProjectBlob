@@ -53,9 +53,11 @@ Model serialization tokens and printed JSON tool envelopes are rejected before
 reaching Hermes. Parameter-only search JSON is also rejected during live lookups.
 One bounded format retry uses the supplied tool interface and counts toward the
 native model-call budget; repeated malformed output produces a plain error.
-Native Hermes uses actual function calls. Classic mode accepts only a complete
-request matching its documented `tool`/`args` format; multiple objects and an
-`arguments` envelope are corrected rather than extracted and executed. Streaming
+Both runtimes use actual function calls with only the current request's authorized
+schemas. Classic mode adapts one structured provider call to its host execution
+loop; ordinary chat still streams, while tool-capable completions are buffered.
+The legacy text path accepts only a complete `tool`/`args` request; multiple objects,
+unknown native calls and an `arguments` envelope are corrected rather than extracted and executed. Streaming
 withholds structured content until validation, keeping malformed calls out of
 chat and new conversation history. System and reminder tools require their own
 user intent and are not exposed for unrelated model discussions.
@@ -73,6 +75,14 @@ retrieve and read sources before inference. Search snippets alone do not verify
 an answer. Final live answers require links to pages actually read; failed source
 checks produce a verification message. A citation check cannot establish that
 every sentence is factually correct.
+
+Missing source links get one bounded answer-only correction using the checked
+evidence, with tools disabled; a failed correction still returns a verification
+message. Citation delimiters and trailing invisible separators are accepted,
+while an altered or invented URL remains unverified. Explicit requests to stop
+browsing do not trigger preflight retrieval. A travel-date follow-up retains the
+public journey details and searches again rather than treating an earlier page
+as the answer to the new date.
 
 Model search queries come from public user input, rather than recalled private
 context. Model page opens use user-supplied or checked tool URLs, and form values

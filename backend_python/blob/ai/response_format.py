@@ -4,8 +4,9 @@ import json
 import re
 from blob.terminal import terminal_text
 
-PROTOCOL_MARKER = re.compile(r"<\|(?:tool_|im_|start_header_id|end_header_id|eot_id|python_tag)", re.I)
+PROTOCOL_MARKER = re.compile(r"<\|(?!emote>)[a-z_]", re.I)
 TEXT_TOOL_MARKER = re.compile(r"```tool_call\b|<tool_call\b|[\"'](?:tool|tool_calls|function_call)[\"']\s*:", re.I)
+FUNCTION_ENVELOPE = re.compile(r"[\"'](?:name|function)[\"']\s*:", re.I)
 ARGUMENT_MARKER = re.compile(r"[\"'](?:args|arguments)[\"']\s*:", re.I)
 FORMAT_CORRECTION = (
     "The previous completion contained malformed tool-request text and was discarded. "
@@ -31,6 +32,8 @@ def has_tool_protocol(text, *, valid_text_call=False, search_arguments=False):
         return True
     if valid_text_call:
         return False
+    if FUNCTION_ENVELOPE.search(text) and ARGUMENT_MARKER.search(text):
+        return True
     if TEXT_TOOL_MARKER.search(text):
         if re.search(r"```tool_call\b|<tool_call\b|[\"'](?:tool_calls|function_call)[\"']\s*:", text, re.I):
             return True

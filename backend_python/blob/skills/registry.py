@@ -50,9 +50,11 @@ class SkillRegistry:
                 "timeout_seconds": getattr(skill, "timeout_seconds", 15),
                 "model_callable": getattr(skill, "model_callable", True)}
 
-    def prompt_text(self):
+    def prompt_text(self, *, permitted=None):
         lines = []
         for name in sorted(self.skills):
+            if permitted is not None and name not in permitted:
+                continue
             if self.controls and name in self.controls.state["disabled_skills"]:
                 continue
             info = self.describe(name)

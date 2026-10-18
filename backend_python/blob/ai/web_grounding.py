@@ -13,9 +13,18 @@ OFFICIAL_DOMAINS = ("ai.google.dev", "deepmind.google", "blog.google", "cloud.go
 TRAVEL_TOPIC = re.compile(r"\b(?:flights?|airfares?|trains?|buses|bus|hotels?|tickets?|seats?)\b", re.I)
 TRAVEL_LOOKUP = re.compile(
     r"^\s*(?:(?:hey|please)[, ]+)*(?:(?:can|could|would|will)\s+(?:you|u)\s+)?"
-    r"(?:please\s+)?(?:check|find|search|look\s+(?:up|for)|show\s+me)\b", re.I)
+    r"(?:please\s+)?(?:check|find|search|see\s+(?:if|whether)|look\s+(?:up|for)|show\s+me)\b", re.I)
 TRAVEL_QUESTION = re.compile(
-    r"^\s*(?:(?:are|is)\s+there\b|(?:any|what|which)\s+(?:flights?|trains?|buses|hotels?|tickets?|seats?)\b)", re.I)
+    r"^\s*(?:(?:are|is)\s+(?:there|any)\b|(?:any|what|which)\s+(?:flights?|trains?|buses|hotels?|tickets?|seats?)\b)", re.I)
+DECLINED_WEB = re.compile(
+    r"\b(?:don't|dont|do not|not|never|stop|without|no more)\s+"
+    r"(?:(?:want|need)\s+(?:you\s+)?to\s+)?"
+    r"(?:(?:do|any|more|further|another|the|a|web|internet|online|browser)\s+){0,4}"
+    r"(?:search(?:es|ing)?|brows(?:e|ing)|look(?:ing)?\s+up|(?:check|use|using)\s+(?:the\s+)?(?:web|internet|browser|online))\b", re.I)
+
+
+def declines_web_lookup(text):
+    return bool(DECLINED_WEB.search(text.replace("’", "'")))
 
 
 def live_travel_request(text):

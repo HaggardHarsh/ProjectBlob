@@ -2,6 +2,8 @@ from typing import AsyncIterator
 import logging
 import os
 import re
+import json
+from types import SimpleNamespace
 from openai import AsyncOpenAI
 import abc
 import asyncio
@@ -20,7 +22,7 @@ class LLMEngine(abc.ABC):
         pass
 
     @abc.abstractmethod
-    async def generate_from_messages(self, messages: list[dict], system_prompt: str) -> any:
+    async def generate_from_messages(self, messages: list[dict], system_prompt: str, *, allow_tools=True) -> any:
         """Generate from a full message list (for multi-turn ReAct loop)."""
         pass
 
@@ -29,7 +31,7 @@ class LLMEngine(abc.ABC):
         pass
 
 class NebiusEngine(LLMEngine):
-    def __init__(self, api_key: str, base_url: str, model_name: str, *, controls=None):
+    def __init__(self, api_key: str, base_url: str, model_name: str, *, controls=None, tool_registry=None):
         self._api_key = api_key
         self._base_url = base_url
         self._client = None
@@ -37,6 +39,7 @@ class NebiusEngine(LLMEngine):
         self._vision_model = None
         self._vision_checked = False
         self.controls = controls
+        self.tool_registry = tool_registry
         self.chat_thinking_enabled = os.environ.get("BLOB_CHAT_THINKING", "").lower() in {"1", "true", "yes", "on"}
 
     def validate_configuration(self):
@@ -131,6 +134,12 @@ class NebiusEngine(LLMEngine):
 
     async def generate_from_messages_stream(self, messages: list[dict], system_prompt: str) -> AsyncIterator[str]:
         """Stream text from the same chat request used by the ReAct loop."""
+        if self._request_tools()[0]:
+            # Tool deltas cannot be presented as ordinary streamed text. Buffer
+            # this completion and let the host validate/execute the single call.
+            message = await self.generate_from_messages(messages, system_prompt)
+            yield message.content or ""
+            return
         if not messages or messages[0].get("role") != "system":
             messages = [{"role": "system", "content": system_prompt}] + messages
         stream = await self._create(
@@ -149,7 +158,7 @@ class NebiusEngine(LLMEngine):
             close = getattr(stream, "close", None) or stream.aclose
             await close()
 
-    async def generate_from_messages(self, messages: list[dict], system_prompt: str) -> any:
+    async def generate_from_messages(self, messages: list[dict], system_prompt: str, *, allow_tools=True) -> any:
         """Generate a response from a full conversation message list.
         
         The messages list should already include the system prompt as the first
@@ -160,12 +169,60 @@ class NebiusEngine(LLMEngine):
         if not messages or messages[0].get("role") != "system":
             messages = [{"role": "system", "content": system_prompt}] + messages
 
+        tools, mapping = self._request_tools() if allow_tools else ([], {})
+        options = {}
+        if tools or not allow_tools:
+            messages = [dict(message) for message in messages]
+            messages[0]["content"] = re.sub(
+                r"### How to Call a Tool.*?(?=## Emotes)",
+                ("Use the supplied native function interface for tool calls, one call at a time. "
+                 if allow_tools else "No tool calls are allowed in this completion. Answer from the supplied evidence. ") +
+                "Never print tool requests or simulated tool results as answer text.\n\n",
+                messages[0]["content"], flags=re.S)
+        if tools:
+            options = {"tools": tools, "parallel_tool_calls": False}
         resp = await self._create(
             model=self.model_name,
             messages=messages,
+            **options,
             **self._chat_kwargs(),
         )
-        return resp.choices[0].message
+        message = resp.choices[0].message
+        calls = getattr(message, "tool_calls", None)
+        if tools and calls:
+            from blob.ai.response_format import has_tool_protocol
+            if has_tool_protocol(message.content):
+                return message
+            # Never extract calls from ordinary model text. Only the provider's
+            # structured channel is adapted to the existing host execution loop.
+            if len(calls) == 1 and calls[0].function.name in mapping:
+                try:
+                    arguments = json.loads(calls[0].function.arguments)
+                except (ValueError, TypeError):
+                    arguments = None
+                if isinstance(arguments, dict):
+                    return SimpleNamespace(content=json.dumps({"tool": mapping[calls[0].function.name], "args": arguments}))
+            return SimpleNamespace(content=json.dumps({"tool_calls": [call.model_dump() for call in calls]}))
+        return message
+
+    def _request_tools(self):
+        """Expose only host-authorized tools, never all registered capabilities."""
+        from blob.ai.tool_policy import MODEL_POLICY
+        policy = MODEL_POLICY.get()
+        registry = getattr(self, "tool_registry", None)
+        tools, mapping = [], {}
+        if policy is None or registry is None:
+            return tools, mapping
+        for name in sorted(policy.allowed & set(registry.skills)):
+            info = registry.describe(name)
+            if not info["model_callable"] or name == "camera" or (
+                    self.controls and name in self.controls.state["disabled_skills"]):
+                continue
+            wire_name = "blob_" + name.replace(".", "__")
+            mapping[wire_name] = name
+            tools.append({"type": "function", "function": {"name": wire_name,
+                          "description": info["description"], "parameters": info["arguments"]}})
+        return tools, mapping
 
     async def generate_streaming(self, prompt: str, context: str, system_prompt: str) -> AsyncIterator[str]:
         messages = [

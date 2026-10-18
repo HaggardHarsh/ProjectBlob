@@ -53,6 +53,8 @@ jobs:
         run: |
           timeout --signal=INT --kill-after=30s 10m \
             python -m pytest backend_python/tests -vv -o faulthandler_timeout=90 --junitxml=backend-tests.xml
+      - name: Conversation boundary audit
+        run: python -m blob.evals.conversation_audit --report conversation-audit.json
       - name: Build source distribution and wheel
         run: python -m build --no-isolation --outdir dist backend_python
       - name: Check installed wheel outside checkout
@@ -70,6 +72,7 @@ jobs:
           name: backend-release-checks-${{ matrix.python }}
           path: |
             backend-tests.xml
+            conversation-audit.json
             dist/*
           if-no-files-found: warn
 

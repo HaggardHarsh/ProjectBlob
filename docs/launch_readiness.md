@@ -19,6 +19,10 @@ installations. Voice and other operating systems are outside the initial beta.
 See [verification evidence](evals/launch_criticals.md) for exact test scope and
 limits. The existing workstation installation was not switched during this work.
 
+The [proactive conversation audit](evals/conversation_audit.md) records additional
+real-model checks, reproduced bugs and regression coverage. Run its live mode
+alongside ordinary CI when changing model prompts or tool orchestration.
+
 ## Reproduce backend and packaging checks
 
 Use a separate environment on Linux x86-64 with Python 3.12 or 3.14. Substitute

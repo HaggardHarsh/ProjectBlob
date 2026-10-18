@@ -16,6 +16,11 @@ command execution remains fail-closed. Artifacts include backend JUnit/packages
 and installer JSON/JUnit/X11 preview; the workflow uses synthetic stores and a
 synthetic provider key, with no billed AI calls or personal data.
 
+The [conversation audit](conversation_audit.md) adds a deterministic request and
+protocol catalog to both backend jobs and exports `conversation-audit.json`.
+Real-model conversation checks use an explicit local `--live` run with synthetic
+stores; the CI fixture key cannot test provider behavior.
+
 ## Runner differences resolved
 
 Ubuntu's AppArmor policy initially prevented downloaded Playwright Chromium from
