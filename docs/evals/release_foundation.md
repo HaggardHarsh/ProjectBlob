@@ -6,8 +6,9 @@ for later Ubuntu 24.04 checks and the current CI publishing status.
 Verified locally on 2026-10-17, Linux x86-64 / CPython 3.14. These checks do not
 establish Windows/macOS support, full desktop lifecycle reliability, or that all
 launch blockers are closed. A GitHub Actions workflow was prepared locally;
-publication was rejected because the saved token lacks workflow permission and
-has since been deferred by the user. It has not run on a hosted runner.
+publication was initially rejected because the saved token lacked workflow
+permission. It has since been published in `51b0d28`; hosted results still need
+verification. See the current launch evidence linked above.
 
 | Check | Result |
 | --- | --- |
@@ -26,6 +27,6 @@ packaged OpenShell policy is compared with its reviewed deployment copy.
 
 The lock pins dependency versions for the release-test profile; it does not pin
 native packages or verify distribution hashes. The original draft targeted Ubuntu
-22.04; the current pending workflow targets Ubuntu 24.04. These local results were obtained on the existing development
+22.04; the published workflow targets Ubuntu 24.04. These local results were obtained on the existing development
 machine. See [launch readiness](../launch_readiness.md) for remaining gates and
 reproduction commands.

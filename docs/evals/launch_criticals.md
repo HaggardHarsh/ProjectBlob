@@ -61,7 +61,11 @@ the local review and synthetic fixtures do not prove semantic accuracy or immuni
 to every injection. Native distribution artifacts, license notices and measured
 latency/usage budgets remain separate rollout work.
 
-CI publishing is explicitly deferred by the user. Its local workflow targets
-Ubuntu 24.04/Python 3.12 and 3.14; GitHub previously rejected publication because
-the saved token lacks workflow permission. Hosted execution and required branch
-checks have not been verified.
+The workflow was subsequently published on `main` in commit `51b0d28`, targeting
+Ubuntu 24.04/Python 3.12 and 3.14. The earlier workflow-permission blocker is resolved.
+Actions read access is now available. The first hosted frontend job passed, while
+Chromium browser tests reported Ubuntu AppArmor user-namespace restrictions.
+The workflow now loads a runner-only profile for Playwright's Chromium executables,
+keeping Chromium sandboxing enabled without a global user-namespace policy change.
+Full hosted results and required branch checks remain unverified while the corrected
+workflow runs; local/container evidence alone does not establish a hosted pass.

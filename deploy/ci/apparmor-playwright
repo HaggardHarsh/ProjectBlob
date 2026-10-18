@@ -1,0 +1,8 @@
+# Ephemeral GitHub Ubuntu runner only. Keep Chromium's sandbox enabled.
+# https://chromium.googlesource.com/chromium/src/+/main/docs/security/apparmor-userns-restrictions.md
+abi <abi/4.0>,
+include <tunables/global>
+
+profile blob-ci-playwright /home/runner/.cache/ms-playwright/**/{chrome,chrome-headless-shell} flags=(unconfined) {
+  userns,
+}

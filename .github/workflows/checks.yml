@@ -32,6 +32,10 @@ jobs:
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
     steps:
       - uses: actions/checkout@v4
+      - name: Allow sandboxed Playwright Chromium on this runner
+        run: |
+          sudo install -o root -g root -m 0644 deploy/ci/apparmor-playwright /etc/apparmor.d/blob-ci-playwright
+          sudo apparmor_parser -r /etc/apparmor.d/blob-ci-playwright
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
@@ -85,12 +89,16 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
+      - name: Allow sandboxed Playwright Chromium on this runner
+        run: |
+          sudo install -o root -g root -m 0644 deploy/ci/apparmor-playwright /etc/apparmor.d/blob-ci-playwright
+          sudo apparmor_parser -r /etc/apparmor.d/blob-ci-playwright
       - name: Exercise stock Ubuntu Python and native package setup
-        run: python3 tools/setup.py --prepare-only --install-system-deps
+        run: /usr/bin/python3 tools/setup.py --prepare-only --install-system-deps
       - name: Verify installed candidate and virtual X11 desktop
         run: |
           sudo apt-get install -y xvfb xauth desktop-file-utils
-          python3 tools/validate_ubuntu_candidate.py
+          /usr/bin/python3 tools/validate_ubuntu_candidate.py
       - name: Save clean installation evidence
         if: always()
         uses: actions/upload-artifact@v4

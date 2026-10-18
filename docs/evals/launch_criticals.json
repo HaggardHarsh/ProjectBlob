@@ -71,5 +71,5 @@
     "real train seat inventory adapter",
     "hosted GitHub Actions"
   ],
-  "ci_publication": "deferred by user; credential lacks workflow permission"
+  "ci_publication": "published in 51b0d28; hosted frontend passed; runner-scoped Chromium AppArmor fix awaiting verification"
 }
