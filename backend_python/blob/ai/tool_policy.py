@@ -5,7 +5,8 @@ from dataclasses import dataclass, field
 import json
 import re
 
-from blob.ai.web_grounding import live_product_query, requested_system_tools
+from blob.ai.web_grounding import live_product_query, live_travel_request, requested_system_tools
+from blob.ai.response_format import FORMAT_FAILURE
 from blob.skills.web_network import public_url
 
 
@@ -41,7 +42,7 @@ class ModelToolPolicy:
         if files:
             policy.allowed.add("file_search")
         product = live_product_query(request, recent)
-        public = required_tool is None and bool(product or EXPLICIT_WEB.search(request) or (
+        public = required_tool is None and bool(product or live_travel_request(request) or EXPLICIT_WEB.search(request) or (
             PUBLIC_REQUEST.search(request) and not requested_system_tools(request) and
             not re.search(r"\b(?:my|our|remember|saved|forget)\b", request, re.I)))
         followup = bool(previous and FOLLOWUP.search(request) and
@@ -128,7 +129,7 @@ class ModelToolPolicy:
 
     def grounded_answer(self, answer):
         """A checked source is necessary for a live answer; snippets do not count."""
-        if not self.query:
+        if not self.query or answer == FORMAT_FAILURE:
             return answer
         if re.fullmatch(r"(?:Which|What|Could you provide|Please provide)[^.?!]{1,250}\?", answer.strip(), re.I):
             return answer

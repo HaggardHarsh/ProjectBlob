@@ -34,6 +34,11 @@ details. Direct commands also work without invoking the language model:
 /skills run browser {"action":"close"}
 ```
 
+Travel enquiries such as “could you check if there are any flights available from
+Bangalore to Delhi on 24th Oct” select live search and page reading without a
+“web” keyword. Finding saved tickets or discussing earlier trips does not grant
+travel lookup permission. Search links alone do not confirm bookable inventory.
+
 Recognized AI-product questions and short follow-ups such as “is it good?” trigger
 source retrieval before inference, without needing “search the web” in the request.
 Queries use the user's product name and a public topic, not personal memories or
@@ -44,12 +49,16 @@ clears it. Missing sources produce an explicit verification failure, not a guess
 release description. `/agent` reports the last automatic lookup separately from
 the last Hermes run; successful inference receipts include `preflight_tools`.
 
-Model tool-serialization tokens are rejected before reaching Hermes. One bounded
-format retry is allowed and counts toward its model-call budget. Generated textual
-tool calls are never converted into real actions; repeated malformed output fails
-closed. Text and streamed replies also keep these tokens out of displayed answers
-and new conversation history. System and reminder tools require their own user
-intent and are not exposed for unrelated model discussions.
+Model serialization tokens and printed JSON tool envelopes are rejected before
+reaching Hermes. Parameter-only search JSON is also rejected during live lookups.
+One bounded format retry uses the supplied tool interface and counts toward the
+native model-call budget; repeated malformed output produces a plain error.
+Native Hermes uses actual function calls. Classic mode accepts only a complete
+request matching its documented `tool`/`args` format; multiple objects and an
+`arguments` envelope are corrected rather than extracted and executed. Streaming
+withholds structured content until validation, keeping malformed calls out of
+chat and new conversation history. System and reminder tools require their own
+user intent and are not exposed for unrelated model discussions.
 
 Browser responses include current URL, visible text and element `ref`s. Use a
 current ref with `click`, `fill` (with `text`), `select` (option value or label in

@@ -565,7 +565,7 @@ class BlobOrchestrator:
             tool_data = json.loads(visible)
         except json.JSONDecodeError:
             return None, None
-        if isinstance(tool_data, dict):
+        if isinstance(tool_data, dict) and set(tool_data) <= {"tool", "args"}:
             tool_name = tool_data.get("tool")
             tool_args = tool_data.get("args", {})
             if isinstance(tool_name, str) and tool_name and isinstance(tool_args, dict):
@@ -602,17 +602,23 @@ class BlobOrchestrator:
     async def _generate_with_preview(self, messages: list[dict], system_prompt: str,
                                      allow_preview: bool = True, engine=None) -> tuple[str, str]:
         engine = engine or self.llm
+        from blob.ai.tool_policy import MODEL_POLICY
+        policy = MODEL_POLICY.get()
+        def malformed(text):
+            tool, _ = self._parse_tool_call(text or "")
+            return has_tool_protocol(text, valid_text_call=tool is not None,
+                                     search_arguments=bool(policy and policy.query))
         async def repair():
             corrected = correction_messages(messages)
             if prompt_size_bytes(corrected) > getattr(self, "_max_prompt_bytes", DEFAULT_MAX_PROMPT_BYTES):
                 return FORMAT_FAILURE
             msg = await engine.generate_from_messages(corrected, system_prompt + "\n" + FORMAT_CORRECTION)
-            return FORMAT_FAILURE if has_tool_protocol(msg.content) else msg.content or ""
+            return FORMAT_FAILURE if malformed(msg.content) else msg.content or ""
         stream = getattr(engine, "generate_from_messages_stream", None)
         if getattr(self, "_streaming_disabled", False) or not inspect.isasyncgenfunction(stream):
             msg = await engine.generate_from_messages(messages, system_prompt)
             response = msg.content or ""
-            if has_tool_protocol(response):
+            if malformed(response):
                 response = await repair()
             return response, ""
 
@@ -628,7 +634,7 @@ class BlobOrchestrator:
                     continue
                 head = _visible_preview(response).lstrip()
                 # Tool calls are text blocks in this protocol. Keep them out of the terminal.
-                if (not head or head.startswith(("```", "{", "<tool_call>"))
+                if (not head or "{" in response or head.startswith(("```", "<tool_call>"))
                         or "```".startswith(head) or "<tool_call>".startswith(head)):
                     continue
                 # Hold the tail so incomplete control tags cannot reach the terminal.
@@ -650,7 +656,7 @@ class BlobOrchestrator:
             logger.warning("Streaming unavailable; using normal model responses")
             msg = await engine.generate_from_messages(messages, system_prompt)
             response = msg.content or ""
-        if has_tool_protocol(response):
+        if malformed(response):
             response = await repair()
         return response, preview
 
@@ -1453,7 +1459,7 @@ class BlobOrchestrator:
             return await self._send_direct_response(str(exc), "WORRIED")
         except (OSError, ValueError):
             return await self._send_direct_response("Hermes is unavailable. Run blob-agent doctor.", "WORRIED")
-        if has_tool_protocol(answer):
+        if has_tool_protocol(answer, search_arguments=bool(policy and policy.query)):
             return await self._send_direct_response(FORMAT_FAILURE, "CONFUSED")
         answer = _strip_reasoning(answer)
         emote, answer = self._extract_emote(answer)

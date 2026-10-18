@@ -201,10 +201,12 @@ class HermesAgentWrapper:
                                   ("messages", "tools", "tool_choice", "temperature", "max_tokens") if key in request}
                         kwargs.update(model=self.config.model_name, stream=False)
                         kwargs["max_tokens"] = min(int(kwargs.get("max_tokens") or 4096), 4096)
+                        search_arguments = any(tool.get("function", {}).get("name") == "blob_web_search"
+                                               for tool in requested)
                         try:
                             model_started = time.monotonic()
                             response = await self.llm._create(**kwargs)
-                            if has_tool_protocol(response.choices[0].message.content):
+                            if has_tool_protocol(response.choices[0].message.content, search_arguments=search_arguments):
                                 if self.last_run["model_calls"] >= self.config.agent_max_iterations:
                                     raise AgentRuntimeError("The model returned malformed tool text; that completion was discarded.")
                                 self.last_run["model_calls"] += 1
@@ -213,7 +215,7 @@ class HermesAgentWrapper:
                                 if prompt_size_bytes(kwargs["messages"]) > self.config.max_prompt_bytes:
                                     raise AgentRuntimeError("The model returned malformed tool text; there is no room to repair it safely.")
                                 response = await self.llm._create(**kwargs)
-                                if has_tool_protocol(response.choices[0].message.content):
+                                if has_tool_protocol(response.choices[0].message.content, search_arguments=search_arguments):
                                     raise AgentRuntimeError("The model returned malformed tool text again. Those generated actions were not executed.")
                         except (PrivacyBlocked, asyncio.CancelledError):
                             raise

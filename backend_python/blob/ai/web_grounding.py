@@ -10,6 +10,19 @@ STOP = set("a an the is are was were what who how when where why it its that thi
 OFFICIAL_DOMAINS = ("ai.google.dev", "deepmind.google", "blog.google", "cloud.google.com", "openai.com",
                     "anthropic.com", "claude.com", "x.ai", "deepseek.com", "qwen.ai", "nvidia.com",
                     "llama.com", "mistral.ai")
+TRAVEL_TOPIC = re.compile(r"\b(?:flights?|airfares?|trains?|buses|bus|hotels?|tickets?|seats?)\b", re.I)
+TRAVEL_LOOKUP = re.compile(
+    r"^\s*(?:(?:hey|please)[, ]+)*(?:(?:can|could|would|will)\s+(?:you|u)\s+)?"
+    r"(?:please\s+)?(?:check|find|search|look\s+(?:up|for)|show\s+me)\b", re.I)
+TRAVEL_QUESTION = re.compile(
+    r"^\s*(?:(?:are|is)\s+there\b|(?:any|what|which)\s+(?:flights?|trains?|buses|hotels?|tickets?|seats?)\b)", re.I)
+
+
+def live_travel_request(text):
+    """A current travel enquiry is public lookup intent without a 'web' keyword."""
+    if re.search(r"\b(?:remember|recall|saved|stored|downloaded|files?|folders?|documents?)\b", text, re.I):
+        return False
+    return bool(TRAVEL_TOPIC.search(text) and (TRAVEL_LOOKUP.search(text) or TRAVEL_QUESTION.search(text)))
 
 
 def product_names(text):
