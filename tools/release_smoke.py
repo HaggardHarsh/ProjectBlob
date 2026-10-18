@@ -67,7 +67,7 @@ def main():
     import yaml
 
     source = args.source_root.resolve()
-    assert not Path(blob.__file__).resolve().is_relative_to(source), "Smoke check imported the checkout, not the wheel"
+    assert not Path(blob.__file__).resolve().is_relative_to(source / "backend_python"), "Smoke check imported the checkout, not the wheel"
     assert blob.__version__ == version("blob-backend"), "Package version mismatch"
     config = BlobConfig()
     for resource in (config.blacklist_path, config.personality_path, config.openshell_policy_path):

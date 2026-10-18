@@ -71,22 +71,50 @@ the local transport remains the default. NemoClaw managed inference is separate.
 
 ## Prerequisites
 
-- **OS**: Linux (X11 or Wayland), Windows 10+, or macOS 12+
+- **OS**: Linux x86-64 (X11 or Wayland) for the initial desktop installer. Windows and macOS are not yet validated.
 - **GPU**: ❌ **Not required** — inference runs on Nebius cloud API
 - **Python**: 3.11+
 - **C++ Compiler**: GCC 12+ or Clang 15+
 - **System packages**: `SDL2` (2.0.18+), `gRPC`, `Protobuf`; X11 development headers for the optional tray icon
 - **Screen capture**: A desktop screenshot portal on Wayland; `gnome-screenshot` or `grim` can serve as fallbacks. Install `backend_python[ocr]` separately if you want Blob to read text in captures.
-- **Nebius API Key**: Free at [studio.nebius.ai](https://studio.nebius.ai)
+- **Nebius API Key**: Needed for cloud chat; local commands and reminders work without one.
 
 ---
 
 ## Quick Start
 
+### Simpler Linux installation
+
+On Ubuntu/Debian with **Python 3.11 or newer**, run these three commands as your
+normal desktop user:
+
+```bash
+git clone https://github.com/HaggardHarsh/ProjectBlob.git
+cd ProjectBlob
+python3 tools/setup.py --install-system-deps
+```
+
+Setup uses `sudo` only for OS packages, creates a separate Python environment,
+installs web search and Chromium, builds and tests the slime overlay, then installs
+desktop login startup. It optionally asks for your API key without displaying it.
+Double-click the slime or open **Blob Chat** from your application launcher to chat.
+Cloud assistance stays off on fresh profiles until `/privacy cloud on`.
+
+The installer refuses to replace an existing installation. Use
+`python3 tools/setup.py --check` to check native prerequisites, or
+`python3 tools/setup.py --prepare-only` to build and verify a separate candidate
+without changing desktop startup. If native libraries are already installed,
+omit `--install-system-deps`. Python 3.14 uses the pinned dependency baseline;
+other supported Python versions resolve dependencies and must pass local checks.
+See [setup, recovery and current limits](docs/setup.md).
+
+### Manual setup for development
+
 ### 1. Clone & Set Up
 
 ```bash
-git clone <repo-url> ProjectBlob && cd ProjectBlob
+git clone https://github.com/HaggardHarsh/ProjectBlob.git
+cd ProjectBlob
 ```
 
 ### 2. Set your Nebius API key

@@ -7,6 +7,11 @@ and OpenShell require their separately documented installation and verification.
 
 ## Implemented release foundations
 
+- `tools/setup.py` combines Linux source installation and isolated backend,
+  Chromium and C++ verification before fresh desktop activation. It refuses to
+  replace existing installs and rolls back fresh startup files on activation
+  failure. Automatic native packages target Ubuntu/Debian; clean-machine testing
+  across supported distributions remains required. See [setup](setup.md).
 - The C++ overlay has smoother rendering, spring motion, reduced-motion support,
   restored position and size preferences. Chat and privacy/cloud controls use the
   terminal, with no separate frontend panels. See [desktop frontend](desktop_frontend.md).
@@ -67,7 +72,7 @@ not regenerate the lock from an arbitrary personal environment or bypass conflic
 | P0 | Broader factual grounding | Current-information workflows cite checked sources or report verification failure; no unsupported action-success claims. |
 | P0 | Lifecycle and durable reminders | Clean login/reboot/suspend/reconnect tests; notification recovery across crash windows and disconnected clients. |
 | P0 | Data upgrades and recovery | Backups, migrations, restore and rollback exercised on previous-version stores; disk-full and interrupted-write behavior verified. |
-| P0 | User-facing setup and controls | Supported-machine installer, privacy/cloud setup, missing-dependency recovery, visible cancellation, settings and data removal flows. |
+| P0 | User-facing setup and controls | Validate the source installer on clean supported machines; finish update/uninstall, visible cancellation, settings and data removal flows. |
 | P1 | Latency and usage controls | Measured response deadlines, API usage reporting and configurable budgets; clear quota, rate-limit and model-unavailable errors. |
 | P1 | Release distribution and support | Native dependencies and artifacts documented, checksums, dependency license notices, update/uninstall path, support and bug-report instructions. |
 | P1 | Beta validation | Repeated end-to-end workflows and extended desktop sessions on supported machines; acknowledge untested platforms and websites. |

@@ -2,6 +2,10 @@
 
 ## Run at desktop login
 
+For a fresh PC, [the source installer](setup.md) prepares and verifies the backend,
+browser and frontend before installing startup. The manual route below remains
+available for development.
+
 Install the backend (`make backend-install`), build the overlay (`make frontend`),
 then run `make desktop-install` in this checkout. Linux with a systemd user manager
 is required. The installer writes:
@@ -39,6 +43,7 @@ cloud settings use the terminal commands below. See [desktop controls](desktop_f
 Useful local commands:
 
 ```bash
+# Manual checkout environment (managed installs use .runtime/desktop/current/venv):
 venv/bin/python -m blob.client --status
 venv/bin/python -m blob.client --send '/privacy status'
 systemctl --user status blob-backend blob-overlay

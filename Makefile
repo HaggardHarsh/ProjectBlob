@@ -5,7 +5,9 @@ FRONTEND_DIR := frontend_cpp
 BACKEND_DIR := backend_python
 PROTO_FILE := $(PROTO_DIR)/blob_service.proto
 
-VENV_BIN := $(if $(wildcard venv/bin),$(abspath venv/bin),)
+MANAGED_ROOT := $(abspath .runtime/desktop/current)
+VENV_BIN := $(if $(wildcard $(MANAGED_ROOT)/venv/bin),$(MANAGED_ROOT)/venv/bin,$(if $(wildcard venv/bin),$(abspath venv/bin),))
+FRONTEND_BINARY := $(if $(wildcard $(MANAGED_ROOT)/frontend/blob_overlay),$(MANAGED_ROOT)/frontend/blob_overlay,$(FRONTEND_DIR)/build/blob_overlay)
 PYTHON := $(if $(VENV_BIN),$(VENV_BIN)/python,python)
 PIP := $(if $(VENV_BIN),$(VENV_BIN)/pip,pip)
 BLOB_BACKEND := $(if $(VENV_BIN),$(VENV_BIN)/blob-backend,blob-backend)
@@ -50,7 +52,7 @@ backend-install:
 # ─── Run both components ───
 run:
 	@echo "═══ Starting C++ Frontend (Desktop Overlay) ═══"
-	@$(FRONTEND_DIR)/build/blob_overlay & FRONTEND_PID=$$!; \
+	@$(FRONTEND_BINARY) & FRONTEND_PID=$$!; \
 	trap 'kill $$FRONTEND_PID 2>/dev/null' EXIT INT TERM; \
 	sleep 1; \
 	echo "═══ Starting Python Backend (Interactive CLI) ═══"; \
@@ -60,7 +62,7 @@ run-backend: run-backend-only
 
 run-frontend:
 	@echo "═══ Starting C++ Frontend ═══"
-	$(FRONTEND_DIR)/build/blob_overlay
+	$(FRONTEND_BINARY)
 
 run-backend-only:
 	@echo "═══ Starting Python Backend (foreground) ═══"
