@@ -6,6 +6,7 @@ import json
 import pytest
 import pytest_asyncio
 from unittest.mock import AsyncMock
+from types import SimpleNamespace
 
 from blob.privacy.controls import PrivacyControls
 from blob.skills.builtin.browser import BrowserSkill
@@ -93,3 +94,39 @@ async def test_idle_browser_closes_on_privacy_changes(browser, tmp_path, changes
             break
         await asyncio.sleep(0.1)
     assert browser._page is None and not browser._refs
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cancel_monitor", [False, True])
+async def test_concurrent_close_waits_for_privacy_monitor_cleanup(cancel_monitor):
+    skill = BrowserSkill()
+    started, finish = asyncio.Event(), asyncio.Event()
+    async def delayed_close():
+        started.set()
+        await finish.wait()
+    browser = SimpleNamespace(close=AsyncMock(side_effect=delayed_close))
+    driver = SimpleNamespace(stop=AsyncMock())
+    proxy = SimpleNamespace(close=AsyncMock())
+    skill._browser, skill._driver, skill._proxy, skill._page = browser, driver, proxy, object()
+    monitor = asyncio.create_task(skill.close())
+    skill._monitor = monitor
+    concurrent = None
+    try:
+        await asyncio.wait_for(started.wait(), 1)
+        assert skill._page is None
+        concurrent = asyncio.create_task(skill.close())
+        await asyncio.sleep(0)
+        assert not concurrent.done(), "Shutdown returned while the privacy monitor was still closing Chromium"
+        if cancel_monitor:
+            monitor.cancel()
+            await asyncio.gather(monitor, return_exceptions=True)
+            assert not concurrent.done(), "Cancelling one caller interrupted shared browser cleanup"
+    finally:
+        finish.set()
+        tasks = [task for task in (monitor, concurrent) if task is not None]
+        outcomes = await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), 2)
+        assert all(result is None or (task is monitor and cancel_monitor and isinstance(result, asyncio.CancelledError))
+                   for task, result in zip(tasks, outcomes))
+    browser.close.assert_awaited_once()
+    driver.stop.assert_awaited_once()
+    proxy.close.assert_awaited_once()

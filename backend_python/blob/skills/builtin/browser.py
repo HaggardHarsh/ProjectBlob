@@ -33,6 +33,7 @@ class BrowserSkill(SkillInterface):
         self.controls = None
         self._lock = asyncio.Lock()
         self._driver = self._browser = self._context = self._page = self._proxy = self._monitor = None
+        self._closing = None
         self._refs = {}
         self._snapshot_id = 0
         self._last_used = 0
@@ -61,6 +62,8 @@ class BrowserSkill(SkillInterface):
 
     async def _start(self):
         from playwright.async_api import async_playwright
+        if self._closing is not None:
+            await self.close()
         self._check()
         self._proxy = PublicBrowserProxy(self._check)
         proxy_url = await self._proxy.start()
@@ -201,19 +204,39 @@ class BrowserSkill(SkillInterface):
                 return SkillResult("The browser could not complete that step. Check Chromium installation or retry the site; no result was verified.", False, "WORRIED")
 
     async def close(self):
-        monitor, self._monitor = self._monitor, None
-        if monitor is not None and monitor is not asyncio.current_task():
+        # Privacy monitoring can clear the visible session before Chromium and
+        # its driver finish shutting down. All callers must await that same
+        # cleanup, even if the caller that started it is cancelled.
+        if self._closing is None:
+            monitor, self._monitor = self._monitor, None
+            if monitor is asyncio.current_task():
+                monitor = None
+            browser, driver, proxy = self._browser, self._driver, self._proxy
+            self._browser = self._driver = self._context = self._page = self._proxy = None
+            self._refs = {}
+            self._closing = asyncio.create_task(self._close_resources(monitor, browser, driver, proxy))
+        closing = self._closing
+        try:
+            await asyncio.shield(closing)
+        finally:
+            if closing.done() and self._closing is closing:
+                self._closing = None
+
+    @staticmethod
+    async def _close_resources(monitor, browser, driver, proxy):
+        if monitor is not None:
             monitor.cancel()
             await asyncio.gather(monitor, return_exceptions=True)
-        browser, driver, proxy = self._browser, self._driver, self._proxy
-        self._browser = self._driver = self._context = self._page = self._proxy = None
-        self._refs = {}
-        if proxy:
-            await proxy.close()
-        if browser:
+        try:
+            if proxy:
+                await proxy.close()
+        finally:
             try:
-                await browser.close()
-            except Exception:
-                pass
-        if driver:
-            await driver.stop()
+                if browser:
+                    try:
+                        await browser.close()
+                    except Exception:
+                        pass
+            finally:
+                if driver:
+                    await driver.stop()
