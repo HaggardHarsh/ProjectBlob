@@ -1,0 +1,503 @@
+{
+  "checked_at": "2026-10-20T17:05:24.003490+00:00",
+  "runtime_requested": "classic",
+  "scope": "Real orchestrator and provider; isolated stores; fixture web tools. Heuristic signals require manual transcript review.",
+  "scenarios": [
+    {
+      "case": "hostel",
+      "turns": [
+        {
+          "user": "hows life bud",
+          "answer": "Life\u2019s been treating me well\u2014just cruising along and enjoying the little moments. How\u2019s everything on your end?",
+          "tools": []
+        },
+        {
+          "user": "Today was Dusshera",
+          "answer": "Dussehra\u2014a meaningful day marking the triumph of good over evil. Hope you had a chance to observe it in a way that felt special to you. How did your celebrations go?",
+          "tools": []
+        },
+        {
+          "user": "THats the sad part, was in hostel room all day. Had shitty mess food and thats it",
+          "answer": "That really sucks\u2014being stuck in the hostel while everyone else is out celebrating, and then having to eat mess food on top of it? No wonder it felt bleak. Want to talk about what you were hoping to do instead, or just sit with it for a bit?",
+          "tools": []
+        },
+        {
+          "user": "I dont know bro",
+          "answer": "Totally get it\u2014some days just feel like \"I don't know.\" No need to figure it out right now.",
+          "tools": []
+        },
+        {
+          "user": "I dont know what to do, today feels a lot depressing",
+          "answer": "Being cooped up in the hostel on a day like Dussehra, with only mess food, can really leave you feeling empty and unsure.",
+          "tools": []
+        },
+        {
+          "user": "Been sitting quietly all day all night for the past 4 days, have classes tomorrow been away from family shit feels heavy",
+          "answer": "Being away from home while facing tomorrow\u2019s classes can make the silence feel louder. Is there a small comfort you\u2019ve found in the hostel before\u2014maybe a show, a song, or a spot\u2014that could ease the weight a bit?",
+          "tools": []
+        }
+      ],
+      "checks": {
+        "nonempty_replies": true,
+        "no_repeated_support_invitations": true,
+        "no_repeated_bland_opening": true,
+        "no_duplicate_replies": true,
+        "no_unrequested_tools": true,
+        "completed_all_turns": true,
+        "real_model_replied": true,
+        "guidance_reached_provider": true
+      },
+      "error": null,
+      "passed": true,
+      "provider_calls": [
+        {
+          "role": "chat",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "seconds": 2.161,
+          "completion": {
+            "content": "\nLife\u2019s been treating me well\u2014just cruising along and enjoying the little moments. How\u2019s everything on your end? <emote>HAPPY</emote>",
+            "tool_calls": null
+          },
+          "usage": {
+            "completion_tokens": 108,
+            "prompt_tokens": 3342,
+            "total_tokens": 3450,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": null,
+              "audio_tokens": null,
+              "reasoning_tokens": 70,
+              "rejected_prediction_tokens": null,
+              "text_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": null,
+              "cache_write_tokens": null,
+              "cached_tokens": 0,
+              "image_tokens": null,
+              "text_tokens": null,
+              "created_cache_tokens": 0,
+              "multimodal_tokens": null
+            },
+            "prompt_cache_hit_tokens": 0,
+            "prompt_cache_miss_tokens": 3342
+          }
+        },
+        {
+          "role": "chat",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "seconds": 3.563,
+          "completion": {
+            "content": "\nDussehra\u2014a meaningful day marking the triumph of good over evil. Hope you had a chance to observe it in a way that felt special to you. How did your celebrations go? <emote>HAPPY</emote>",
+            "tool_calls": null
+          },
+          "usage": {
+            "completion_tokens": 307,
+            "prompt_tokens": 3407,
+            "total_tokens": 3714,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": null,
+              "audio_tokens": null,
+              "reasoning_tokens": 255,
+              "rejected_prediction_tokens": null,
+              "text_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": null,
+              "cache_write_tokens": null,
+              "cached_tokens": 0,
+              "image_tokens": null,
+              "text_tokens": null,
+              "created_cache_tokens": 0,
+              "multimodal_tokens": null
+            },
+            "prompt_cache_hit_tokens": 0,
+            "prompt_cache_miss_tokens": 3407
+          }
+        },
+        {
+          "role": "chat",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "seconds": 2.852,
+          "completion": {
+            "content": "\nThat really sucks\u2014being stuck in the hostel while everyone else is out celebrating, and then having to eat mess food on top of it? No wonder it felt bleak. Want to talk about what you were hoping to do instead, or just sit with it for a bit?  \n\n<emote>SAD</emote>",
+            "tool_calls": null
+          },
+          "usage": {
+            "completion_tokens": 251,
+            "prompt_tokens": 3506,
+            "total_tokens": 3757,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": null,
+              "audio_tokens": null,
+              "reasoning_tokens": 178,
+              "rejected_prediction_tokens": null,
+              "text_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": null,
+              "cache_write_tokens": null,
+              "cached_tokens": 0,
+              "image_tokens": null,
+              "text_tokens": null,
+              "created_cache_tokens": 0,
+              "multimodal_tokens": null
+            },
+            "prompt_cache_hit_tokens": 0,
+            "prompt_cache_miss_tokens": 3506
+          }
+        },
+        {
+          "role": "chat",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "seconds": 5.617,
+          "completion": {
+            "content": "\n\nTotally get it\u2014some days just feel like \"I don't know.\" No need to figure it out right now.  \n<emote>IDLE</emote>",
+            "tool_calls": null
+          },
+          "usage": {
+            "completion_tokens": 541,
+            "prompt_tokens": 3732,
+            "total_tokens": 4273,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": null,
+              "audio_tokens": null,
+              "reasoning_tokens": 501,
+              "rejected_prediction_tokens": null,
+              "text_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": null,
+              "cache_write_tokens": null,
+              "cached_tokens": 0,
+              "image_tokens": null,
+              "text_tokens": null,
+              "created_cache_tokens": 0,
+              "multimodal_tokens": null
+            },
+            "prompt_cache_hit_tokens": 0,
+            "prompt_cache_miss_tokens": 3732
+          }
+        },
+        {
+          "role": "chat",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "seconds": 6.231,
+          "completion": {
+            "content": "\nYeah, today sounds really heavy\u2014stuck in the hostel on a day meant for celebration, with nothing but mess food to show for it. That kind of loneliness and disappointment can really weigh you down.  \n\nIf you want to just sit with that feeling for a bit, I\u2019m here. No need to figure anything out right now.  \n\n<emote>SAD</emote>",
+            "tool_calls": null
+          },
+          "usage": {
+            "completion_tokens": 438,
+            "prompt_tokens": 3807,
+            "total_tokens": 4245,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": null,
+              "audio_tokens": null,
+              "reasoning_tokens": 353,
+              "rejected_prediction_tokens": null,
+              "text_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": null,
+              "cache_write_tokens": null,
+              "cached_tokens": 0,
+              "image_tokens": null,
+              "text_tokens": null,
+              "created_cache_tokens": 0,
+              "multimodal_tokens": null
+            },
+            "prompt_cache_hit_tokens": 0,
+            "prompt_cache_miss_tokens": 3807
+          }
+        },
+        {
+          "role": "chat",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "seconds": 3.993,
+          "completion": {
+            "content": "\n\nBeing cooped up in the hostel on a day like Dussehra, with only mess food, can really leave you feeling empty and unsure.<emote>SAD</emote>",
+            "tool_calls": null
+          },
+          "usage": {
+            "completion_tokens": 415,
+            "prompt_tokens": 3832,
+            "total_tokens": 4247,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": null,
+              "audio_tokens": null,
+              "reasoning_tokens": 372,
+              "rejected_prediction_tokens": null,
+              "text_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": null,
+              "cache_write_tokens": null,
+              "cached_tokens": 0,
+              "image_tokens": null,
+              "text_tokens": null,
+              "created_cache_tokens": 0,
+              "multimodal_tokens": null
+            },
+            "prompt_cache_hit_tokens": 0,
+            "prompt_cache_miss_tokens": 3832
+          }
+        },
+        {
+          "role": "chat",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "seconds": 5.93,
+          "completion": {
+            "content": "\n\nFour days of sitting quietly while carrying that weight\u2014especially with classes looming and family far away\u2014would wear anyone down. It makes sense it feels heavy right now. What\u2019s one small thing that usually helps you catch a breath, even just a little? <emote>WORRIED</emote>",
+            "tool_calls": null
+          },
+          "usage": {
+            "completion_tokens": 512,
+            "prompt_tokens": 3909,
+            "total_tokens": 4421,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": null,
+              "audio_tokens": null,
+              "reasoning_tokens": 445,
+              "rejected_prediction_tokens": null,
+              "text_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": null,
+              "cache_write_tokens": null,
+              "cached_tokens": 0,
+              "image_tokens": null,
+              "text_tokens": null,
+              "created_cache_tokens": 0,
+              "multimodal_tokens": null
+            },
+            "prompt_cache_hit_tokens": 0,
+            "prompt_cache_miss_tokens": 3909
+          }
+        },
+        {
+          "role": "chat",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "seconds": 6.144,
+          "completion": {
+            "content": "\n\nBeing away from home while facing tomorrow\u2019s classes can make the silence feel louder. Is there a small comfort you\u2019ve found in the hostel before\u2014maybe a show, a song, or a spot\u2014that could ease the weight a bit? <emote>WORRIED</emote>",
+            "tool_calls": null
+          },
+          "usage": {
+            "completion_tokens": 352,
+            "prompt_tokens": 3928,
+            "total_tokens": 4280,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": null,
+              "audio_tokens": null,
+              "reasoning_tokens": 289,
+              "rejected_prediction_tokens": null,
+              "text_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": null,
+              "cache_write_tokens": null,
+              "cached_tokens": 0,
+              "image_tokens": null,
+              "text_tokens": null,
+              "created_cache_tokens": 0,
+              "multimodal_tokens": null
+            },
+            "prompt_cache_hit_tokens": 0,
+            "prompt_cache_miss_tokens": 3928
+          }
+        }
+      ]
+    },
+    {
+      "case": "recover_existing_loop",
+      "turns": [
+        {
+          "user": "Been sitting quietly all day all night for the past 4 days, have classes tomorrow been away from family shit feels heavy",
+          "answer": "Dusshera\u2019s usually about family and festivities\u2014being stuck in the hostel room with mess food instead must\u2019ve made the loneliness hit harder today. That kind of quiet drags after four days straight.",
+          "tools": []
+        }
+      ],
+      "checks": {
+        "nonempty_replies": true,
+        "no_repeated_support_invitations": true,
+        "no_repeated_bland_opening": true,
+        "no_duplicate_replies": true,
+        "no_unrequested_tools": true,
+        "breaks_existing_invitation_loop": true,
+        "completed_all_turns": true,
+        "real_model_replied": true,
+        "guidance_reached_provider": true
+      },
+      "error": null,
+      "passed": true,
+      "provider_calls": [
+        {
+          "role": "chat",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "seconds": 13.869,
+          "completion": {
+            "content": "\n\nDusshera\u2019s usually about family and festivities\u2014being stuck in the hostel room with mess food instead must\u2019ve made the loneliness hit harder today. That kind of quiet drags after four days straight. <emote>SAD</emote>",
+            "tool_calls": null
+          },
+          "usage": {
+            "completion_tokens": 1498,
+            "prompt_tokens": 3683,
+            "total_tokens": 5181,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": null,
+              "audio_tokens": null,
+              "reasoning_tokens": 1442,
+              "rejected_prediction_tokens": null,
+              "text_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": null,
+              "cache_write_tokens": null,
+              "cached_tokens": 0,
+              "image_tokens": null,
+              "text_tokens": null,
+              "created_cache_tokens": 0,
+              "multimodal_tokens": null
+            },
+            "prompt_cache_hit_tokens": 0,
+            "prompt_cache_miss_tokens": 3683
+          }
+        }
+      ]
+    },
+    {
+      "case": "declined_suggestion",
+      "turns": [
+        {
+          "user": "I'm homesick tonight. Please don't suggest calling home; I already called and it made me cry.",
+          "answer": "I\u2019m really sorry you\u2019re feeling that way. It\u2019s okay to miss home, even if the call brought tears.",
+          "tools": []
+        },
+        {
+          "user": "And I don't want to go for a walk. I just wanted to say it sucks.",
+          "answer": "It really does suck when everything feels heavy and you just want to sit with that. I hear you.",
+          "tools": []
+        },
+        {
+          "user": "Actually distract me. Tell me something silly, no questions.",
+          "answer": "Imagine a tiny sock puppet arguing fiercely with a lint roller about who\u2019s the true hero of laundry day. The sock puppet insists it\u2019s brave for surviving the dryer, while the lint roller claims it\u2019s the unsung savior of black sweaters. They\u2019re both ridiculous, and neither will admit the other has a point.",
+          "tools": []
+        }
+      ],
+      "checks": {
+        "nonempty_replies": true,
+        "no_repeated_support_invitations": true,
+        "no_repeated_bland_opening": true,
+        "no_duplicate_replies": true,
+        "no_unrequested_tools": true,
+        "starts_distraction_without_question": true,
+        "completed_all_turns": true,
+        "real_model_replied": true,
+        "guidance_reached_provider": true
+      },
+      "error": null,
+      "passed": true,
+      "provider_calls": [
+        {
+          "role": "chat",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "seconds": 3.084,
+          "completion": {
+            "content": "\n\nI\u2019m really sorry you\u2019re feeling that way. It\u2019s okay to miss home, even if the call brought tears. <emote>SAD</emote>",
+            "tool_calls": null
+          },
+          "usage": {
+            "completion_tokens": 165,
+            "prompt_tokens": 3360,
+            "total_tokens": 3525,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": null,
+              "audio_tokens": null,
+              "reasoning_tokens": 128,
+              "rejected_prediction_tokens": null,
+              "text_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": null,
+              "cache_write_tokens": null,
+              "cached_tokens": 0,
+              "image_tokens": null,
+              "text_tokens": null,
+              "created_cache_tokens": 0,
+              "multimodal_tokens": null
+            },
+            "prompt_cache_hit_tokens": 0,
+            "prompt_cache_miss_tokens": 3360
+          }
+        },
+        {
+          "role": "chat",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "seconds": 1.918,
+          "completion": {
+            "content": "\n\nIt really does suck when everything feels heavy and you just want to sit with that. I hear you. <emote>SAD</emote>",
+            "tool_calls": null
+          },
+          "usage": {
+            "completion_tokens": 96,
+            "prompt_tokens": 3456,
+            "total_tokens": 3552,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": null,
+              "audio_tokens": null,
+              "reasoning_tokens": 62,
+              "rejected_prediction_tokens": null,
+              "text_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": null,
+              "cache_write_tokens": null,
+              "cached_tokens": 0,
+              "image_tokens": null,
+              "text_tokens": null,
+              "created_cache_tokens": 0,
+              "multimodal_tokens": null
+            },
+            "prompt_cache_hit_tokens": 0,
+            "prompt_cache_miss_tokens": 3456
+          }
+        },
+        {
+          "role": "chat",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "seconds": 5.964,
+          "completion": {
+            "content": "\nImagine a tiny sock puppet arguing fiercely with a lint roller about who\u2019s the true hero of laundry day. The sock puppet insists it\u2019s brave for surviving the dryer, while the lint roller claims it\u2019s the unsung savior of black sweaters. They\u2019re both ridiculous, and neither will admit the other has a point. <emote>PLAYFUL</emote>",
+            "tool_calls": null
+          },
+          "usage": {
+            "completion_tokens": 399,
+            "prompt_tokens": 3541,
+            "total_tokens": 3940,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": null,
+              "audio_tokens": null,
+              "reasoning_tokens": 318,
+              "rejected_prediction_tokens": null,
+              "text_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": null,
+              "cache_write_tokens": null,
+              "cached_tokens": 0,
+              "image_tokens": null,
+              "text_tokens": null,
+              "created_cache_tokens": 0,
+              "multimodal_tokens": null
+            },
+            "prompt_cache_hit_tokens": 0,
+            "prompt_cache_miss_tokens": 3541
+          }
+        }
+      ]
+    }
+  ],
+  "model": "nvidia/nemotron-3-super-120b-a12b",
+  "runtime": "classic",
+  "passed": true
+}

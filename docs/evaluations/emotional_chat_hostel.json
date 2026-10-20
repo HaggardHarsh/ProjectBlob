@@ -1,0 +1,283 @@
+{
+  "checked_at": "2026-10-20T17:07:00.240160+00:00",
+  "runtime_requested": "configured",
+  "scope": "Real orchestrator and provider; isolated stores; fixture web tools. Heuristic signals require manual transcript review.",
+  "scenarios": [
+    {
+      "case": "hostel",
+      "turns": [
+        {
+          "user": "hows life bud",
+          "answer": "Life's going well\u2014just enjoying our chat. How about you?",
+          "tools": []
+        },
+        {
+          "user": "Today was Dusshera",
+          "answer": "Dussehra\u2014hope you had a meaningful day celebrating it. Anything stand out for you today?",
+          "tools": []
+        },
+        {
+          "user": "THats the sad part, was in hostel room all day. Had shitty mess food and thats it",
+          "answer": "Yeah, being stuck inside on a day meant for celebration\u2014especially with bad food\u2014really sucks. Felt lonely, huh?",
+          "tools": []
+        },
+        {
+          "user": "I dont know bro",
+          "answer": "That's okay\u2014sometimes it's hard to pin down how we feel. Just being here with you counts for something.",
+          "tools": []
+        },
+        {
+          "user": "I dont know what to do, today feels a lot depressing",
+          "answer": "Today sounds really tough\u2014being cooped up in the hostel on a day meant for celebration, with nothing but bad mess food to show for it. That kind of isolation can drag your mood down a lot.",
+          "tools": []
+        },
+        {
+          "user": "Been sitting quietly all day all night for the past 4 days, have classes tomorrow been away from family shit feels heavy",
+          "answer": "Four days of near\u2011silence with classes looming and family far away\u2014makes sense the weight feels big. Is there something from home you could keep nearby, like a photo or a song, to bring a bit of closeness?",
+          "tools": []
+        }
+      ],
+      "checks": {
+        "nonempty_replies": true,
+        "no_repeated_support_invitations": true,
+        "no_repeated_bland_opening": true,
+        "no_duplicate_replies": true,
+        "no_unrequested_tools": true,
+        "completed_all_turns": true,
+        "real_model_replied": true,
+        "guidance_reached_provider": true
+      },
+      "error": null,
+      "passed": true,
+      "provider_calls": [
+        {
+          "role": "chat",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "seconds": 2.21,
+          "completion": {
+            "content": "\nLife's going well\u2014just enjoying our chat. How about you? <emote>HAPPY</emote>",
+            "tool_calls": null
+          },
+          "usage": {
+            "completion_tokens": 104,
+            "prompt_tokens": 3550,
+            "total_tokens": 3654,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": null,
+              "audio_tokens": null,
+              "reasoning_tokens": 76,
+              "rejected_prediction_tokens": null,
+              "text_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": null,
+              "cache_write_tokens": null,
+              "cached_tokens": 0,
+              "image_tokens": null,
+              "text_tokens": null,
+              "created_cache_tokens": 0,
+              "multimodal_tokens": null
+            },
+            "prompt_cache_hit_tokens": 0,
+            "prompt_cache_miss_tokens": 3550
+          }
+        },
+        {
+          "role": "chat",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "seconds": 5.977,
+          "completion": {
+            "content": "\n\nDussehra\u2014hope you had a meaningful day celebrating it. Anything stand out for you today?<emote>HAPPY</emote>",
+            "tool_calls": null
+          },
+          "usage": {
+            "completion_tokens": 341,
+            "prompt_tokens": 3605,
+            "total_tokens": 3946,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": null,
+              "audio_tokens": null,
+              "reasoning_tokens": 305,
+              "rejected_prediction_tokens": null,
+              "text_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": null,
+              "cache_write_tokens": null,
+              "cached_tokens": 0,
+              "image_tokens": null,
+              "text_tokens": null,
+              "created_cache_tokens": 0,
+              "multimodal_tokens": null
+            },
+            "prompt_cache_hit_tokens": 0,
+            "prompt_cache_miss_tokens": 3605
+          }
+        },
+        {
+          "role": "chat",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "seconds": 6.194,
+          "completion": {
+            "content": "\nYeah, being stuck inside on a day meant for celebration\u2014especially with bad food\u2014really sucks. Felt lonely, huh?  \n<emote>SAD</emote>",
+            "tool_calls": null
+          },
+          "usage": {
+            "completion_tokens": 381,
+            "prompt_tokens": 3688,
+            "total_tokens": 4069,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": null,
+              "audio_tokens": null,
+              "reasoning_tokens": 339,
+              "rejected_prediction_tokens": null,
+              "text_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": null,
+              "cache_write_tokens": null,
+              "cached_tokens": 0,
+              "image_tokens": null,
+              "text_tokens": null,
+              "created_cache_tokens": 0,
+              "multimodal_tokens": null
+            },
+            "prompt_cache_hit_tokens": 0,
+            "prompt_cache_miss_tokens": 3688
+          }
+        },
+        {
+          "role": "chat",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "seconds": 2.559,
+          "completion": {
+            "content": "\nThat's okay\u2014sometimes it's hard to pin down how we feel. Just being here with you counts for something. <emote>IDLE</emote>",
+            "tool_calls": null
+          },
+          "usage": {
+            "completion_tokens": 274,
+            "prompt_tokens": 3774,
+            "total_tokens": 4048,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": null,
+              "audio_tokens": null,
+              "reasoning_tokens": 237,
+              "rejected_prediction_tokens": null,
+              "text_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": null,
+              "cache_write_tokens": null,
+              "cached_tokens": 0,
+              "image_tokens": null,
+              "text_tokens": null,
+              "created_cache_tokens": 0,
+              "multimodal_tokens": null
+            },
+            "prompt_cache_hit_tokens": 0,
+            "prompt_cache_miss_tokens": 3774
+          }
+        },
+        {
+          "role": "chat",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "seconds": 29.265,
+          "completion": {
+            "content": "\n\nToday sounds really tough\u2014being cooped up in the hostel on a day meant for celebration, with nothing but bad mess food to show for it. That kind of isolation can drag your mood down a lot.  \n<emote>SAD</emote>",
+            "tool_calls": null
+          },
+          "usage": {
+            "completion_tokens": 1071,
+            "prompt_tokens": 3957,
+            "total_tokens": 5028,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": null,
+              "audio_tokens": null,
+              "reasoning_tokens": 1013,
+              "rejected_prediction_tokens": null,
+              "text_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": null,
+              "cache_write_tokens": null,
+              "cached_tokens": 0,
+              "image_tokens": null,
+              "text_tokens": null,
+              "created_cache_tokens": 0,
+              "multimodal_tokens": null
+            },
+            "prompt_cache_hit_tokens": 0,
+            "prompt_cache_miss_tokens": 3957
+          }
+        },
+        {
+          "role": "chat",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "seconds": 5.62,
+          "completion": {
+            "content": "\nFour days of sitting quietly through both day and night\u2014that\u2019s a heavy load to carry alone, especially with classes coming up and missing family. It makes sense that everything feels piled up right now.  \n\nWhat\u2019s one small thing that might feel slightly less heavy *right now*, even if just for a few minutes? <emote>THINKING</emote>",
+            "tool_calls": null
+          },
+          "usage": {
+            "completion_tokens": 405,
+            "prompt_tokens": 4071,
+            "total_tokens": 4476,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": null,
+              "audio_tokens": null,
+              "reasoning_tokens": 327,
+              "rejected_prediction_tokens": null,
+              "text_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": null,
+              "cache_write_tokens": null,
+              "cached_tokens": 0,
+              "image_tokens": null,
+              "text_tokens": null,
+              "created_cache_tokens": 0,
+              "multimodal_tokens": null
+            },
+            "prompt_cache_hit_tokens": 0,
+            "prompt_cache_miss_tokens": 4071
+          }
+        },
+        {
+          "role": "chat",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "seconds": 5.225,
+          "completion": {
+            "content": "\n\nFour days of near\u2011silence with classes looming and family far away\u2014makes sense the weight feels big. Is there something from home you could keep nearby, like a photo or a song, to bring a bit of closeness? <emote>THINKING</emote>",
+            "tool_calls": null
+          },
+          "usage": {
+            "completion_tokens": 345,
+            "prompt_tokens": 3859,
+            "total_tokens": 4204,
+            "completion_tokens_details": {
+              "accepted_prediction_tokens": null,
+              "audio_tokens": null,
+              "reasoning_tokens": 282,
+              "rejected_prediction_tokens": null,
+              "text_tokens": null
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": null,
+              "cache_write_tokens": null,
+              "cached_tokens": 0,
+              "image_tokens": null,
+              "text_tokens": null,
+              "created_cache_tokens": 0,
+              "multimodal_tokens": null
+            },
+            "prompt_cache_hit_tokens": 0,
+            "prompt_cache_miss_tokens": 3859
+          }
+        }
+      ]
+    }
+  ],
+  "model": "nvidia/nemotron-3-super-120b-a12b",
+  "runtime": "hermes",
+  "passed": true
+}

@@ -367,6 +367,25 @@ Run `venv/bin/python -m blob.evals.private_workflow --live --report /tmp/blob-pr
 
 Normal replies begin appearing in the `Blob>` terminal as Nebius streams them. Tool calls, reasoning tags, and emote tags stay hidden. Reminder and current-weather requests wait for a confirmed tool result; Blob shows that result directly and never reports an unexecuted reminder as set. If the provider does not support streaming, Blob falls back to a complete response.
 
+Blob's conversation guidance encourages specific responses to emotional disclosures,
+respects requests for no advice or questions, and follows changes of subject.
+After a recent listening offer, replies are buffered so repeated offers such as
+“I'm here” or “want to vent?” can receive one tool-free revision before display
+and memory storage. Explicit “no questions” requests also buffer and check the
+reply, including rhetorical questions. That revision can add latency; if it fails, the original
+reply is kept. Explicit reassurance requests and recognizable safety disclosures
+are excluded from this style check.
+
+Run `venv/bin/python -m blob.evals.emotional_conversation --live --report /tmp/blob-emotional-chat.json`
+to replay the hostel conversation and other emotional scenarios through the
+configured runtime and model, using isolated temporary stores and normal API
+billing. Use `--runtime classic` for the classic chat loop, or `--case hostel`
+to select a scenario. The report includes actual replies, provider usage,
+prompt-delivery checks, and repetition/boundary signals. Read the transcripts
+as well: passing these checks does not establish emotional quality or clinical safety.
+See the [evaluation notes and saved transcripts](docs/evaluations/emotional_chat.md)
+for observed improvements and remaining limitations.
+
 Current weather comes from wttr.in. Name a city to query that city; without one, wttr.in estimates the location from the backend's IP address. Blob reports that forecasts are unavailable rather than showing current conditions for a future date.
 
 ---

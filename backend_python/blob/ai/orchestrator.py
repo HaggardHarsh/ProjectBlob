@@ -21,7 +21,9 @@ from blob.ai.attachments import AttachmentReader, AttachmentError, MAX_IMAGES, p
 from blob.ipc import blob_service_pb2
 from blob.ai.guardrails import GuardrailsEngine, PERSONAL_PLAN_TOPIC, unsupported_personal_event_claim
 from blob.ai.context_budget import DEFAULT_MAX_PROMPT_BYTES, IMAGE_BUDGET_BYTES, compact_browser_snapshots, fit_messages, prompt_size_bytes
-from blob.ai.conversation import conversation_reply
+from blob.ai.conversation import (
+    conversation_reply, support_loop_guidance, conversation_revision_reason, requests_no_questions,
+)
 from blob.ai.prompt_templates import SYSTEM_PROMPT, ATTACHMENT_SYSTEM_PROMPT, ATTACHMENT_IMAGE_GUIDANCE, CONTEXT_TEMPLATE, CONVERSATION_CONTINUITY
 from blob.memory.episodic import EpisodicMemory
 from blob.memory.documents import DocumentLibrary, DocumentError, DOCUMENT_REFERENCE
@@ -679,6 +681,47 @@ class BlobOrchestrator:
                 self._clear_thinking()
             elif task.cancelled() or task.exception() is not None:
                 self._clear_thinking()
+
+    async def _repair_conversation_reply(self, answer, messages, system, user_text):
+        """One bounded, tool-free rewrite for repetition or an explicit boundary."""
+        recent = getattr(self, "_recent_turns", ())
+        reason = conversation_revision_reason(_strip_reasoning(answer), recent, user_text)
+        if not reason:
+            return answer
+        correction = {
+            "role": "user",
+            "content": (
+                "[Reply revision] " + reason + " Write a replacement reply to the user's "
+                "latest message below. Respond to its specific substance in ordinary "
+                "friendly language. No invitation to vent, announcement of availability, "
+                "offer of silence, or generic 'that sounds tough/heavy' opening. "
+                "Do not summarize all their problems. Respect requests for no advice "
+                "or questions, including rhetorical questions like 'Did you know?'; "
+                "otherwise a specific observation or one natural question "
+                "is enough. If they asked what to do, give one small relevant step. "
+                "Avoid generic water, fresh-air, or grounding suggestions when the "
+                "difficulty is missing people. Don't claim human feelings or experiences. "
+                "Do not mention this revision. Keep safety guidance if relevant. "
+                "Output only the replacement and its emote.\nLatest user message:\n" + user_text
+            ),
+        }
+        revised = [*messages, {"role": "assistant", "content": answer}, correction]
+        bounded = fit_messages(revised, correction, getattr(self, "_max_prompt_bytes", DEFAULT_MAX_PROMPT_BYTES))
+        if bounded is None:
+            return answer
+        try:
+            response = await asyncio.wait_for(
+                self.llm.generate_from_messages(bounded, system, allow_tools=False), timeout=20)
+            replacement = response.content or ""
+            if (not replacement.strip() or has_tool_protocol(replacement)
+                    or conversation_revision_reason(_strip_reasoning(replacement), recent, user_text)):
+                return answer
+            return replacement
+        except (PrivacyBlocked, asyncio.CancelledError):
+            raise
+        except Exception:
+            logger.warning("Could not revise a conversational reply")
+            return answer
 
     def _conversation_lock(self):
         if not hasattr(self, "_message_lock"):
@@ -1489,6 +1532,8 @@ class BlobOrchestrator:
             return await self._send_direct_response("Hermes is unavailable. Run blob-agent doctor.", "WORRIED")
         if has_tool_protocol(answer, search_arguments=bool(policy and policy.query)):
             return await self._send_direct_response(FORMAT_FAILURE, "CONFUSED")
+        if not required_tool and not tools:
+            answer = await self._repair_conversation_reply(answer, messages, native_prompt, text)
         answer = _strip_reasoning(answer)
         emote, answer = self._extract_emote(answer)
         if policy and policy.query:
@@ -1716,7 +1761,8 @@ class BlobOrchestrator:
         self._show_thinking()
         self._grounded_user_evidence = []
         context = self._build_context(clean_text)
-        sys_prompt = self._build_system_prompt()
+        sys_prompt = self._build_system_prompt() + support_loop_guidance(
+            getattr(self, "_recent_turns", ()))
         live_evidence, preflight_tools = None, []
         lookup_query = live_product_query(clean_text, getattr(self, "_recent_turns", ()))
         from blob.ai.tool_policy import MODEL_POLICY
@@ -1777,7 +1823,9 @@ class BlobOrchestrator:
         file_search_ran = False
         prompt_overflow = False
         max_prompt_bytes = getattr(self, "_max_prompt_bytes", DEFAULT_MAX_PROMPT_BYTES)
-        allow_preview = (not (policy and policy.query) and required_tool is None and screen_result is None and
+        allow_preview = (not support_loop_guidance(getattr(self, "_recent_turns", ())) and
+                         not requests_no_questions(clean_text) and
+                         not (policy and policy.query) and required_tool is None and screen_result is None and
                          not PERSONAL_PLAN_TOPIC.search(stripped) and not camera_discussion and not live_evidence)
         
         if getattr(self, "agent_runtime", None) is not None:
@@ -1971,6 +2019,10 @@ class BlobOrchestrator:
                 final_response = "I tried my best but something went wrong! 😅"
         
         # ── Post-process and dispatch ────────────────────────────────
+        if (not required_tool and screen_result is None and not (policy and policy.allowed)
+                and not prompt_overflow):
+            final_response = await self._repair_conversation_reply(
+                final_response, messages, sys_prompt, clean_text)
         # Strip any leftover tool_call blocks
         final_response = self._strip_tool_call_block(_strip_reasoning(final_response))
         

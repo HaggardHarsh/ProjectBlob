@@ -19,6 +19,70 @@ _ACK = re.compile(
 )
 _CELEBRATION = re.compile(r"(?:ya+y+|woo+|woo+hoo+)")
 
+_SUPPORT_OFFER = re.compile(
+    r"\b(?:i['’]m (?:(?:just|right|still|always) )*here|"
+    r"(?:just|right|still|always) here|here (?:if|whenever|for you|with you|to listen)|"
+    r"(?:want to|wanna) (?:vent|talk)|if you (?:want|feel like) (?:to )?(?:talk|vent|shar)\w*|"
+    r"(?:sit|sitting|hang) (?:here |in |together )?(?:quiet|silence))", re.I)
+
+_REASSURANCE_REQUEST = re.compile(
+    r"\b(?:are you (?:still )?there|(?:can|could|may) i (?:vent|talk)|"
+    r"(?:stay|sit) with me|(?:need|want|give me) reassurance|"
+    r"tell me (?:you're|you are) here)\b", re.I)
+_SAFETY_DISCLOSURE = re.compile(
+    r"\b(?:suicid\w*|self[- ]?harm|(?:hurt|harm|kill|cut)\w* (?:myself|me|yourself)|"
+    r"end (?:my|it all)|don't want to (?:live|be alive)|not safe|overdos\w*)\b", re.I)
+_NO_QUESTIONS = re.compile(
+    r"\b(?:no (?:\w+[- /]+){0,3}questions|without (?:any )?questions|"
+    r"(?:don't|do not|stop) ask(?:ing)?(?: me)?(?: any)? questions)\b", re.I)
+
+
+def requests_no_questions(user_text):
+    return bool(_NO_QUESTIONS.search(user_text.replace("’", "'")))
+
+
+def conversation_revision_reason(answer, recent, user_text):
+    # Never revise safety-oriented replies merely to enforce a style preference.
+    if (_SAFETY_DISCLOSURE.search(user_text.replace("’", "'")) or
+            re.search(r"\b(?:safe|safety|emergency|crisis|suicid\w*)\b", answer, re.I)):
+        return ""
+    if requests_no_questions(user_text) and "?" in answer:
+        return "The user explicitly requested no questions, but the draft asks one."
+    if repeats_support_offer(answer, recent, user_text):
+        return "The draft repeats an offer to listen even though the user is already sharing."
+    return ""
+
+
+def repeats_support_offer(answer, recent, user_text):
+    """Narrow style check, never a safety classifier or general phrase ban."""
+    return bool(
+        support_loop_guidance(recent) and _SUPPORT_OFFER.search(answer)
+        and not _REASSURANCE_REQUEST.search(user_text.replace("’", "'"))
+        and not _SAFETY_DISCLOSURE.search(user_text.replace("’", "'"))
+        and not re.search(r"\b(?:safe|safety|emergency|crisis|suicid\w*)\b", answer, re.I)
+    )
+
+
+def support_loop_guidance(recent):
+    """Remind the model of exhausted support offers, without labelling user moods.
+
+    Only recent assistant wording triggers this note. It does not rewrite user
+    messages, remove history, or block an explicit request for reassurance.
+    """
+    replies = [item["content"] for item in recent if item["role"] == "assistant"][-3:]
+    if not any(_SUPPORT_OFFER.search(reply) for reply in replies):
+        return ""
+    return (
+        "\n## This turn: move past the support offer\n"
+        "You already offered listening or quiet company in recent replies. The user "
+        "is already in the conversation. Do not repeat that offer, even in different "
+        "words, or end with another invitation. Engage with the specific thing they "
+        "just said. Add an observation, answer, or one relevant question instead of "
+        "another generic sympathy sentence. Don't enumerate their hardships. "
+        "If they explicitly ask for reassurance, answer that request warmly. "
+        "Follow their latest topic and boundaries; do not assume they are still sad.\n"
+    )
+
 
 def conversation_reply(text, recent):
     """Return a local reply only for a whole-message closure/acknowledgement.
