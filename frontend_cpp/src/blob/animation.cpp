@@ -197,9 +197,38 @@ void AnimationController::setBlend(BlobExpression secondary, float amount) {
 }
 
 void AnimationController::setAttention(float x, float y, bool hovered) {
-    attentionX_ = std::clamp(x, -1.0f, 1.0f);
-    attentionY_ = std::clamp(y, -1.0f, 1.0f);
+    if (!std::isfinite(x) || !std::isfinite(y)) return;
+    x = std::clamp(x, -1.0f, 1.0f);
+    y = std::clamp(y, -1.0f, 1.0f);
+    if (hovered && hovered_) {
+        const float delta = x - teaseX_;
+        if (std::abs(delta) > 0.12f) {
+            const int direction = delta > 0.0f ? 1 : -1;
+            if (time_ - lastMoveTime_ > 0.55f) teaseTurns_ = 0;
+            else if (lastDirection_ && direction != lastDirection_) ++teaseTurns_;
+            if (teaseTurns_ >= 3) teaseRemaining_ = 1.2f;
+            lastDirection_ = direction;
+            lastMoveTime_ = time_;
+            teaseX_ = x;
+        }
+    } else if (hovered) {
+        teaseX_ = x;
+    }
+    if (hovered) {
+        attentionX_ = x;
+        attentionY_ = y;
+        awakeRemaining_ = 0.85f;
+    } else if (hovered_) {
+        teaseTurns_ = lastDirection_ = 0;
+    }
     hovered_ = hovered;
+}
+
+void AnimationController::poke() {
+    pokeCount_ = pokeRemaining_ > 0.0f ? std::min(pokeCount_ + 1, 3) : 1;
+    pokeRemaining_ = 1.5f;
+    pokeAge_ = 0.0f;
+    awakeRemaining_ = 1.8f;
 }
 
 void AnimationController::update(float dt) {
@@ -207,6 +236,11 @@ void AnimationController::update(float dt) {
     dt = std::clamp(dt, 0.0f, 0.05f);
     time_ += dt;
     expressionTime_ += dt;
+    if (hovered_) awakeRemaining_ = std::max(awakeRemaining_, 0.85f);
+    else awakeRemaining_ = std::max(0.0f, awakeRemaining_ - dt);
+    pokeRemaining_ = std::max(0.0f, pokeRemaining_ - dt);
+    teaseRemaining_ = std::max(0.0f, teaseRemaining_ - dt);
+    pokeAge_ += dt;
     const float motionTime = reducedMotion_ ? 0.0f : time_;
     const float age = reducedMotion_ ? 2.0f : expressionTime_;
     BlobPose target = targetPose(expression_, intensity_, motionTime, age);
@@ -219,11 +253,32 @@ void AnimationController::update(float dt) {
         MIX(blush); MIX(sweat); MIX(bubbles); MIX(workFlow); MIX(sparkles); MIX(glitch);
 #undef MIX
     }
-    if (hovered_ && (expression_ == BlobExpression::IDLE || expression_ == BlobExpression::LISTENING)) {
-        target.gazeX = attentionX_;
-        target.gazeY = attentionY_;
-        target.eyeSize += 0.06f;
-        target.mouthSmile += 0.12f;
+    const bool awake = hovered_ || awakeRemaining_ > 0.0f || pokeRemaining_ > 0.0f || teaseRemaining_ > 0.0f;
+    const bool resting = expression_ == BlobExpression::IDLE || expression_ == BlobExpression::WAITING ||
+        expression_ == BlobExpression::LISTENING || expression_ == BlobExpression::CURIOUS ||
+        expression_ == BlobExpression::SLEEPING || expression_ == BlobExpression::SLEEPY ||
+        expression_ == BlobExpression::TIRED || expression_ == BlobExpression::BORED;
+    if (awake && resting) target = targetPose(BlobExpression::CURIOUS, 0.9f, motionTime, age);
+    if (pokeRemaining_ > 0.0f) {
+        const auto reaction = pokeAge_ < 0.16f ? BlobExpression::SHOCKED :
+            pokeCount_ >= 3 ? BlobExpression::PLAYFUL_ANGRY : BlobExpression::PLAYFUL;
+        target = targetPose(reaction, 0.9f, motionTime, reducedMotion_ ? 2.0f : pokeAge_);
+    } else if (teaseRemaining_ > 0.0f) {
+        target = targetPose(BlobExpression::PLAYFUL, 0.9f, motionTime, age);
+        target.blush = 0.35f;
+    }
+    target.attention = awake ? 1.0f : 0.0f;
+    if (awake) {
+        // Follow deliberate local pointer input even while cloud or screen work is paused.
+        target.gazeX = attentionX_ * 1.7f;
+        target.gazeY = attentionY_ * 1.5f;
+        target.eyeOpen = std::max(target.eyeOpen, 1.05f);
+        target.eyeSize = std::max(target.eyeSize, 1.18f);
+        if (resting && pokeRemaining_ == 0.0f && teaseRemaining_ == 0.0f) {
+            target.mouthSmile = 0.95f;
+            target.lean = attentionX_ * 0.055f;
+            target.height = std::max(target.height, 1.035f);
+        }
     }
     if (reducedMotion_) {
         target.shake = target.lift = target.lean = target.glitch = 0.0f;
@@ -234,6 +289,7 @@ void AnimationController::update(float dt) {
 #define BLEND(field) approach(pose_.field, target.field, blend)
     BLEND(height); BLEND(width); BLEND(lift); BLEND(lean); BLEND(shake); BLEND(arms); BLEND(melt);
     BLEND(eyeOpen); BLEND(eyeSize); BLEND(eyeTilt); BLEND(eyeAsymmetry); BLEND(gazeX); BLEND(gazeY);
+    BLEND(attention);
     BLEND(mouthSmile); BLEND(mouthOpen); BLEND(mouthRound); BLEND(mouthWidth); BLEND(mouthSkew);
     BLEND(blush); BLEND(sweat); BLEND(bubbles); BLEND(workFlow); BLEND(sparkles); BLEND(glitch);
 #undef BLEND

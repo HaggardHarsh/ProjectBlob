@@ -25,6 +25,7 @@ struct BlobPose {
     float eyeAsymmetry = 0.0f;
     float gazeX = 0.0f;
     float gazeY = 0.0f;
+    float attention = 0.0f; // Local interaction lifts the privacy mask onto the forehead.
     float mouthSmile = 0.6f;
     float mouthOpen = 0.0f;
     float mouthRound = 0.0f;

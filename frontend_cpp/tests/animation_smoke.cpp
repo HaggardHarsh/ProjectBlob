@@ -9,11 +9,67 @@
 #include <stdexcept>
 
 void require(bool value, const char* message) { if (!value) throw std::runtime_error(message); }
+void advance(AnimationController& animation, int frames) {
+    for (int i = 0; i < frames; ++i) animation.update(1.0f / 60);
+}
 
 int main() {
     if (SDL_Init(SDL_INIT_TIMER)) return 1;
     int result = 0;
     try {
+        AnimationController companion;
+        companion.setExpression(BlobExpression::SLEEPING, 1.0f);
+        advance(companion, 90);
+        require(companion.pose().eyeOpen < 0.1f, "Sleeping eyes did not close");
+        companion.setAttention(0.8f, -0.6f, true);
+        advance(companion, 30);
+        require(companion.pose().eyeOpen > 1.0f && companion.pose().attention > 0.95f,
+                "Hover did not wake sleeping Blob and lift the privacy mask");
+        require(companion.pose().gazeX > 1.2f && companion.pose().gazeY < -0.8f,
+                "Awake eyes did not follow the cursor");
+        companion.setAttention(-0.8f, 0.7f, true);
+        advance(companion, 30);
+        require(companion.pose().gazeX < -1.2f && companion.pose().gazeY > 0.9f,
+                "Eyes did not follow a change in cursor direction");
+        advance(companion, 120);
+        require(companion.pose().eyeOpen > 1.0f, "A stationary hover stopped keeping Blob awake");
+        companion.setAttention(0, 0, false);
+        advance(companion, 20);
+        require(companion.pose().eyeOpen > 1.0f, "Blob fell asleep immediately on cursor exit");
+        advance(companion, 150);
+        require(companion.pose().eyeOpen < 0.1f && companion.pose().attention < 0.01f,
+                "Blob did not settle back to sleep after interaction");
+        companion.poke();
+        advance(companion, 6);
+        require(companion.pose().eyeSize > 1.2f, "A poke did not briefly surprise Blob");
+        advance(companion, 24);
+        require(companion.pose().mouthSmile > 0.9f && companion.pose().eyeAsymmetry > 0.3f,
+                "A poke did not produce a playful face");
+        companion.poke(); companion.poke();
+        advance(companion, 30);
+        require(companion.pose().eyeTilt > 0.6f && companion.pose().blush > 0.3f,
+                "Repeated pokes did not produce a mock grumpy reaction");
+        advance(companion, 180);
+        require(companion.pose().eyeOpen < 0.1f, "A poke permanently replaced the backend expression");
+        companion.setAttention(-0.8f, 0, true);
+        for (int turn = 0; turn < 5; ++turn) {
+            // Small mouse events must accumulate into a teasing reversal.
+            for (int step = 0; step < 16; ++step) {
+                const float x = turn % 2 == 0 ? -0.8f + step * 0.1f : 0.8f - step * 0.1f;
+                companion.setAttention(x, 0, true);
+                companion.update(1.0f / 120);
+            }
+        }
+        advance(companion, 24);
+        require(companion.pose().eyeAsymmetry > 0.3f && companion.pose().blush > 0.25f,
+                "Wiggling the pointer did not trigger playful teasing");
+        companion.setReducedMotion(true);
+        companion.poke();
+        advance(companion, 30);
+        require(companion.pose().eyeOpen > 1.0f && std::abs(companion.pose().lift) < 0.01f &&
+                std::abs(companion.pose().lean) < 0.01f && std::abs(companion.pose().shake) < 0.01f,
+                "Reduced motion lost facial interaction or retained body movement");
+
         AnimationController animation;
         DesktopSettings settings;
         animation.setReducedMotion(true); animation.setExpression(BlobExpression::CELEBRATE, 1);

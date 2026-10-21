@@ -180,11 +180,13 @@ void Renderer::drawFace(float cx, float cy, float rx, float ry, float,
     const float eyeOffset = rx * 0.28f;
     const int eyeRX = std::max(2, int(rx * 0.10f * pose.eyeSize));
     const int eyeRY = std::max(1, int(ry * 0.19f * pose.eyeSize * pose.eyeOpen));
-    const bool hidden = state == BlobState::BLINDFOLDED;
-    if (hidden) {
-        // A visible sleep mask distinguishes protected screens from ordinary blinking.
-        fillEllipse(int(cx), int(eyeY), int(rx * 0.67f), std::max(5, int(ry * 0.29f)), {43, 84, 106, 245});
-        drawCurve(cx - rx * 0.50f, eyeY - ry * 0.14f, cx + rx * 0.50f, eyeY - ry * 0.14f,
+    const bool protectedScreen = state == BlobState::BLINDFOLDED;
+    const bool hidden = protectedScreen && pose.attention < 0.55f;
+    if (protectedScreen) {
+        // Keep protection visible while lifting the mask for local play.
+        const float maskY = eyeY - ry * 0.64f * pose.attention;
+        fillEllipse(int(cx), int(maskY), int(rx * 0.67f), std::max(5, int(ry * 0.29f)), {43, 84, 106, 245});
+        drawCurve(cx - rx * 0.50f, maskY - ry * 0.14f, cx + rx * 0.50f, maskY - ry * 0.14f,
                   -1.2f, {94, 146, 166, 150}, 1);
     }
     for (int side : {-1, 1}) {

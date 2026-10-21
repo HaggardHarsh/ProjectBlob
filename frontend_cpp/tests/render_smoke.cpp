@@ -58,7 +58,7 @@ constexpr std::array references{
 
 int draw(SDL_Window* window, Renderer& renderer, BlobPhysics& physics,
          const BlobPose& pose, float time, std::vector<unsigned char>& pixels,
-         bool face = true) {
+         bool face = true, BlobState state = BlobState::IDLE) {
     physics.setPose(pose);
     const auto vertices = physics.getVertices();
     const auto center = physics.getCenter();
@@ -68,7 +68,7 @@ int draw(SDL_Window* window, Renderer& renderer, BlobPhysics& physics,
     renderer.drawHighlights(center.x, center.y, physics.getRadiusX(), physics.getRadiusY());
     renderer.drawDetails(center.x, center.y, physics.getRadiusX(), physics.getRadiusY(), time, pose);
     if (face) renderer.drawFace(center.x, center.y, physics.getRadiusX(), physics.getRadiusY(),
-                                time, BlobState::IDLE, pose);
+                                time, state, pose);
     renderer.present();
     return SDL_RenderReadPixels(SDL_GetRenderer(window), nullptr,
                                 SDL_PIXELFORMAT_RGBA8888, pixels.data(), width * 4);
@@ -110,6 +110,42 @@ int main() {
             }
         }
         if (!mouthVisible) return 4;
+        AnimationController interactive;
+        interactive.setExpression(BlobExpression::SLEEPING, 1.0f);
+        for (int frame = 0; frame < 90; ++frame) interactive.update(1.0f / 60.0f);
+        draw(window, renderer, physics, interactive.pose(), 1.5f, pixels, true, BlobState::BLINDFOLDED);
+        save(directory, "shielded_sleep", pixels);
+        interactive.setAttention(0.85f, -0.35f, true);
+        for (int frame = 0; frame < 30; ++frame) interactive.update(1.0f / 60.0f);
+        draw(window, renderer, physics, interactive.pose(), 2.0f, pixels, true, BlobState::BLINDFOLDED);
+        save(directory, "shielded_hover_right", pixels);
+        std::vector<unsigned char> unmasked(pixels.size());
+        draw(window, renderer, physics, interactive.pose(), 2.0f, unmasked);
+        // Playing must leave the privacy mask visible, above the now-open eyes.
+        if (pixels == unmasked) return 12;
+        const auto eyeCenter = physics.getCenter();
+        const int eyeY = int(eyeCenter.y - physics.getRadiusY() * 0.16f + interactive.pose().gazeY * 2);
+        for (int side : {-1, 1}) {
+            const int eyeX = int(eyeCenter.x + side * physics.getRadiusX() * 0.28f + interactive.pose().gazeX * 2);
+            for (int y = eyeY - 3; y <= eyeY + 3; ++y)
+                for (int x = eyeX - 2; x <= eyeX + 2; ++x) {
+                    const int offset = (y * width + x) * 4;
+                    if (!std::equal(pixels.begin() + offset, pixels.begin() + offset + 4,
+                                    unmasked.begin() + offset)) return 13;
+                }
+        }
+        interactive.setAttention(-0.85f, 0.35f, true);
+        for (int frame = 0; frame < 30; ++frame) interactive.update(1.0f / 60.0f);
+        draw(window, renderer, physics, interactive.pose(), 2.5f, pixels, true, BlobState::BLINDFOLDED);
+        save(directory, "shielded_hover_left", pixels);
+        interactive.poke();
+        for (int frame = 0; frame < 30; ++frame) interactive.update(1.0f / 60.0f);
+        draw(window, renderer, physics, interactive.pose(), 3.0f, pixels, true, BlobState::BLINDFOLDED);
+        save(directory, "shielded_poke", pixels);
+        interactive.poke(); interactive.poke();
+        for (int frame = 0; frame < 30; ++frame) interactive.update(1.0f / 60.0f);
+        draw(window, renderer, physics, interactive.pose(), 3.5f, pixels, true, BlobState::BLINDFOLDED);
+        save(directory, "shielded_teased", pixels);
         for (const auto& [name, expression] : references) {
             AnimationController animation;
             animation.setExpression(expression, 0.85f);

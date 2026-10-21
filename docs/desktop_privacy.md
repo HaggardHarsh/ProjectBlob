@@ -38,8 +38,9 @@ Repeating reminders coalesce unread occurrences; an old acknowledgement cannot
 remove a newer occurrence. Other transient notifications and conversation replies
 are not replayed. The overlay alone does not provide an OS notification history.
 
-The overlay sleeps when disconnected and shows its existing blindfold while privacy
-is active. Right-click toggles manual pause; double-click opens terminal chat.
+The overlay rests when disconnected and wears a blindfold while privacy is active.
+Hovering or poking wakes it for local play; the mask lifts onto its forehead while
+screen protection stays active. Right-click toggles manual pause; double-click opens terminal chat.
 On desktops with an X11 tray, left-click opens terminal chat and right-click
 toggles pause. Terminal chat requires a supported terminal launcher. The desktop
 application launcher and `make chat` work independently of the tray. Privacy and

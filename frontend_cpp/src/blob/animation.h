@@ -9,6 +9,7 @@ public:
     void update(float dt);
     void setReducedMotion(bool value) { reducedMotion_ = value; }
     void setAttention(float x, float y, bool hovered);
+    void poke();
     const BlobPose& pose() const { return pose_; }
     BlobExpression expression() const { return expression_; }
 
@@ -23,4 +24,9 @@ private:
     bool reducedMotion_ = false;
     bool hovered_ = false;
     float attentionX_ = 0.0f, attentionY_ = 0.0f;
+    float awakeRemaining_ = 0.0f;
+    float pokeRemaining_ = 0.0f, pokeAge_ = 0.0f;
+    float teaseRemaining_ = 0.0f, lastMoveTime_ = -1.0f;
+    float teaseX_ = 0.0f;
+    int pokeCount_ = 0, teaseTurns_ = 0, lastDirection_ = 0;
 };

@@ -10,6 +10,11 @@ client; there is no separate chat or settings window.
 - Drag the body to move it; pokes produce a damped spring wobble and dragging adds
   a small lean. Position survives restarting, with off-screen positions restored
   to a visible display.
+- Hover to wake Blob and have him follow the pointer. Wiggle the cursor back and
+  forth to tease him; pokes bring a surprised, playful face, with a mock grumpy
+  reaction to repeated pokes. He settles again after you leave. These animations
+  run locally even while disconnected or paused. During play, the privacy mask
+  lifts onto his forehead; screen protection stays active.
 - Right-click Blob or its tray icon to toggle manual privacy pause. The visible
   mask reflects backend screen shielding. Use `/privacy status`, `/privacy explain`,
   `/privacy pause`, `/privacy resume`, and `/privacy cloud on|off` in terminal chat.

@@ -135,6 +135,10 @@ int runDesktop(int argc, char** argv) {
     const double frequency = double(SDL_GetPerformanceFrequency());
     int frame = 0;
     std::string lastTitle;
+    const auto attend = [&](int x, int y) {
+        animation.setAttention((x - window.getWidth() * 0.5f) / (window.getWidth() * 0.4f),
+                               (y - window.getHeight() * 0.57f) / (window.getHeight() * 0.4f), true);
+    };
     while (running) {
         const Uint64 start = SDL_GetPerformanceCounter();
         const float dt = std::clamp(float((start - previous) / frequency), 0.0f, 0.05f);
@@ -165,19 +169,25 @@ int runDesktop(int argc, char** argv) {
             const Uint32 id = SDL_GetWindowID(window.getSDLWindow());
             if (event.type == SDL_WINDOWEVENT && event.window.windowID == id) {
                 if (event.window.event == SDL_WINDOWEVENT_CLOSE) running = false;
-                if (event.window.event == SDL_WINDOWEVENT_ENTER) hovered = true;
+                if (event.window.event == SDL_WINDOWEVENT_ENTER) {
+                    hovered = true;
+                    int x, y; SDL_GetMouseState(&x, &y); attend(x, y);
+                }
                 if (event.window.event == SDL_WINDOWEVENT_LEAVE) hovered = false;
             }
             if (event.type == SDL_MOUSEBUTTONDOWN && event.button.windowID == id) {
                 if (event.button.button == SDL_BUTTON_RIGHT) client.togglePrivacy();
                 else if (event.button.button == SDL_BUTTON_LEFT) {
                     if (event.button.clicks == 2) { window.stopDrag(); physics.setDrag(0); chat.launch(); }
-                    else { int x, y; SDL_GetGlobalMouseState(&x, &y); window.startDrag(x, y); physics.jiggle(); }
+                    else {
+                        animation.poke();
+                        int x, y; SDL_GetGlobalMouseState(&x, &y); window.startDrag(x, y); physics.jiggle();
+                    }
                 }
             }
             if (event.type == SDL_MOUSEMOTION && event.motion.windowID == id) {
-                animation.setAttention((event.motion.x / settings.scale - width / 2.0f) / (width * 0.4f),
-                                       (event.motion.y / settings.scale - height / 2.0f) / (height * 0.4f), hovered);
+                if (!window.isDragging()) hovered = true;
+                attend(event.motion.x, event.motion.y);
                 if (window.isDragging()) {
                     int x, y; SDL_GetGlobalMouseState(&x, &y);
                     if (x || y) window.updateDrag(x, y); else window.updateDragRelative(event.motion.xrel, event.motion.yrel);
@@ -192,7 +202,7 @@ int runDesktop(int argc, char** argv) {
             }
             if (event.type == SDL_KEYDOWN && event.key.windowID == id) {
                 if (event.key.keysym.sym == SDLK_RETURN && !event.key.repeat) chat.launch();
-                else if (event.key.keysym.sym == SDLK_SPACE) physics.jiggle();
+                else if (event.key.keysym.sym == SDLK_SPACE && !event.key.repeat) { animation.poke(); physics.jiggle(); }
                 else if (event.key.keysym.sym == SDLK_ESCAPE) running = false;
             }
         }
