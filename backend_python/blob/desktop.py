@@ -15,7 +15,9 @@ def open_chat(*, conversation=False):
                             ("konsole", ["-e"]), ("xfce4-terminal", ["-x"]), ("xterm", ["-e"])):
         executable = shutil.which(terminal)
         if executable:
-            subprocess.Popen([executable, *flags, *chat], start_new_session=True)
+            # The overlay tracks this helper until terminal startup finishes.
+            # Some terminals remain attached for the whole chat session.
+            subprocess.run([executable, *flags, *chat], start_new_session=True, check=True)
             return
     raise RuntimeError("No terminal launcher found. Open a terminal and run blob-chat (or python -m blob.client).")
 

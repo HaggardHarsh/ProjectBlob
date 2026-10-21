@@ -80,6 +80,11 @@ target_include_directories(blob_ipc_smoke PRIVATE ${CMAKE_CURRENT_BINARY_DIR} sr
 target_link_libraries(blob_ipc_smoke blob_protocol)
 
 enable_testing()
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_executable(blob_chat_launcher_smoke tests/chat_launcher_smoke.cpp src/app/chat_launcher.cpp)
+    target_include_directories(blob_chat_launcher_smoke PRIVATE src)
+    add_test(NAME blob_chat_launcher_smoke COMMAND blob_chat_launcher_smoke)
+endif()
 add_executable(blob_render_smoke
     tests/render_smoke.cpp
     src/blob/animation.cpp

@@ -1,5 +1,6 @@
 #include "app/application.h"
 #include "app/settings.h"
+#include "app/chat_launcher.h"
 #include "ui/tray.h"
 #include "ui/conversation_bubble.h"
 #include "overlay/window.h"
@@ -18,28 +19,6 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
-#ifdef __linux__
-#include <unistd.h>
-#include <sys/wait.h>
-#endif
-
-static void openChat(bool conversation = false) {
-#ifdef __linux__
-    const pid_t launcher = fork();
-    if (launcher == 0) {
-        const pid_t child = fork();
-        if (child == 0) {
-            const char* python = std::getenv("BLOB_CHAT_PYTHON");
-            if (!python) python = access("venv/bin/python", X_OK) == 0 ? "venv/bin/python" : "python3";
-            if (conversation) execlp(python, python, "-m", "blob.desktop", "--conversation", static_cast<char*>(nullptr));
-            else execlp(python, python, "-m", "blob.desktop", static_cast<char*>(nullptr));
-            _exit(127);
-        }
-        _exit(child < 0 ? 1 : 0);
-    }
-    if (launcher > 0) waitpid(launcher, nullptr, 0);
-#endif
-}
 
 
 static BlobExpression expressionFor(blob::EmoteCommand::Emote emote) {
@@ -75,6 +54,8 @@ struct DesktopStatus { bool connected = false, shield = true, paused = false, cl
 struct SdlRuntime {
     SdlRuntime() {
         if (!std::getenv("SDL_VIDEODRIVER") && std::getenv("DISPLAY")) SDL_setenv("SDL_VIDEODRIVER", "x11", 0);
+        // The click that focuses Blob is also the first half of a double-click.
+        SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1");
         if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_TIMER)) throw std::runtime_error(SDL_GetError());
     }
     ~SdlRuntime() { SDL_Quit(); }
@@ -137,6 +118,7 @@ int runDesktop(int argc, char** argv) {
     AnimationController animation;
     BlobPhysics physics(width, height);
     SystemTray tray;
+    ChatLauncher chat;
     DesktopStatus status;
     ConversationBubble bubble;
     if (!demo) client.start();
@@ -158,6 +140,7 @@ int runDesktop(int argc, char** argv) {
         const float dt = std::clamp(float((start - previous) / frequency), 0.0f, 0.05f);
         previous = start;
         const Uint32 now = SDL_GetTicks();
+        chat.poll();
         SDL_Event event{};
         while (SDL_PollEvent(&event)) {
             if (auto action = bubble.handle(event)) {
@@ -165,7 +148,7 @@ int runDesktop(int argc, char** argv) {
                     client.proactiveControl(*action == blob::ProactiveFeedback::QUIET_TODAY);
                 else client.proactiveFeedback(bubble.id(), *action);
                 bubble.hide();
-                if (*action == blob::ProactiveFeedback::REPLY) openChat(true);
+                if (*action == blob::ProactiveFeedback::REPLY) chat.launch(true);
                 continue;
             }
             if (event.type == SDL_QUIT) { running = false; continue; }
@@ -188,7 +171,7 @@ int runDesktop(int argc, char** argv) {
             if (event.type == SDL_MOUSEBUTTONDOWN && event.button.windowID == id) {
                 if (event.button.button == SDL_BUTTON_RIGHT) client.togglePrivacy();
                 else if (event.button.button == SDL_BUTTON_LEFT) {
-                    if (event.button.clicks >= 2) { window.stopDrag(); physics.setDrag(0); openChat(); }
+                    if (event.button.clicks == 2) { window.stopDrag(); physics.setDrag(0); chat.launch(); }
                     else { int x, y; SDL_GetGlobalMouseState(&x, &y); window.startDrag(x, y); physics.jiggle(); }
                 }
             }
@@ -208,13 +191,13 @@ int runDesktop(int argc, char** argv) {
                 }
             }
             if (event.type == SDL_KEYDOWN && event.key.windowID == id) {
-                if (event.key.keysym.sym == SDLK_RETURN) openChat();
+                if (event.key.keysym.sym == SDLK_RETURN && !event.key.repeat) chat.launch();
                 else if (event.key.keysym.sym == SDLK_SPACE) physics.jiggle();
                 else if (event.key.keysym.sym == SDLK_ESCAPE) running = false;
             }
         }
         tray.poll();
-        if (tray.takeActivated()) openChat();
+        if (tray.takeActivated()) chat.launch();
         if (tray.takePrivacyToggle()) client.togglePrivacy();
         while (auto event = client.pollEvent()) {
             if (event->has_privacy()) {
