@@ -3,6 +3,12 @@
 Blob renders only its animated slime overlay. Chat opens in the existing terminal
 client; there is no separate chat or settings window.
 
+The pale blue jelly body has a shaded inner core and broad glossy highlights.
+Happy eyes arch, annoyed eyes scrunch into wide tapered lines, surprise stretches
+the body and eyes, and sadness slumps with distinct tears for crying. Facial
+features remain readable while following the cursor. Incoming expressions lift
+the privacy mask onto the forehead while screen protection stays active.
+
 ## Controls
 
 - Double-click Blob, press Enter while the overlay is focused, or left-click its

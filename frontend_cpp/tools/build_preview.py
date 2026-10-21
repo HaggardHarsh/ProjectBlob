@@ -91,6 +91,12 @@ def main() -> None:
             "neutral", "happy", "thinking", "deep_thinking", "working", "shocked",
             "angry", "sad", "embarrassed", "melting", "completely_melted", "celebration",
         ], output / "key_poses.png", 4, 3, font)
+        reference_sheet(source, [
+            "neutral", "happy", "angry", "shocked", "thinking", "sad", "crying", "embarrassed",
+        ], output / "desktop_emotions.png", 4, 1, font)
+        reference_sheet(source, [
+            "shielded_sleep", "shielded_hover_right", "shielded_hover_left", "shielded_poke", "shielded_teased",
+        ], output / "interaction_poses.png", 5, 2, font)
         neutral = character(source, "neutral")
         neutral.save(output / "neutral_transparent.png")
         icons = Image.new("RGB", (920, 610), (239, 245, 248))

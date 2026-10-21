@@ -260,16 +260,18 @@ int runDesktop(int argc, char** argv) {
         bubble.update(window.getSDLWindow(), now);
         if (demo) {
             constexpr std::array poses{BlobExpression::IDLE, BlobExpression::HAPPY, BlobExpression::THINKING,
-                BlobExpression::PLAYFUL, BlobExpression::CELEBRATE, BlobExpression::MELTING};
+                BlobExpression::SHOCKED, BlobExpression::ANGRY, BlobExpression::SAD, BlobExpression::CRYING,
+                BlobExpression::SHY, BlobExpression::PLAYFUL, BlobExpression::CELEBRATE, BlobExpression::MELTING};
             expression = poses[(frame / 150) % poses.size()];
         }
         if (expressionUntil && SDL_TICKS_PASSED(now, expressionUntil)) {
             if (expression == BlobExpression::MELTING) { expression = BlobExpression::RECOVERING; expressionUntil = now + 1000; }
             else { expression = BlobExpression::IDLE; secondary = expression; blend = 0; expressionUntil = 0; }
         }
-        const auto visual = !connected ? BlobExpression::SLEEPING : status.shield ? BlobExpression::SLEEPING : expression;
+        const auto visual = !connected || (status.shield && expression == BlobExpression::IDLE)
+            ? BlobExpression::SLEEPING : expression;
         animation.setReducedMotion(settings.reducedMotion); physics.setReducedMotion(settings.reducedMotion);
-        animation.setExpression(visual, intensity); animation.setBlend(status.shield ? BlobExpression::IDLE : secondary, status.shield ? 0 : blend);
+        animation.setExpression(visual, intensity); animation.setBlend(secondary, blend);
         if (!hovered) animation.setAttention(0, 0, false);
         animation.update(dt);
         BlobPose pose = animation.pose();

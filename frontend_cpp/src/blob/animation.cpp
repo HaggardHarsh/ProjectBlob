@@ -23,7 +23,7 @@ BlobPose targetPose(BlobExpression expression, float intensity, float t, float a
             p.gazeX = 0.55f * std::sin(t * 0.53f) * std::sin(t * 0.19f);
             p.gazeY = 0.15f * std::sin(t * 0.41f);
             if (expression == BlobExpression::CURIOUS) {
-                p.lean = 0.05f * weight; p.eyeSize = 1.12f; p.mouthSmile = 0.9f;
+                p.lean = 0.08f * weight; p.eyeSize = 1.18f; p.eyeAsymmetry = 0.18f; p.mouthSmile = 0.9f;
             }
             if (expression == BlobExpression::WAITING) p.eyeOpen = 0.85f;
             break;
@@ -31,10 +31,12 @@ BlobPose targetPose(BlobExpression expression, float intensity, float t, float a
         case BlobExpression::HAPPY:
         case BlobExpression::SUCCESS:
         case BlobExpression::EATING:
-            p.height += 0.035f * weight;
-            p.eyeOpen = expression == BlobExpression::CUTE_SMILE ? 0.8f : 0.35f;
+            p.height += 0.07f * weight;
+            p.eyeOpen = expression == BlobExpression::CUTE_SMILE ? 0.85f : 0.12f;
+            p.eyeSmile = expression == BlobExpression::CUTE_SMILE ? 0.0f : 1.0f;
             p.mouthSmile = 1.4f;
-            p.mouthOpen = expression == BlobExpression::CUTE_SMILE ? 0.0f : 0.25f;
+            p.mouthOpen = expression == BlobExpression::CUTE_SMILE ? 0.0f : 0.55f;
+            p.blush = 0.3f;
             p.lift = 3.0f * pulse(age, 0.22f, 0.18f) * weight;
             p.sparkles = expression == BlobExpression::SUCCESS ? 0.45f : 0.0f;
             break;
@@ -42,42 +44,51 @@ BlobPose targetPose(BlobExpression expression, float intensity, float t, float a
         case BlobExpression::EXCITED:
         case BlobExpression::CELEBRATE:
         case BlobExpression::LAUGHING:
-            p.height += (0.12f + 0.08f * pulse(age, 0.28f, 0.16f)) * weight;
-            p.eyeOpen = expression == BlobExpression::EXCITED ? 1.25f : 0.18f;
-            p.eyeSize = 1.15f; p.mouthSmile = 1.8f; p.mouthOpen = 0.85f;
+            p.height += (0.18f + 0.10f * pulse(age, 0.28f, 0.16f)) * weight;
+            p.eyeOpen = expression == BlobExpression::EXCITED ? 1.3f : 0.08f;
+            p.eyeSmile = expression == BlobExpression::EXCITED ? 0.0f : 1.0f;
+            p.eyeSize = 1.2f; p.mouthSmile = 1.8f; p.mouthOpen = 1.1f; p.blush = 0.45f;
             p.lift = (expression == BlobExpression::CELEBRATE ? 12.0f : 7.0f)
                      * pulse(age, 0.32f, 0.20f) * weight;
             p.arms = expression == BlobExpression::CELEBRATE ? 0.7f * weight : 0.2f * weight;
+            if (expression == BlobExpression::CELEBRATE)
+                p.lift += 5.0f * std::pow(std::max(0.0f, std::sin(t * 6.0f)), 2);
+            if (expression == BlobExpression::LAUGHING) {
+                p.height = 0.87f + 0.045f * std::sin(t * 10.0f);
+                p.lean = 0.06f * std::sin(t * 5.0f);
+            }
             p.sparkles = expression == BlobExpression::CELEBRATE ? 0.8f : 0.25f;
             break;
         case BlobExpression::SHOCKED:
         case BlobExpression::EXTREME_SHOCK:
-            p.height += (expression == BlobExpression::EXTREME_SHOCK ? 0.32f : 0.22f) * weight;
+            p.height += (expression == BlobExpression::EXTREME_SHOCK ? 0.40f : 0.28f) * weight;
             p.eyeSize = expression == BlobExpression::EXTREME_SHOCK ? 1.65f : 1.4f;
             p.eyeOpen = 1.2f; p.mouthSmile = 0.0f; p.mouthRound = 1.0f; p.mouthOpen = 0.8f;
             p.shake = age > 0.18f && age < 0.52f ? 1.2f * std::sin(age * 92.0f) : 0.0f;
             break;
         case BlobExpression::CONFUSED:
         case BlobExpression::WORRIED:
-            p.lean = 0.06f * std::sin(t * 1.7f) * weight;
-            p.eyeAsymmetry = expression == BlobExpression::CONFUSED ? 0.28f : 0.1f;
+            p.lean = 0.12f * std::cos(t * 1.7f) * weight;
+            p.eyeAsymmetry = expression == BlobExpression::CONFUSED ? 0.58f : 0.25f;
             p.eyeSize = 1.1f; p.mouthSmile = -0.35f; p.mouthSkew = 0.35f;
+            p.eyeTilt = expression == BlobExpression::WORRIED ? -0.7f : -0.25f;
+            p.mouthWidth = 0.65f;
             p.sweat = expression == BlobExpression::WORRIED ? 0.7f : 0.0f;
             break;
         case BlobExpression::THINKING:
         case BlobExpression::DEEP_THINKING:
-            p.lean = (expression == BlobExpression::DEEP_THINKING ? 0.02f : 0.085f)
-                     * std::sin(t * 1.35f) * weight;
+            p.lean = (expression == BlobExpression::DEEP_THINKING ? 0.06f : 0.12f)
+                     * (0.7f + 0.3f * std::sin(t * 1.35f)) * weight;
             p.gazeX = 1.0f; p.gazeY = -1.1f;
-            p.eyeAsymmetry = 0.14f;
+            p.eyeAsymmetry = 0.48f;
             p.eyeOpen = expression == BlobExpression::DEEP_THINKING ? 0.62f : 0.86f;
-            p.mouthSmile = 0.12f; p.mouthSkew = 0.75f;
+            p.mouthSmile = 0.12f; p.mouthSkew = 1.0f; p.mouthWidth = 0.55f;
             p.bubbles = expression == BlobExpression::DEEP_THINKING ? 0.85f : 0.9f;
             p.arms = expression == BlobExpression::THINKING ? -0.65f : 0.0f;
             break;
         case BlobExpression::FOCUSED:
         case BlobExpression::WORKING:
-            p.lean = 0.035f * weight; p.eyeOpen = 0.72f; p.mouthSmile = 0.1f;
+            p.lean = 0.09f * weight; p.eyeOpen = 0.55f; p.eyeTilt = 0.35f; p.mouthSmile = 0.1f;
             p.bubbles = expression == BlobExpression::WORKING ? 0.75f : 0.2f;
             p.workFlow = expression == BlobExpression::WORKING ? 1.0f : 0.0f;
             p.arms = expression == BlobExpression::WORKING ? 0.35f : 0.0f;
@@ -93,33 +104,35 @@ BlobPose targetPose(BlobExpression expression, float intensity, float t, float a
         case BlobExpression::ANGRY:
         case BlobExpression::PLAYFUL_ANGRY:
         case BlobExpression::FRUSTRATED:
-            p.height -= 0.13f * weight; p.eyeOpen = 0.6f; p.eyeTilt = 0.8f;
+            p.height -= 0.22f * weight; p.eyeOpen = 0.12f; p.eyeTilt = 0.8f;
+            p.eyeSqueeze = 1.0f;
             p.mouthSmile = -1.1f;
+            p.mouthWidth = 0.65f;
             p.shake = (expression == BlobExpression::FRUSTRATED ? 2.5f : 1.0f)
                       * std::sin(t * 28.0f) * weight;
             if (expression == BlobExpression::PLAYFUL_ANGRY) {
-                p.blush = 0.4f; p.mouthSmile = -0.5f;
+                p.blush = 0.6f; p.mouthSmile = -0.5f;
             }
             break;
         case BlobExpression::SAD:
         case BlobExpression::CRYING:
-            p.height -= 0.1f * weight; p.eyeOpen = 0.72f;
-            p.eyeTilt = -0.55f; p.mouthSmile = -1.0f;
-            p.sweat = expression == BlobExpression::CRYING ? 1.0f : 0.0f;
+            p.height -= 0.18f * weight; p.eyeOpen = 0.65f; p.lean = -0.07f;
+            p.eyeTilt = -0.9f; p.mouthSmile = -1.3f; p.mouthWidth = 0.75f;
+            p.tears = expression == BlobExpression::CRYING ? 1.0f : 0.0f;
             break;
         case BlobExpression::EMBARRASSED:
         case BlobExpression::SHY:
         case BlobExpression::NERVOUS:
-            p.height -= 0.04f * weight; p.gazeX = 0.65f; p.eyeOpen = 0.7f;
-            p.mouthSmile = 0.35f; p.mouthSkew = 0.45f;
-            p.blush = expression == BlobExpression::NERVOUS ? 0.35f : 0.75f;
+            p.height -= 0.10f * weight; p.gazeX = 1.2f; p.gazeY = 0.45f; p.eyeOpen = 0.6f;
+            p.mouthSmile = 0.45f; p.mouthSkew = 0.55f; p.mouthWidth = 0.6f;
+            p.blush = expression == BlobExpression::NERVOUS ? 0.45f : 1.0f;
             p.shake = expression == BlobExpression::NERVOUS ? 0.6f * std::sin(t * 17.0f) : 0.0f;
             break;
         case BlobExpression::SLEEPY:
         case BlobExpression::SLEEPING:
         case BlobExpression::TIRED:
         case BlobExpression::BORED:
-            p.height -= expression == BlobExpression::TIRED ? 0.12f : 0.06f;
+            p.height -= expression == BlobExpression::TIRED ? 0.21f : 0.12f;
             p.eyeOpen = expression == BlobExpression::SLEEPING ? 0.05f : 0.35f;
             p.mouthSmile = expression == BlobExpression::BORED ? -0.15f : 0.0f;
             p.lean = 0.025f * std::sin(t * 0.8f);
@@ -161,8 +174,9 @@ BlobPose targetPose(BlobExpression expression, float intensity, float t, float a
             p.sparkles = expression == BlobExpression::IDEA ? 0.8f : 0.4f;
             break;
         case BlobExpression::PLAYFUL:
-            p.eyeAsymmetry = 0.5f; p.mouthSmile = 1.1f;
-            p.lean = 0.05f * std::sin(t * 2.8f);
+            p.eyeAsymmetry = 0.9f; p.eyeSmile = 0.0f; p.mouthSmile = 1.3f;
+            p.mouthSkew = 0.55f; p.blush = 0.4f;
+            p.lean = 0.09f * std::sin(t * 2.8f);
             break;
     }
     // Every facial and body parameter fades toward neutral at intensity zero.
@@ -172,6 +186,7 @@ BlobPose targetPose(BlobExpression expression, float intensity, float t, float a
 #define FADE(field) p.field = neutral.field + (p.field - neutral.field) * influence
     FADE(height); FADE(lift); FADE(lean); FADE(shake); FADE(arms); FADE(melt);
     FADE(eyeOpen); FADE(eyeSize); FADE(eyeTilt); FADE(eyeAsymmetry); FADE(gazeX); FADE(gazeY);
+    FADE(eyeSqueeze); FADE(eyeSmile); FADE(tears);
     FADE(mouthSmile); FADE(mouthOpen); FADE(mouthRound); FADE(mouthWidth); FADE(mouthSkew);
     FADE(blush); FADE(sweat); FADE(bubbles); FADE(workFlow); FADE(sparkles); FADE(glitch);
 #undef FADE
@@ -249,6 +264,7 @@ void AnimationController::update(float dt) {
 #define MIX(field) target.field += (second.field - target.field) * blend_
         MIX(height); MIX(width); MIX(lift); MIX(lean); MIX(shake); MIX(arms); MIX(melt);
         MIX(eyeOpen); MIX(eyeSize); MIX(eyeTilt); MIX(eyeAsymmetry); MIX(gazeX); MIX(gazeY);
+        MIX(eyeSqueeze); MIX(eyeSmile); MIX(tears);
         MIX(mouthSmile); MIX(mouthOpen); MIX(mouthRound); MIX(mouthWidth); MIX(mouthSkew);
         MIX(blush); MIX(sweat); MIX(bubbles); MIX(workFlow); MIX(sparkles); MIX(glitch);
 #undef MIX
@@ -267,14 +283,17 @@ void AnimationController::update(float dt) {
         target = targetPose(BlobExpression::PLAYFUL, 0.9f, motionTime, age);
         target.blush = 0.35f;
     }
-    target.attention = awake ? 1.0f : 0.0f;
+    // Incoming emotions remain readable while the raised mask still signals protection.
+    const bool showExpression = expression_ != BlobExpression::IDLE && expression_ != BlobExpression::SLEEPING &&
+        expression_ != BlobExpression::SLEEPY && expression_ != BlobExpression::TIRED && expression_ != BlobExpression::BORED;
+    target.attention = awake || showExpression ? 1.0f : 0.0f;
     if (awake) {
         // Follow deliberate local pointer input even while cloud or screen work is paused.
         target.gazeX = attentionX_ * 1.7f;
         target.gazeY = attentionY_ * 1.5f;
-        target.eyeOpen = std::max(target.eyeOpen, 1.05f);
-        target.eyeSize = std::max(target.eyeSize, 1.18f);
         if (resting && pokeRemaining_ == 0.0f && teaseRemaining_ == 0.0f) {
+            target.eyeOpen = std::max(target.eyeOpen, 1.05f);
+            target.eyeSize = std::max(target.eyeSize, 1.18f);
             target.mouthSmile = 0.95f;
             target.lean = attentionX_ * 0.055f;
             target.height = std::max(target.height, 1.035f);
@@ -289,6 +308,7 @@ void AnimationController::update(float dt) {
 #define BLEND(field) approach(pose_.field, target.field, blend)
     BLEND(height); BLEND(width); BLEND(lift); BLEND(lean); BLEND(shake); BLEND(arms); BLEND(melt);
     BLEND(eyeOpen); BLEND(eyeSize); BLEND(eyeTilt); BLEND(eyeAsymmetry); BLEND(gazeX); BLEND(gazeY);
+    BLEND(eyeSqueeze); BLEND(eyeSmile); BLEND(tears);
     BLEND(attention);
     BLEND(mouthSmile); BLEND(mouthOpen); BLEND(mouthRound); BLEND(mouthWidth); BLEND(mouthSkew);
     BLEND(blush); BLEND(sweat); BLEND(bubbles); BLEND(workFlow); BLEND(sparkles); BLEND(glitch);

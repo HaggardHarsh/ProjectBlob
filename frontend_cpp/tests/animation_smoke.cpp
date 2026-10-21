@@ -66,9 +66,34 @@ int main() {
         companion.setReducedMotion(true);
         companion.poke();
         advance(companion, 30);
-        require(companion.pose().eyeOpen > 1.0f && std::abs(companion.pose().lift) < 0.01f &&
+        require(companion.pose().attention > 0.95f && companion.pose().eyeAsymmetry > 0.65f &&
+                std::abs(companion.pose().lift) < 0.01f &&
                 std::abs(companion.pose().lean) < 0.01f && std::abs(companion.pose().shake) < 0.01f,
                 "Reduced motion lost facial interaction or retained body movement");
+
+        AnimationController emotions;
+        emotions.setExpression(BlobExpression::HAPPY, 0.6f);
+        advance(emotions, 60);
+        require(emotions.pose().eyeSmile > 0.7f && emotions.pose().attention > 0.95f,
+                "A happy emote did not show smiling eyes above the privacy mask");
+        emotions.setAttention(0.7f, 0.2f, true);
+        advance(emotions, 30);
+        require(emotions.pose().eyeSmile > 0.7f && emotions.pose().eyeOpen < 0.4f,
+                "Hover erased the happy squint");
+        emotions.setExpression(BlobExpression::ANGRY, 0.6f);
+        advance(emotions, 60);
+        require(emotions.pose().eyeSqueeze > 0.7f && emotions.pose().height < 0.85f,
+                "Annoyance lost its broad squeezed eyes and compressed silhouette");
+        emotions.setExpression(BlobExpression::CRYING, 0.6f);
+        advance(emotions, 60);
+        require(emotions.pose().tears > 0.7f && emotions.pose().eyeTilt < -0.6f,
+                "Crying did not have its own tearful expression");
+        emotions.setAttention(0, 0, false);
+        emotions.setExpression(BlobExpression::SLEEPING, 1);
+        advance(emotions, 180);
+        require(emotions.pose().attention < 0.01f && emotions.pose().tears < 0.01f &&
+                emotions.pose().eyeSqueeze < 0.01f && emotions.pose().eyeSmile < 0.01f,
+                "Expression features or raised privacy mask persisted into sleep");
 
         AnimationController animation;
         DesktopSettings settings;

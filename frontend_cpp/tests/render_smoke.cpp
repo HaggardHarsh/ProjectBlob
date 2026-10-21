@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <string>
 #include <utility>
 #include <vector>
@@ -70,8 +71,7 @@ int draw(SDL_Window* window, Renderer& renderer, BlobPhysics& physics,
     if (face) renderer.drawFace(center.x, center.y, physics.getRadiusX(), physics.getRadiusY(),
                                 time, state, pose);
     renderer.present();
-    return SDL_RenderReadPixels(SDL_GetRenderer(window), nullptr,
-                                SDL_PIXELFORMAT_RGBA8888, pixels.data(), width * 4);
+    return renderer.readPixels(pixels.data(), width * 4);
 }
 
 void save(const char* directory, const char* name, std::vector<unsigned char>& pixels) {
@@ -99,6 +99,18 @@ int main() {
         idleAnimation.update(1.0f / 60.0f);
         if (draw(window, renderer, physics, idleAnimation.pose(), 1.0f, idle) != 0 ||
             draw(window, renderer, physics, idleAnimation.pose(), 1.0f, bodyOnly, false) != 0) return 3;
+        Uint32 corner; std::memcpy(&corner, bodyOnly.data(), 4);
+        if ((corner & 255) != 0) return 17;
+        bool softEdge = false;
+        for (size_t offset = 0; offset < bodyOnly.size(); offset += 4) {
+            Uint32 pixel; std::memcpy(&pixel, bodyOnly.data() + offset, 4);
+            const unsigned alpha = pixel & 255;
+            if (alpha > 0 && alpha < 255) {
+                softEdge = true;
+                if ((pixel >> 24) < 120) return 18; // No black fringe in a pale jelly edge.
+            }
+        }
+        if (!softEdge) return 19;
         // The idle face has a readable mouth as well as eyes.
         bool mouthVisible = false;
         const int centerY = int(physics.getCenter().y + physics.getRadiusY() * 0.29f);
@@ -110,6 +122,31 @@ int main() {
             }
         }
         if (!mouthVisible) return 4;
+        // The main moods must have distinct dark facial marks at native desktop size,
+        // independently of changes to their body color and silhouette.
+        std::vector<std::vector<bool>> faces;
+        SDL_PixelFormat* format = SDL_AllocFormat(SDL_PIXELFORMAT_RGBA8888);
+        if (!format) return 14;
+        for (const auto mood : {BlobExpression::HAPPY, BlobExpression::ANGRY, BlobExpression::SAD,
+                               BlobExpression::SHOCKED, BlobExpression::THINKING}) {
+            AnimationController readable;
+            readable.setExpression(mood, 0.6f);
+            for (int frame = 0; frame < 60; ++frame) readable.update(1.0f / 60.0f);
+            if (draw(window, renderer, physics, readable.pose(), 1.0f, pixels) != 0) return 15;
+            std::vector<bool> marks(width * height);
+            for (int i = 0; i < width * height; ++i) {
+                Uint32 pixel; std::memcpy(&pixel, pixels.data() + i * 4, 4);
+                Uint8 r, g, b, a; SDL_GetRGBA(pixel, format, &r, &g, &b, &a);
+                marks[i] = a > 128 && r < 45 && g < 65 && b < 75;
+            }
+            for (const auto& earlier : faces) {
+                int difference = 0;
+                for (size_t i = 0; i < marks.size(); ++i) difference += marks[i] != earlier[i];
+                if (difference < 30) return 16;
+            }
+            faces.push_back(std::move(marks));
+        }
+        SDL_FreeFormat(format);
         AnimationController interactive;
         interactive.setExpression(BlobExpression::SLEEPING, 1.0f);
         for (int frame = 0; frame < 90; ++frame) interactive.update(1.0f / 60.0f);
@@ -126,7 +163,7 @@ int main() {
         const auto eyeCenter = physics.getCenter();
         const int eyeY = int(eyeCenter.y - physics.getRadiusY() * 0.16f + interactive.pose().gazeY * 2);
         for (int side : {-1, 1}) {
-            const int eyeX = int(eyeCenter.x + side * physics.getRadiusX() * 0.28f + interactive.pose().gazeX * 2);
+            const int eyeX = int(eyeCenter.x + side * physics.getRadiusX() * 0.34f + interactive.pose().gazeX * 2);
             for (int y = eyeY - 3; y <= eyeY + 3; ++y)
                 for (int x = eyeX - 2; x <= eyeX + 2; ++x) {
                     const int offset = (y * width + x) * 4;

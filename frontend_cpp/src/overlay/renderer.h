@@ -35,11 +35,15 @@ public:
 
     SDL_Surface* getShapeSurface() const { return shapeSurface_; }
     SDL_Renderer* native() const { return sdlRenderer_; }
+    /// Capture native-size RGBA8888 pixels with transparent, straight-alpha edges.
+    int readPixels(void* pixels, int pitch);
     void drawShadow(float cx, float baseline, float rx, float lift);
 
 private:
     void fillCircle(int cx, int cy, int r, Color color);
     void fillEllipse(int cx, int cy, int rx, int ry, Color color);
+    void fillTiltedEllipse(float cx, float cy, float rx, float ry, float angle, Color color);
+    void stroke(Vec2 start, Vec2 control, Vec2 end, Color color, float width, bool tapered = false);
     void drawCurve(float x0, float y0, float x1, float y1,
                    float bend, Color color, int thickness);
 

@@ -9,10 +9,10 @@ constexpr float PI = 3.14159265358979323846f;
 
 BlobPhysics::BlobPhysics(int windowWidth, int windowHeight)
     : radiusX_(windowWidth * 0.37f),
-      topRadiusY_(windowHeight * 0.37f),
-      bottomRadiusY_(windowHeight * 0.35f),
+      topRadiusY_(windowHeight * 0.36f),
+      bottomRadiusY_(windowHeight * 0.29f),
       centerX_(windowWidth * 0.5f),
-      centerY_(windowHeight * 0.57f), windowHeight_(float(windowHeight)) {}
+      centerY_(windowHeight * 0.61f), windowHeight_(float(windowHeight)) {}
 
 float BlobPhysics::poseCenterY() const {
     const float desired = centerY_ + bottomRadiusY_ * (1.0f - pose_.height) - pose_.lift;
@@ -52,7 +52,7 @@ std::vector<Vec2> BlobPhysics::getVertices() const {
         const float angle = 2.0f * PI * i / 128.0f;
         const float sine = std::sin(angle);
         const float cosine = std::cos(angle);
-        const float lower = std::pow(std::max(0.0f, sine), 0.4f - 0.12f * pose_.melt);
+        const float lower = std::pow(std::max(0.0f, sine), 0.58f - 0.25f * pose_.melt);
         const float vertical = sine < 0.0f ? sine * topRadiusY_ : lower * bottomRadiusY_;
         const float rightArm = std::abs(pose_.arms) * 12.0f *
                                arm(angle, pose_.arms < 0.0f ? 0.35f : 5.72f);
