@@ -1,93 +1,107 @@
 # 🫧 Project Blob
 
-> A privacy-focused, emotionally intelligent desktop AI companion  
-> Built for the **NVIDIA × Nebius Global AI Hackathon** — Personal AI Track
+**A desktop companion that remembers your context, helps with your work, and lets you decide what it can see.**
 
-<p align="center">
-  <em>Your screen has a new friend. It remembers. It cares. It respects your privacy.</em>
-</p>
+Built for the **NVIDIA × Nebius Global AI Hackathon — Personal AI Track**, powered by **NVIDIA Nemotron** through **Nebius Token Factory**.
 
----
+![Blob's rendered expressions: neutral, happy, angry, shocked, thinking, sad, crying, and embarrassed](frontend_cpp/preview/desktop_emotions.png)
 
-## What is Blob?
+*Previews from Blob's C++ renderer. The running slime is drawn and animated from code.*
 
-Blob is a living desktop companion — a small blue slime with expressive eyes that resides on your screen. It observes your workflow, builds long-term memory about your projects and habits, offers empathetic check-ins, and executes real tasks via a ReAct skill loop.
+[What makes Blob different](#what-makes-blob-different) · [NVIDIA and Nebius](#built-with-nvidia-and-nebius) · [Setup](#setup) · [Run](#running-blob) · [Try it](#try-a-complete-workflow) · [Testing](#testing-and-evidence)
 
-**Key principles:**
-- **Privacy Controls** — Local memory and optional camera processing, with a window blacklist for screen capture.
-- **Automatic Screen Awareness** — Opt-in local active-window OCR, with a short-lived activity brief and sensitive-screen filtering. No background model calls or screenshot history.
-- **Persistent Memory** — Blob recalls conversations and consolidates durable user facts across sessions via ChromaDB.
-- **Living Personality** — A warm buddy by default, shown as a small, softly moving slime whose tiny eyes show its mood; Blob follows requests for a different tone.
-- **Occasional Conversations** — Opt-in speech bubbles, at most three a week, with longer pauses when ignored. `/proactive on`, `/proactive quiet`, `/proactive off`. [How it works](docs/proactive_conversations.md).
-- **Expandable Skills** — Built-in tools plus validated `.skill.yaml` files loaded at startup or dropped on Blob.
-- **No local GPU required** — Inference runs through the configured Nebius API.
+## The idea
 
-Release preparation is tracked in [launch readiness](docs/launch_readiness.md).
-Automated checks build the backend package, test a fresh installation, and build
-the Linux overlay. The pinned release-test baselines are Linux x86-64 / Python 3.12 and 3.14;
-this does not establish support for every platform listed below.
+A useful personal assistant needs continuity: your preferred name, your current subjects, the document you were working on, and the reminder you set yesterday. It also needs to know when to help, when to listen, and when to leave something alone.
 
----
+Blob brings that continuity onto the desktop as a small blue slime with expressive eyes, a moving jelly body, and a terminal you can open whenever you need it. It can help you understand a lesson, turn a PDF into a study plan, remember a preference, or schedule a reminder. Its appearance responds to the conversation, and local interactions make it feel present between tasks.
 
-## Architecture
+**Our aim is a companion that becomes more useful as it gets to know you, while keeping observation and actions under your control.** We are building for students, developers, and people who spend long hours working at a computer. The current release is a Linux desktop beta.
 
-The [Hermes runtime](docs/agent_runtime.md) uses native tool calls behind the same
-terminal and desktop interface. This installation selects it with
-`BLOB_AGENT_RUNTIME=hermes`; `classic` remains available for rollback and fresh
-installations without Hermes. `/agent` shows the active runtime and last tool receipts.
-The [OpenShell transport](docs/openshell.md) can isolate the Hermes worker in a
-dedicated sandbox with rootless Podman. Select it explicitly after verification;
-the local transport remains the default. NemoClaw managed inference is separate.
+## What makes Blob different
 
+| Part of the experience | What Blob actually does |
+| --- | --- |
+| **A visible personality** | The C++/SDL2 slime follows the cursor, wobbles when poked or dragged, and changes expression with the conversation. Reduced-motion support is available. |
+| **Memory with a source** | Local conversation archives, expiring project/event memories, and lasting preferences preserve the user's original words. Corrections supersede older facts; explicit naming instructions are saved immediately. |
+| **Context across tasks** | Selected PDFs and images can inform answers. Saved subject lists personalize timetable questions, and generated plans can be replayed after a restart—even after their source files are deleted. |
+| **Optional screen awareness** | Local OCR produces a short-lived activity brief and recognized topic labels. Sensitive or unidentified windows block observation. Automatic awareness keeps no screenshot history. |
+| **Actions backed by results** | Reminders, searches, browser lookups, and permitted local tools run through the host's skill registry. Tool receipts establish what actually ran; failed actions are reported as failures. |
+| **Companionship with boundaries** | Conversation guidance follows tone preferences, respects requests for no advice or questions, and keeps declined tasks closed. Occasional conversation invitations are a separate opt-in. |
+| **Local face enrollment** | Explicit camera commands can compare faces with locally enrolled samples. Saved profiles are checked directly rather than guessed from chat memory. |
+| **Expandable skills** | Drop a validated `.skill.yaml` file onto Blob to add an allowed command tool. Folder approvals, argument validation, and command isolation apply to execution. |
+
+These features work together: a remembered study preference can shape a document answer, that answer can become saved work, and a confirmed reminder can bring you back to it later.
+
+## Built with NVIDIA and Nebius
+
+### NVIDIA Nemotron: conversation and memory have different jobs
+
+| Model or component | Role in Blob | Implementation |
+| --- | --- | --- |
+| **NVIDIA Nemotron Super** — `nvidia/nemotron-3-super-120b-a12b` | Conversation, tool planning, text-only PDF answers, and follow-ups on saved work. | [Model client](backend_python/blob/ai/llm_engine.py) and [orchestrator](backend_python/blob/ai/orchestrator.py). |
+| **NVIDIA Nemotron Lightning** — `nvidia/Nemotron-3_5-Lightning` | Background selection of lasting user facts and expiring project/event memories. | [Semantic memory](backend_python/blob/memory/semantic.py). |
+| **GLM vision** — `zai-org/GLM-5.3-Flash` | Selected images and rendered PDF pages, using the same Nebius account. | [Attachment processing](backend_python/blob/ai/attachments.py); Super handles text inputs. |
+| **NVIDIA OpenShell**, optional | Isolates the Hermes conversation worker through a local gateway and rootless Podman. The host retains provider credentials, stores, privacy controls, and tool execution. | [OpenShell setup and verification](docs/openshell.md). |
+
+[NVIDIA describes Nemotron as a family of open models](https://build.nvidia.com/nvidia/nemotron-3-super-120b-a12b/modelcard). Blob uses hosted inference for the configured NVIDIA models, so users do not need a local GPU or model-weight installation.
+
+The memory integration is concrete: Lightning receives numbered **user-authored statements**, selects lasting or expiring memories, and returns selection codes. Blob validates those codes and stores the original quote, source date, source episode, and model provenance locally. Earlier assistant replies cannot become evidence about the user. Clear naming and academic declarations also have an immediate storage path.
+
+See the [NVIDIA workflow guide](docs/nvidia_workflow.md) for a reproducible memory → document plan → saved result → persistent reminder demonstration.
+
+### Where Nebius Token Factory accelerated our workflow
+
+[Nebius Token Factory](https://docs.tokenfactory.nebius.com/quickstart) provides the hosted model API behind Blob. Nebius identifies it as the [successor to Nebius AI Studio](https://nebius.com/newsroom/nebius-launches-nebius-token-factory-to-deliver-production-ai-inference-at-scale).
+
+It shortened the path from an idea to a working desktop assistant in four practical ways:
+
+- **Hosted models removed a deployment step.** We could develop the companion, memory, and desktop controls without provisioning GPU servers or hosting the model weights.
+- **One API client supports three model roles.** Chat, memory selection, and vision share the OpenAI-compatible Nebius integration and `NEBIUS_API_KEY`. Each role can be configured independently.
+- **Streaming and structured tool calls fit the agent loop.** The integration supports streamed foreground replies and provider function calls, while Blob's host validates and executes permitted tools.
+- **Real-model evaluation became repeatable.** Our latest conversation audit used **62 provider requests across both runtimes**, including targeted rechecks, to reproduce and fix a nickname regression that scripted responses missed. [Transcripts and results](docs/evals/conversation_sweep.json) record the evidence.
+
+The Nebius services used here are **hosted model inference and model discovery** through its API. Memory databases, document copies, reminders, face samples, and embedding search run locally. The OpenShell integration is a separate NVIDIA runtime component.
+
+The repository retains `https://api.studio.nebius.ai/v1` as its default API URL. To select the endpoint in the current Token Factory quickstart, merge this setting into `config.yaml` in the project root:
+
+```yaml
+nebius_base_url: https://api.tokenfactory.nebius.com/v1/
 ```
-┌─────────────────────────────┐     gRPC (localhost:50051)     ┌─────────────────────────────┐
-│   C++ Frontend Overlay      │◄──────────────────────────────►│   Python AI Backend          │
-│                             │                                 │                             │
-│  • SDL2 transparent overlay │  Bidirectional Streaming        │  • Nebius API (cloud LLM)    │
-│    always-on-top window     │                                 │  • ReAct Skill Loop          │
-│  • Calm slime animation     │  EmoteCommand ──────────►       │  • ChromaDB Memory           │
-│  • Facial expressions       │  EmoteCommand ──────────►       │  • Privacy Shield            │
-│  • Tiny eye expressions     │  ◄──────── FrontendEvent        │  • Screen Capture (Wayland)  │
-│                             │                                 │  • Skill Registry            │
-└─────────────────────────────┘                                 └─────────────────────────────┘
+
+Model IDs above are Blob's configured defaults; account access and the provider's catalog determine availability. Configuration is defined in [config.py](backend_python/blob/config.py) and [.env.example](.env.example).
+
+## How it works
+
+```mermaid
+flowchart LR
+    User["You: terminal, file drops, desktop controls"] --> UI["C++ / SDL2 slime"]
+    UI <-->|Authenticated local gRPC| Host["Python host: orchestration and privacy"]
+    Host <--> Memory["Local memory, documents, results and reminders"]
+    Host --> Skills["Validated tools and local sensors"]
+    Host <-->|Cloud assistance enabled| API["Nebius Token Factory"]
+    API --> Super["NVIDIA Nemotron Super: chat and planning"]
+    API --> Lightning["NVIDIA Nemotron Lightning: memory selection"]
+    API --> Vision["Vision model: selected images / PDF pages"]
+    Host <-->|Optional transport| Worker["Hermes worker in NVIDIA OpenShell"]
 ```
 
----
+The Python backend handles conversation, retrieval, tools, and state. The C++ overlay handles the character and desktop interactions. Fresh installations use the built-in `classic` runtime. [Hermes](docs/agent_runtime.md) and its [OpenShell transport](docs/openshell.md) are optional, separately installed integrations; `/agent` reports the selected runtime.
 
-## Tech Stack
+## Setup
 
-| Component | Technology |
-|-----------|-----------|
-| **LLM** | [Nebius AI](https://studio.nebius.ai) — cloud API, no local GPU needed |
-| **Chat / text document model** | NVIDIA `nvidia/nemotron-3-super-120b-a12b` via Nebius |
-| **Memory model** | NVIDIA `nvidia/Nemotron-3_5-Lightning` via Nebius |
-| **Vision model** | `zai-org/GLM-5.3-Flash` via Nebius |
-| **Memory** | ChromaDB (local vector store) + relevance-gated recall |
-| **Camera** | Optional OpenCV face and full-body detection with local face enrollment |
-| **Frontend** | C++ · SDL2 animated overlay · optional X11 system tray |
-| **Backend** | Python 3.11+ · asyncio · gRPC |
-| **Skills** | ReAct loop with built-in tools and validated YAML command skills |
+### Requirements
 
----
+- **Desktop:** Linux x86-64. The initial installer targets Ubuntu/Debian; other Linux distributions need their native dependencies installed separately.
+- **Python:** CPython 3.11+. Python 3.12 and 3.14 have pinned dependency baselines.
+- **Build tools:** C++ compiler, CMake, SDL2, Protobuf, and gRPC C++ development libraries. The Ubuntu/Debian installer can install them.
+- **Cloud chat:** Internet access and a [Nebius Token Factory API key](https://docs.tokenfactory.nebius.com/quickstart). A local GPU is not required.
+- **Optional screen features:** Local OCR and a working desktop capture integration. GNOME Wayland requires Blob's screen bridge.
+- **Optional camera features:** A camera and OpenCV's vision extra.
 
-## Prerequisites
+### Recommended: fresh Ubuntu/Debian installation
 
-- **OS**: Linux x86-64 (X11 or Wayland) for the initial desktop installer. Windows and macOS are not yet validated.
-- **GPU**: ❌ **Not required** — inference runs on Nebius cloud API
-- **Python**: 3.11+
-- **C++ Compiler**: GCC 12+ or Clang 15+
-- **System packages**: `SDL2` (2.0.18+), `gRPC`, `Protobuf`; X11 development headers for the optional tray icon
-- **Screen capture**: A desktop screenshot portal on Wayland; `gnome-screenshot` or `grim` can serve as fallbacks. Install `backend_python[ocr]` separately if you want Blob to read text in captures.
-- **Nebius API Key**: Needed for cloud chat; local commands and reminders work without one.
-
----
-
-## Quick Start
-
-### Simpler Linux installation
-
-On Ubuntu/Debian with **Python 3.11 or newer**, run these three commands as your
-normal desktop user:
+Run from a terminal inside your graphical desktop, as your normal user:
 
 ```bash
 git clone https://github.com/HaggardHarsh/ProjectBlob.git
@@ -95,420 +109,236 @@ cd ProjectBlob
 python3 tools/setup.py --install-system-deps
 ```
 
-Setup uses `sudo` only for OS packages, creates a separate Python environment,
-installs web search and Chromium, builds and tests the slime overlay, then installs
-desktop login startup. It optionally asks for your API key without displaying it.
-Double-click the slime or open **Blob Chat** from your application launcher to chat.
-Cloud assistance stays off on fresh profiles until `/privacy cloud on`.
+The installer creates a separate runtime, installs Python dependencies and the browser, builds and checks the C++ overlay, and sets up per-user desktop services. It uses `sudo` for system packages. Allow several GB for dependencies and browser downloads.
 
-The fresh installer refuses to replace an existing installation. Managed installs
-can use `python3 tools/setup.py --update` for a separately verified update with a
-recovery backup. `python3 tools/manage_install.py` provides status, backup,
-rollback, interrupted recovery and uninstall retaining data. Use
-`python3 tools/setup.py --check` to check native prerequisites, or
-`python3 tools/setup.py --prepare-only` to build and verify a separate candidate
-without changing desktop startup. If native libraries are already installed,
-omit `--install-system-deps`. Python 3.12 and 3.14 use pinned dependency baselines;
-other supported Python versions resolve dependencies and must pass local checks.
-See [setup, recovery and current limits](docs/setup.md).
+An interactive installation can ask for your API key through a masked prompt and save it in a private `.env` file. You can skip the key and add it later. Setup leaves existing `.env` files unchanged.
 
-### Manual setup for development
+After installation, double-click the slime or open **Blob Chat** from your application launcher. At the **`Blob>` prompt**, enter:
 
-### 1. Clone & Set Up
-
-```bash
-git clone https://github.com/HaggardHarsh/ProjectBlob.git
-cd ProjectBlob
+```text
+/privacy explain
+/privacy cloud on
 ```
 
-### 2. Set your Nebius API key
+Cloud assistance starts **off** on a fresh profile. Local commands and reminders remain usable without a provider key. Existing privacy settings are preserved on upgrades.
+
+For local screen OCR, add `--ocr` to the setup command. This installs EasyOCR and its larger dependencies. The GNOME bridge still needs the separate step below.
+
+### Manual development setup
+
+Install native dependencies first. On Ubuntu/Debian:
 
 ```bash
-export NEBIUS_API_KEY=your_key_here
-# Or add it to a .env file:
-cp .env.example .env
-# then edit .env with your key; the backend loads it automatically
+sudo apt-get update
+sudo apt-get install -y build-essential cmake pkg-config libsdl2-dev libgrpc++-dev protobuf-compiler protobuf-compiler-grpc libprotobuf-dev libx11-dev python3-venv git bubblewrap libgl1 xterm
 ```
 
-### 3. Create a virtual environment & install
+From the project root:
 
 ```bash
 python3 -m venv venv
 source venv/bin/activate
-pip install -e backend_python/
+python -m pip install -e 'backend_python[dev,web,vision]'
+python -m playwright install --with-deps chromium
+cp -n .env.example .env
 ```
 
-### 4. Build the C++ frontend
+Edit `.env` and set your key. The default model configuration is:
+
+```dotenv
+NEBIUS_API_KEY=your_key_here
+BLOB_MODEL_NAME=nvidia/nemotron-3-super-120b-a12b
+BLOB_MEMORY_MODEL_NAME=nvidia/Nemotron-3_5-Lightning
+BLOB_VISION_MODEL=zai-org/GLM-5.3-Flash
+```
+
+Build the overlay, then choose a run mode:
 
 ```bash
 make frontend
 ```
 
-### 5. Run
+See [complete setup, updates, backup, and recovery](docs/setup.md) for pinned environments and existing installations.
+
+## Running Blob
+
+Run these commands in your **regular terminal**, from the project root:
+
+| What you want to do | Command |
+| --- | --- |
+| Run the overlay and interactive backend during development | `make run` |
+| Run just the interactive backend | `make run-backend-only` |
+| Run just the overlay | `make run-frontend` |
+| Install background services and desktop login startup | `make desktop-install` |
+| Connect terminal chat to an already running backend | `make chat` |
+| Start a standalone background-style backend in the current terminal | `make run-daemon` |
+
+Choose foreground development mode or the installed services so two backends do not compete for the same port. With desktop services installed, closing chat or entering `/quit` disconnects the client while the backend and reminders continue running.
+
+For an installed service:
 
 ```bash
-# Backend + Frontend together:
-make run
-
-# Or separately (two terminals):
-make run-backend-only   # Terminal 1: Python AI backend + CLI chat
-make run-frontend       # Terminal 2: C++ slime overlay
+systemctl --user restart blob-backend.service blob-overlay.service
+systemctl --user status blob-backend.service blob-overlay.service
 ```
 
-Double-click Blob or left-click its tray icon to open terminal chat. The slime
-reacts to pokes and dragging and accepts dropped files. Right-click Blob or its
-tray icon to toggle privacy pause. Use terminal commands for cloud and privacy
-settings. `make chat` also opens terminal chat. Drop a `.skill.yaml` file onto Blob
-to install it.
-See [desktop frontend](docs/desktop_frontend.md).
-
-New installations start with cloud assistance **off**, even if an API key is set.
-Read `/privacy explain`, then use `/privacy cloud on` to enable provider requests
-and background memory consolidation. Local commands and reminders work without an
-API key. Existing saved cloud settings are preserved on upgrade. Automatic screen
-awareness remains a separate opt-in.
-
-### Always-on desktop mode and privacy controls
-
-After installing the backend and building the frontend, run `make desktop-install`.
-This installs per-user Linux services and desktop login startup, starts Blob, and
-restarts either component after a crash. Closing a chat terminal leaves the backend,
-overlay, and reminders running. Use the **Blob Chat** application launcher or
-`make chat` to reconnect. Without installing startup, `make run-daemon` starts an
-independent backend and `make chat` connects from another terminal.
-
-The daemon delivers replies and reminder notifications through authenticated local
-IPC. It does not archive printed chat in the system journal. A private local token
-protects every RPC; the server accepts only loopback or Unix-socket addresses.
-
-```text
-/privacy status
-/privacy explain
-/privacy pause
-/privacy resume
-/privacy cloud off
-/privacy cloud on
-/privacy allow /home/you/Documents/study
-/privacy folders
-/privacy revoke /home/you/Documents/study
-/privacy disable weather
-/privacy enable weather
-/memory
-/memory show middle <id>
-/memory forget middle <id>
-/memory forget all
-```
-
-Privacy pause persists across restarts and blocks new cloud requests, screen capture,
-camera work, and new memory/source/result writes. It cancels active chat requests and
-clears recalled conversation context. Local reminders continue; local listing and
-deletion commands remain available. Cloud-off mode permits direct local commands
-while blocking model inference. Content already sent to a provider cannot be recalled.
-
-File search starts with no approved folders. Command skills require approved folders
-and Linux Bubblewrap (`bwrap`); if isolation is unavailable they remain blocked.
-Commands receive read-only approved folders, a clean environment, and a private
-network namespace. Common credential directories, `.env` files, and repository Git
-configuration are masked. Explicitly dropped attachments are separate user selections
-and do not require broad folder approval. Cloud assistance still sends messages,
-recalled context, and selected file content to Nebius when enabled.
-
-Personal memory commands run locally. Forgetting a fact also removes archived source
-episodes containing its exact quote and their derived facts, preventing recreation
-on restart; this can remove other facts from those same episodes. `/memory forget all`
-clears personal memory and the current conversation context. Documents, generated
-results, reminders, and face enrollments retain their separate deletion controls.
-
-See [desktop lifecycle and privacy controls](docs/desktop_privacy.md) for service
-management, limits, and troubleshooting.
-
-### PDF and image attachments
-
-Drag PDFs or images onto the desktop Blob. It prints a brief analysis in the backend terminal, then keeps those files available for follow-up questions at `Blob>`. Ask "Explain page 12" or "Summarize pages 3-5" directly in the terminal. Dropping additional files adds them to the current session. Supported formats are PDF, PNG, JPEG, and WebP, with up to four attached files, at most 20 MB each and 50 MB combined. PDFs can contain up to 100 pages.
-
-You can also paste a file path at the beginning of a terminal message:
-
-```text
-"/home/you/Pictures/Photo from Tuesday.jpeg" Describe the people in this picture
-```
-
-Quoted paths, terminal-escaped spaces, and unquoted spaces before a supported file
-extension are accepted. Multiple leading paths select multiple files. The selected
-files stay available for follow-ups such as “What about the other person?” and
-“What are they wearing?” Ordinary chat and email drafts still use normal chat.
-Image descriptions use the configured vision model; a bare filename is not visual
-evidence. Blob can describe visible people, but does not guess their identities
-from faces or assume a pictured person is you from a remembered nickname. With
-local face profiles enrolled, it separately checks selected photos against those
-samples and reports possible matches or unknown faces.
-
-Use `/files` to list attached files, `/files remove <number>` to detach one, or `/files clear` to detach all files. Explicit requests such as reminders, camera commands, and screen capture continue to work while files are attached. The active selection lasts until detached or the backend restarts.
-
-Keeping files attached does not turn ordinary terminal chat into file analysis.
-You can ask what Blob can do or request an email draft without detaching your PDF.
-Refer to a file, page, exam timetable, or the immediately preceding document answer
-when you want file-based help. To draft from a source, say “Draft an email using the
-attached PDF.” Blob can write drafts in chat; sending requires an available sending tool.
-
-Blob also saves private local source copies in `~/.blob/documents/` (override with `BLOB_DOCUMENTS_DIR_PATH`). After a restart, ask about your exam timetable or name a saved document: Blob searches filenames and extracted excerpts, reopens relevant sources, and answers with page references. This also works if the original file moved or was deleted. Search uses bounded extracted text and filenames; text outside previous excerpts and visual details without OCR might require naming the file or opening it explicitly. The library holds up to 20 documents / 200 MB; storage failures are reported in the terminal and leave the current analysis usable. Files dropped before this persistence feature must be dropped again once.
-
-Use `/files saved` to list saved document IDs, `/files open <id>` to reopen one, and `/files forget <id>` or `/files forget all` to delete saved source copies. Original files remain untouched. Forgetting a source removes source-only overviews from the current conversation while preserving completed work and unrelated chat. Detaching a file keeps its saved copy; a later question about it can reopen it.
-
-The backend extracts PDF text locally and includes filenames and page numbers as source references. File analysis budgets excerpts, page labels, and images together within `BLOB_MAX_PROMPT_BYTES` (32,000 by default). Long documents and wide page ranges use relevant page excerpts; the supplied context identifies omitted pages and text. Image inputs and rendered PDF pages use `zai-org/GLM-5.3-Flash` by default because the main Nemotron Super model is text-only. Set `BLOB_VISION_MODEL` to another exact model ID, `auto` for provider discovery, or `off` to use local OCR only. In auto mode, image analysis reuses the chat model when the provider reports image-input support. Ordinary chat and document requests without images use `BLOB_MODEL_NAME`.
-
-Visual requests send resized images, including up to three selected PDF page images per document and four images total. When no vision model is available, Blob can read text in images and scanned PDFs using the optional `backend_python[ocr]` installation. OCR alone cannot describe objects, colors, or diagrams. Unreadable, damaged, password protected, and oversized files produce an error instead of an invented explanation.
-
-If an image request times out after 30 seconds, Blob retries the same bounded image
-context once with `openbmb/MiniCPM-V-4_5` through the same provider, with a 60-second
-deadline. Text-only requests keep their normal model. Set
-`BLOB_VISION_FALLBACK_MODEL=off` to disable this backup or set another exact vision
-model ID. Privacy pause and cloud-off stop both routes.
-
-Dropping files, opening saved files, and asking related questions shares selected file content with your cloud AI provider. The backend prints a notice on drops and reopening saved files. PDF parsing and OCR happen locally; original files are left in place. Source copies and extracted excerpts are stored separately from personal memory. Completed answers to your file questions are saved as generated results, with their original request, source names and checksums, and creation time. These are earlier generated work, not user-stated facts or independently verified document evidence. Automatic file-drop overviews are not saved as results.
-
-Timetables, notes, summaries, and other file answers survive `/files forget` and backend restarts. Use `/results` to list them, `/results show <id>` to display an exact saved answer without the AI provider, and `/results forget <id|all>` to delete generated work. After deleting a datesheet PDF, "Show my timetable" can repeat the completed timetable, and "What exam do I have on Monday?" can use its saved rows. The original PDF is needed for details that were never included in a saved answer. A revised source takes priority over work made from an older copy. Fresh screen requests retain their usual priority.
-
-Generated results live in `document_results.sqlite3` inside `BLOB_MEMORY_DB_PATH`. They retain up to 100 answers / 2 MB, with a 128 KB limit per answer; quota and storage failures are reported without silently evicting older work. Follow-up prompts use bounded excerpts, while `/results show` displays the complete stored answer. The privacy shield pauses automatic result writes. Regenerating the same timetable updates its saved result; a countdown question creates a separate answer. Earlier versions did not save completed file answers, so results lost before this upgrade must be made again.
-
-Your own terminal messages about files are saved to personal memory before analysis, unless the privacy shield is active. Explicit subject lists and programs are available immediately after a restart, without waiting for consolidation. File questions include the current saved user statements, and your subjects help select relevant PDF pages. A newer subject list replaces the old list; explicit subjects take priority over program defaults. Blob asks for the missing subjects or program when it cannot identify your exams. `/files forget` removes document copies, not separately saved user statements.
-
-To run the backend test suite, install `backend_python[dev]` and run `python -m pytest backend_python/tests -q` from the repository root.
-
-The [multi-turn conversation sweep](docs/evals/conversation_sweep.md) tests 20
-conversation scenarios, including corrections, restarts, face-memory questions,
-camera follow-ups and screen failures. Offline checks run in CI. A separate
-bounded live mode tests actual model answers with synthetic inputs and normal
-provider charges, saving transcripts and tool receipts for investigation.
-
-### Camera and named recognition
-
-Install the optional local vision dependency to use the camera. Camera access is enabled by default but opens only when requested; set `BLOB_CAMERA_ENABLED=0` in `.env` to disable it:
+After changing API credentials or model configuration, restart the backend. For a managed installation, update with:
 
 ```bash
-pip install -e 'backend_python[vision]'
+python3 tools/setup.py --update
 ```
 
-Restart the backend, then say "Camera", ask Blob to open or scan your camera, or use these commands at the `Blob>` prompt:
+Use `python3 tools/manage_install.py status` to inspect a managed installation. Recovery, rollback, and uninstall instructions are in the [setup guide](docs/setup.md).
 
-```text
-/camera scan
-/camera status
-/camera enroll Asha
-/camera list
-/camera forget Asha
-```
+### Desktop controls
 
-“Can you recognize me” also runs a real local camera scan, without a model call.
-An immediate “yes it is” or “try again” repeats the last camera check; an unrelated
-turn clears that retry context. The same requests work with cloud assistance off,
-while manual privacy pause still blocks camera access. Blob reports the camera
-tool's actual result rather than narrating an unexecuted attempt.
+- **Double-click** Blob to open terminal chat.
+- **Drag** to move him; **poke or hover** to see local reactions.
+- **Right-click** to toggle manual privacy pause.
+- **Drop** a PDF, image, or `.skill.yaml` file onto Blob to use it.
+- Launch the overlay with `--reduced-motion` for less animation.
 
-Questions such as "Do you remember my face?" check the local enrollment list
-without opening the camera or asking the chat model. "Yes" or "do it" after
-camera discussion explains that an opening request needs to mention "camera"
-(for example, "scan my camera") or use `/camera scan`. An unknown face in a scan
-does not mean saved profiles were deleted; Blob distinguishes an unmatched frame
-from having no enrollment. Scanning alone does not save a face.
+[Desktop controls and renderer details](docs/desktop_frontend.md).
 
-Enrollment requires the person's consent and captures at least eight clear frames with one face visible. A scan reports face and full-body detections and matches enrolled faces by name. Recognition uses OpenCV's LBPH model; it can make mistakes, especially with poor light or a changed appearance, so it should not be used for authentication. The camera opens only for a request and is released afterward. Frames are not sent to the LLM or stored in chat memory. Enrollment stores cropped grayscale face samples under `~/.blob/faces/` (or `BLOB_FACE_DB_PATH`); `/camera forget <name>` deletes that person's samples.
+### Enable screen features on GNOME Wayland
 
-Dropped or selected photos also receive a separate local face check when profiles
-are enrolled. Ask “Who is the person in this image?” to check the selected photo
-again, without contacting the AI provider or opening the webcam; this works with
-cloud assistance off. Results say “possible match to Asha” or “unknown” and list
-multiple faces from left to right. They are similarity matches, not verified
-identities. The photo is never added to an enrollment. Match results and enrolled
-samples stay out of model prompts and saved generated answers; ordinary photo
-descriptions still send the selected image to the configured vision provider.
-Privacy pause, `/privacy disable camera`, and `BLOB_CAMERA_ENABLED=0` also disable
-photo matching. `/camera forget <name>` takes effect on the next check.
-
-`/camera status` opens the webcam long enough to verify that a frame can be read. Webcam access is separate from Wayland screen sharing. A scan reports detections, not a general visual description of the camera scene.
-
-### Screen sharing
-
-Say "show me my screen" or use `/screen`. On Wayland, Blob asks the desktop screenshot portal for one capture. Accept the desktop's permission dialog if it appears. Blob extracts text from the screenshot when the optional OCR dependency is installed:
+Screen capture needs Blob to identify the active window. Install the bundled bridge from the project root:
 
 ```bash
-pip install -e 'backend_python[ocr]'
+make awareness-install
 ```
 
-Restart Blob after installing OCR. Explicit screen requests use one capture, including requests for help with material on the screen. Blob filters extracted text locally and supplies a generic app category rather than a document/window title; the full screenshot is not sent to the cloud. Sensitive content may cause the entire request to be excluded. If capture or OCR fails, Blob reports that directly. File search runs only for an explicit request to find a file; it does not search the visible screen.
+**Log out of your GNOME desktop and log back in once. Restarting Blob alone does not load a newly installed GNOME extension.**
 
-To let Blob recognize your activity without a capture request, use `/awareness on`.
-On GNOME Wayland, first run `make awareness-install` and log out/back in once to
-load the local GNOME extension. Automatic observation captures only the active
-window, waits two seconds after focus changes, and samples every 30 seconds.
-Local OCR and filtering produce a brief such as “Reading or studying in a browser.
-Detected topics: voltage divider, resistance.” Only fixed activity/topic labels
-enter normal chat; automatic observation never uploads screenshots or OCR excerpts.
-Try “What am I working on?” or “Help me with this.”
+For OCR, use `--ocr` during initial setup, or `python3 tools/setup.py --update --ocr` for a managed installation. In a manual development environment, install `python -m pip install -e 'backend_python[ocr]'` and restart the backend.
 
-The brief expires after 90 seconds and is cleared on sensitive/unverified windows,
-privacy pause, or awareness-off. Switching to the terminal titled **Blob Chat**
-keeps the recent brief until expiry. Use `/awareness status`, `/awareness off`, or
-`/awareness clear` to inspect or control it locally, including when cloud assistance
-is off. Observation is disabled on new installations until explicitly enabled;
-the setting persists across restarts. See [screen awareness](docs/screen_awareness.md)
-for supported desktops, privacy boundaries, and validation.
-
-Screen requests take priority over attached and saved documents. You can say "The stuff on my screen is hard; dumb it down for me" while an exam PDF is attached, or correct Blob with "No, the stuff on my screen, not the PDF." Each request captures the current screen again. There is no need to detach files first; an unsuccessful capture reports the actual problem instead of answering from an unrelated PDF.
-Blob also uses RapidOCR when it is installed locally; this can provide OCR without loading PyTorch.
-
-### Persistent memory
-
-New installations store ChromaDB data under `~/.blob/memory/chromadb/`, independent of the launch directory. Existing `backend_python/data/chroma_db/` data remains in use automatically when present. Set `BLOB_MEMORY_DB_PATH` to choose another location. Blob has three active memory tiers: the most recent 12 conversation messages in the current session; middle-term quotes about ongoing projects and future events; and long-term quotes about stable preferences, hobbies, and identity. Consolidation selects numbered sentences from the user's original wording. Middle-term memories expire after 30 days by default, or after the day of a recognized dated event. Expired middle-term records are deleted; the original conversation episodes remain in the local archive. Long-term facts remain until corrected or deleted. When consolidation selects a new statement about a recognized topic, including favorites, names, hobbies, and likes, it supersedes older active facts. Other corrections still rely on the newer conversation context and may need manual review. Older model-written summaries are marked unverified in prompts until they are removed. When the privacy shield is active, Blob omits screen context and pauses episode storage. The Nebius chat API still receives the current user message and recalled memory context during normal chat; avoid sharing sensitive information with the cloud model.
-
-To replace old semantic summaries, stop Blob and create a JSON file containing a list of exact sentences from the user's side of saved conversations. Run `PYTHONPATH=backend_python python -m blob.memory.migrate_legacy --facts-file /path/to/reviewed-facts.json` from the repository root. The command checks every sentence against the original episodes, backs up the complete ChromaDB directory under `memory_backups/` beside the database, removes only ungrounded semantic entries, and keeps the episodes. An empty list removes all old semantic summaries while preserving newer grounded facts. Restart Blob after migration.
-
-Memory search runs locally and sends only a bounded view of relevant matches to Nebius. The default embedding distance cutoff rejects weak matches; recent access does not make an old memory more relevant. Ordinary chat recalls conversation episodes from the last seven days. Explicit history questions can search the full episode archive. Long records are excerpted around terms in the current question; the full records remain in ChromaDB. Ordinary replies use the user's side of retrieved episodes; Blob's old replies appear only when asked what Blob said. Recent turns are also sent in their original user and assistant roles during the current backend session. Blob uses the computer's local clock for current day and date questions.
-
-Explicit naming instructions such as "Call me Cloudie" are saved as long-term user quotes immediately after the reply, without waiting for consolidation. The current naming statement is included in chat context even for short follow-ups such as "why?", and is available during file analysis. A newer naming instruction replaces the older active value. Startup recovers naming instructions from saved user conversations; questions, assistant replies, and explicitly temporary names do not become permanent naming preferences through this recovery.
-
-Academic declarations use exact user quotes in middle-term memory with a 30-day lifetime. Their current values are retrieved by topic for file questions, even when words such as "Monday" have little similarity to the subject names. Startup recovers these declarations from older saved user conversations when present, preserving their original dates. Earlier attachment chats did not archive user messages, so those missing statements must be shared once again.
-
-To check document memory with isolated temporary storage and synthetic timetables, run `venv/bin/python -m blob.evals.document_memory`. Add `--live --report /tmp/blob-document-memory.json` to test the configured provider model; this sends only synthetic PDF pages and test user statements and uses normal API billing. The evaluation checks restarts before consolidation, corrections, conflicting program information, no matching Monday subjects, and missing personal information.
-
-Add `--saved-work` to test making a timetable, deleting both PDF copies, restarting, replaying the exact saved work, and answering an exam follow-up without source access. `--saved-work --live` uses the configured model for creation and follow-up; the exact replay is local.
-
-Set `BLOB_PROFILE_LATENCY=1` when launching the backend to log how long local preparation and the model call take for each reply. Blob caches the fixed tone preference search between memory changes, so repeat messages avoid that extra lookup.
-
-Blob uses NVIDIA `nvidia/nemotron-3-super-120b-a12b` for chat, tool planning, text-only document answers, and follow-ups on saved work. `zai-org/GLM-5.3-Flash` handles image inputs and rendered PDF pages. Set `BLOB_MODEL_NAME` and `BLOB_VISION_MODEL` in `.env` to override these roles. If you select `nvidia/Nemotron-3_5-Lightning` for chat, Blob uses its faster non-reasoning chat mode unless `BLOB_CHAT_THINKING=1` is set. Super uses the provider's normal reasoning mode.
-
-Background memory consolidation uses NVIDIA `nvidia/Nemotron-3_5-Lightning` through Nebius, independently of the chat model. It selects numbered user quotes for lasting or expiring memory; the backend stores the original wording and the model's identity locally. Set `BLOB_MEMORY_MODEL_NAME` to override this role. All model routes obey privacy pause and cloud-off controls. Failed memory requests stay pending for a later retry. Model calls use normal provider billing; latency and cost depend on the request.
-
-Run `venv/bin/python -m blob.evals.private_workflow --live --report /tmp/blob-private-workflow.json` for a complete synthetic workflow: NVIDIA memory selection, reopening stores, a personalized PDF study plan, exact replay after source deletion, and a reminder that persists and fires while privacy is paused and cloud access is off. Omit `--live` for the offline version. See [the workflow guide](docs/nvidia_workflow.md) for model roles, report details, and a demo sequence.
-
-Normal replies begin appearing in the `Blob>` terminal as Nebius streams them. Tool calls, reasoning tags, and emote tags stay hidden. Reminder and current-weather requests wait for a confirmed tool result; Blob shows that result directly and never reports an unexecuted reminder as set. If the provider does not support streaming, Blob falls back to a complete response.
-
-Blob's conversation guidance encourages specific responses to emotional disclosures,
-respects requests for no advice or questions, and follows changes of subject.
-After a recent listening offer, replies are buffered so repeated offers such as
-“I'm here” or “want to vent?” can receive one tool-free revision before display
-and memory storage. Explicit “no questions” requests also buffer and check the
-reply, including rhetorical questions. That revision can add latency; if it fails, the original
-reply is kept. Explicit reassurance requests and recognizable safety disclosures
-are excluded from this style check.
-
-Run `venv/bin/python -m blob.evals.emotional_conversation --live --report /tmp/blob-emotional-chat.json`
-to replay the hostel conversation and other emotional scenarios through the
-configured runtime and model, using isolated temporary stores and normal API
-billing. Use `--runtime classic` for the classic chat loop, or `--case hostel`
-to select a scenario. The report includes actual replies, provider usage,
-prompt-delivery checks, and repetition/boundary signals. Read the transcripts
-as well: passing these checks does not establish emotional quality or clinical safety.
-See the [evaluation notes and saved transcripts](docs/evaluations/emotional_chat.md)
-for observed improvements and remaining limitations.
-
-Current weather comes from wttr.in. Name a city to query that city; without one, wttr.in estimates the location from the backend's IP address. Blob reports that forecasts are unavailable rather than showing current conditions for a future date.
-
----
-
-## Skill Pills
-
-### Web search and browsing
-
-Blob can search the public web without an API key, read pages with source links,
-and use a separate temporary browser for lookup forms, dates, dropdowns and dynamic
-results. Install `backend_python[web]` and Playwright Chromium, then restart the
-backend. Ask “Search the web for recent Python announcements” or “Read
-https://example.com/”. Search results alone do not verify live seat availability.
-Web tools obey privacy pause and cloud-off. Login, CAPTCHA, purchases and account
-changes require manual handling. See [setup, commands and limits](docs/web_tools.md).
-
-### Skill hub and reminders
-
-Blob's skills share typed argument validation, execution deadlines, bounded output,
-and a session history of successful and failed runs. Use these terminal commands
-to inspect and run them directly, without sending a request to the cloud model:
+At `Blob>`, you can then ask to read the screen. Automatic background awareness is a separate opt-in:
 
 ```text
-/skills
-/skills reminder
-/skills run git_status {}
-/skills history
-/reminders add 25 Take a study break
-/reminders at 2026-10-05T09:00:00+05:30 Get ready for HDL
-/reminders every 60 Drink water
-/reminders
-/reminders snooze <id> 10
-/reminders cancel <id>
+/awareness on
+/awareness status
 ```
 
-Reminders survive backend restarts in `~/.blob/reminders.sqlite3`; override this
-with `BLOB_REMINDERS_DB_PATH`. They support timers, an exact date/time, and repeating
-intervals. A date/time without an offset uses the computer's local timezone.
-Blob must be running to notify you; overdue reminders appear on the next launch.
-Repeating reminders catch up once and resume their cadence. Cancelling a reminder
-removes its stored message. Natural requests such as "Remind me to revise HDL
-tomorrow at 9 am" and "Cancel my reminder to stretch" use the same runtime.
-Chat cannot create or change reminders unless you ask for that action.
+Explicit captures may show the desktop portal's permission dialog. Unidentified or sensitive windows remain blocked. Automatic awareness captures the active window locally and retains an expiring activity brief with recognized topics. [Screen setup, filtering, and supported desktops](docs/screen_awareness.md).
 
-Command skills share a read-only command policy. Git branch creation, deletion,
-renaming, external diff helpers, and output-file options are rejected. Command
-output is bounded as it is read, and screen OCR runs in a worker so the event
-loop can keep delivering reminders. Skill execution history contains names,
-status, timing, and source, rather than raw arguments or file contents.
+## Try a complete workflow
 
-### Install a skill
+The repository includes [a synthetic Project Orion study brief](examples/project_orion/study_brief.pdf) for a demo.
 
-Drop a `.skill.yaml` file onto Blob to teach it new abilities:
+1. Tell Blob: **“Call me Cloudie. I prefer study plans with exactly three short numbered steps. I am working on Project Orion.”**
+2. Drop the study brief onto the slime and ask: **“Make a study plan from this brief.”**
+3. Ask: **“Remind me to review Project Orion in 10 minutes.”** Check the confirmed result and `/reminders`.
+4. Enter `/results`, then `/results show <id>` to replay the exact saved plan locally.
+5. Restart the backend, reconnect with `make chat`, and ask: **“What do you call me?”** Inspect `/memory` and `/results` to see retained context and work.
+6. Try: **“I had a rough day. No advice or questions, please.”** Blob's conversation guidance should follow that boundary.
 
-```yaml
-skill:
-  name: "Git Status Checker"
-  description: "Check repository status and recent commits"
-  color: "#F05032"
-  permissions:
-    - shell.execute
-  tools:
-    - name: "git_status"
-      description: "Show repository status"
-      command: "git status --porcelain"
+Naming is stored immediately. Other lasting preferences use background consolidation, which checks pending conversation episodes every 60 seconds when cloud assistance is enabled.
+
+For a reproducible evaluation that uses only temporary stores and synthetic inputs:
+
+```bash
+venv/bin/python -m blob.evals.private_workflow --live --report /tmp/blob-private-workflow.json
 ```
 
-Drop the file on Blob, run `blob-backend --install-skill path/to/file.skill.yaml`, or place it in `~/.blob/skills/` before startup. Installed skills persist across restarts. Tools use names such as `git_status_checker.git_status` in the LLM prompt. The command runner accepts a limited set of commands and does not interpret shell pipelines or redirections; see the [skill authoring guide](docs/skill_authoring_guide.md).
+This exercises Nemotron memory selection, a personalized document plan, saved-result replay, persistent reminders, and privacy controls. Live evaluations use normal provider billing. The [workflow guide](docs/nvidia_workflow.md) links the recorded results.
 
----
+### Useful commands at `Blob>`
 
-## Privacy Model
+| Task | Commands |
+| --- | --- |
+| Inspect runtime and tools | `/agent`, `/skills` |
+| Manage selected and saved documents | `/files`, `/files saved`, `/files clear` |
+| Inspect or replay saved answers | `/results`, `/results show <id>` |
+| Inspect or delete personal memories | `/memory`, `/memory show <tier> <id>`, `/memory forget <tier> <id>` |
+| Manage reminders | `/reminders`, `/reminders add 10 review Project Orion` |
+| Open the camera or check saved profiles | `/camera scan`, `/camera list` |
+| Enroll or remove a consenting person's face | `/camera enroll Cloudie`, `/camera forget Cloudie` |
+| Enable occasional conversation invitations | `/proactive on`, `/proactive quiet`, `/proactive off` |
+| Inspect data sharing and stop cloud use | `/privacy explain`, `/privacy cloud off` |
+| Pause or resume the assistant | `/privacy pause`, `/privacy resume` |
 
-Blob enforces a **zero-trust privacy shield**:
+Camera scans open the device briefly and release it afterward. Scanning does not enroll a face. An unknown match can occur while a saved profile is still present; local face matching is an approximate similarity check. Images intentionally attached for visual analysis use the configured vision API.
 
-1. **Local storage**: Memory and enrolled face samples stay on this device. Chat requests and recalled context are sent to Nebius when the backend handles a message.
-2. **Sensitive app detection**: Banking sites, password managers, and incognito windows trigger an automatic blindfold
-3. **Screen captures are temporary**: Command-line capture backends may briefly write a temporary PNG, which Blob removes after loading it.
-4. **Memory is local**: ChromaDB uses `~/.blob/memory/chromadb/` by default for new installations.
-5. **Configurable blacklist**: Edit `backend_python/blob/data/blacklist.yaml` to add your own patterns
+## Privacy you can control
 
----
+| Control | Effect |
+| --- | --- |
+| **Cloud assistance** | When enabled, sends messages, selected recalled context, tool results, and chosen document/image content to Nebius. Cloud-off blocks model requests and web tools. |
+| **Manual privacy pause** | Blocks new cloud requests, camera/screen capture, and new memory/document/result writes; cancels active conversation work. Local reminders continue. |
+| **Automatic window shield** | Blocks capture and some storage for sensitive or unverified windows. Cloud chat remains controlled separately by cloud-off or manual pause. |
+| **Local persistence** | Memory, documents, generated work, reminder databases, and enrolled face samples live on the device. Blob does not encrypt these stores. |
+| **Explicit deletion** | Personal memories, source documents, generated results, reminders, and enrolled faces have separate inspection and deletion commands. |
 
-## Project Structure
+Automatic screen awareness and occasional conversations are off on fresh profiles. Screen filtering is heuristic, and awareness briefs expire. Approved folders start empty; command skills use read-only approved folders, validated arguments, and Linux Bubblewrap isolation. Explicitly selected attachments have their own access path.
 
+[Privacy model](docs/privacy_model.md) · [Desktop privacy and storage lifecycle](docs/desktop_privacy.md) · [Security review](docs/evals/security_review.md).
+
+## Testing and evidence
+
+Blob is tested through complete conversation sequences as well as individual components.
+
+| Verification | Recorded result |
+| --- | --- |
+| Backend regression suite | **903 tests passed** in the latest local run. |
+| Offline multi-turn sweep | **20 conversations / 85 turns passed**, covering corrections, restarts, camera follow-ups, screen failures, and privacy transitions. |
+| Real-model conversation sweep | **40 conversations / 170 turns** across classic and Hermes/OpenShell exposed an old-name regression; the repaired case passed a **12-turn recheck across both runtimes**. |
+| Nemotron private workflow | **11/11 checks passed** in the [recorded model-backed workflow](docs/evaluations/nemotron_super_workflow_live.json). |
+
+These are scoped evaluation results, not a guarantee for every conversation or desktop. Hardware/session setup and real camera matching require separate checks.
+
+From a development environment:
+
+```bash
+python -m pytest backend_python/tests -q
+python -m blob.evals.conversation_sweep --report /tmp/blob-conversation-sweep.json
 ```
-ProjectBlob/
-├── .env.example              # Copy to .env and add your NEBIUS_API_KEY
-├── proto/                    # gRPC/Protobuf IPC definitions
-├── frontend_cpp/             # C++ transparent overlay engine
-│   ├── src/
-│   │   ├── blob/             # State machine and slime motion
-│   │   └── ipc/              # gRPC client
-│   └── build/                # Built binary: blob_overlay
-├── backend_python/           # Python AI engine
-│   ├── blob/
-│   │   ├── ai/               # LLM engine, ReAct orchestrator, guardrails, prompts
-│   │   ├── memory/           # ChromaDB, episodic, semantic, Ebbinghaus decay
-│   │   ├── privacy/          # Shield, window monitor, blacklist
-│   │   ├── screen/           # Multi-backend screen capture, OCR
-│   │   └── skills/           # Registry, base class, builtins
-│   └── data/                 # Personality config, blacklist
-├── skills/                   # User-facing .skill.yaml pill files
-└── docs/                     # Architecture & guides
+
+The offline sweep runs automatically in push/PR CI and verifies routing, tool receipts, persistence, and prompt evidence. It marks model-answer quality checks as skipped. To test actual model replies with a capped budget:
+
+```bash
+python -m blob.evals.conversation_sweep --live --runtime both --max-calls 80 --report /tmp/blob-conversation-sweep-live.json
 ```
 
----
+Install Hermes and the selected transport before requesting the `configured` profile if you have enabled them. Live reports contain synthetic conversations, visible replies, tool receipts, and model usage. [Audit methodology and discovered fixes](docs/evals/conversation_sweep.md) · [Sanitized before/after evidence](docs/evals/conversation_sweep.json) · [Release checks](.github/workflows/checks.yml).
+
+## Troubleshooting
+
+| Symptom | What to check |
+| --- | --- |
+| Chat says cloud assistance is off | At `Blob>`, read `/privacy explain`, then use `/privacy cloud on`. |
+| Chat says an API key is missing | Set `NEBIUS_API_KEY` in the project's private `.env` and restart the backend. |
+| Screen capture reports an unverified window or bridge | On GNOME Wayland, run `make awareness-install`, then **log out/in**. Use `/awareness status` to inspect the current state. |
+| Screen capture reports a sensitive window | Switch to a non-sensitive window. Manual resume does not override automatic window protection. |
+| The privacy pause is active | Use `/privacy resume` or right-click Blob. Inspect `/privacy status`. |
+| Blob talks about using the camera but has not opened it | Mention “camera” in the request or use `/camera scan`. A plain “yes” or “do it” does not start a scan. |
+| A face is unknown | Check `/camera list`; use good lighting and a clear frontal view. Enrollment and matching are separate. |
+| Chat will not connect | In a regular terminal, check `systemctl --user status blob-backend.service` and `journalctl --user -u blob-backend.service -n 80`. |
+| Setup finds an existing installation | Use the managed update flow or the manual development instructions; the fresh installer refuses to overwrite it. |
+
+[Setup and recovery](docs/setup.md) has detailed diagnostics.
+
+## Explore the project
+
+```text
+frontend_cpp/              C++ / SDL2 slime, animation and desktop interactions
+backend_python/blob/
+  ai/                      Model client, orchestration, prompts and tool policy
+  memory/                  User memory, document library and saved results
+  privacy/                 Local controls, window shield and isolation
+  screen/                  Capture backends, OCR and activity awareness
+  vision/                  Local camera detection and face enrollment
+  skills/                  Built-in tools and validated skill loading
+  evals/                   Reproducible conversation and workflow audits
+proto/                     Authenticated gRPC message definitions
+desktop/gnome/             Native GNOME screen bridge
+tools/                     Setup, verification, update and recovery helpers
+docs/                      Architecture, feature guides and evaluation evidence
+```
+
+Feature guides: [attachments and saved work](docs/architecture.md#attachment-flow) · [web tools](docs/web_tools.md) · [skill authoring](docs/skill_authoring_guide.md) · [conversation invitations](docs/proactive_conversations.md) · [launch readiness](docs/launch_readiness.md).
 
 ## License
 
-MIT License — Built with 💚 for the NVIDIA × Nebius Global AI Hackathon
+Blob's source code is available under the [MIT License](LICENSE). Third-party models and runtimes retain their respective licenses.
+
+Built for the NVIDIA × Nebius Global AI Hackathon, Personal AI Track.
