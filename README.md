@@ -223,14 +223,14 @@ Explicit captures may show the desktop portal's permission dialog. Unidentified 
 
 ## Try a complete workflow
 
-The repository includes [a synthetic Project Orion study brief](examples/project_orion/study_brief.pdf) for a demo.
+This entirely fictional demo follows **Mira**, a gardener designing an imaginary greenhouse on the Moon. Use the included [Lunar Greenhouse mission brief](examples/lunar_greenhouse/mission_brief.pdf). The character, project, and dialogue are invented for this example.
 
-1. Tell Blob: **“Call me Cloudie. I prefer study plans with exactly three short numbered steps. I am working on Project Orion.”**
-2. Drop the study brief onto the slime and ask: **“Make a study plan from this brief.”**
-3. Ask: **“Remind me to review Project Orion in 10 minutes.”** Check the confirmed result and `/reminders`.
+1. Tell Blob: **“Call me Mira. I'm planning a fictional lunar greenhouse. Include a materials checklist whenever you make a project plan.”**
+2. Drop the mission brief onto the slime and ask: **“Make a greenhouse setup plan from this brief.”**
+3. Ask: **“Remind me to review the lunar greenhouse layout in 10 minutes.”** Check the confirmed result and `/reminders`.
 4. Enter `/results`, then `/results show <id>` to replay the exact saved plan locally.
 5. Restart the backend, reconnect with `make chat`, and ask: **“What do you call me?”** Inspect `/memory` and `/results` to see retained context and work.
-6. Try: **“I had a rough day. No advice or questions, please.”** Blob's conversation guidance should follow that boundary.
+6. Try: **“Write one playful sentence about a robot watering moonflowers. Keep it to one sentence.”** Check that Blob follows the requested format.
 
 Naming is stored immediately. Other lasting preferences use background consolidation, which checks pending conversation episodes every 60 seconds when cloud assistance is enabled.
 
@@ -250,9 +250,9 @@ This exercises Nemotron memory selection, a personalized document plan, saved-re
 | Manage selected and saved documents | `/files`, `/files saved`, `/files clear` |
 | Inspect or replay saved answers | `/results`, `/results show <id>` |
 | Inspect or delete personal memories | `/memory`, `/memory show <tier> <id>`, `/memory forget <tier> <id>` |
-| Manage reminders | `/reminders`, `/reminders add 10 review Project Orion` |
+| Manage reminders | `/reminders`, `/reminders add 10 review lunar greenhouse layout` |
 | Open the camera or check saved profiles | `/camera scan`, `/camera list` |
-| Enroll or remove a consenting person's face | `/camera enroll Cloudie`, `/camera forget Cloudie` |
+| Enroll or remove a consenting person's face | `/camera enroll ExamplePerson`, `/camera forget ExamplePerson` |
 | Enable occasional conversation invitations | `/proactive on`, `/proactive quiet`, `/proactive off` |
 | Inspect data sharing and stop cloud use | `/privacy explain`, `/privacy cloud off` |
 | Pause or resume the assistant | `/privacy pause`, `/privacy resume` |

@@ -21,7 +21,7 @@ async def test_declined_email_stays_closed_after_acknowledgement(native):
     blob._public_lookup_policy = object()
     if native:
         blob.agent_runtime = SimpleNamespace(run=AsyncMock())
-    blob._remember_recent_turn("what do u call me bby", "I call you Cloudie.")
+    blob._remember_recent_turn("What name did I choose for this demo?", "I call you ExamplePerson.")
     assert await blob.handle_user_message(pb.UserMessage(text="yayy")) == "Yay!"
     blob._remember_recent_turn("Earlier chat", "Want me to draft that email for you?")
     assert "leave that" in await blob.handle_user_message(pb.UserMessage(text="nah not really. We are done with that"))

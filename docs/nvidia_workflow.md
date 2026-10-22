@@ -85,18 +85,21 @@ The switch to Super was checked with synthetic data through the real Nebius API:
 
 ## Demo sequence
 
-Use the isolated evaluation for a public recording. To repeat the sequence manually,
-the [synthetic study brief](../examples/project_orion/study_brief.pdf) is included
-in the repository for use with the installed assistant.
+Use the isolated evaluation for a public recording. The manual demo below uses
+Mira, an invented gardener designing an imaginary greenhouse on the Moon, and the
+[fictional mission brief](../examples/lunar_greenhouse/mission_brief.pdf). Its
+character, project, and dialogue are invented for documentation; this manual
+scenario is separate from the recorded automated evaluation above.
 
-1. Say: “I prefer study plans with exactly three short numbered steps. I am working
-   on Project Orion.” Wait for background consolidation, then inspect `/memory
+1. Say: “Call me Mira. I'm planning a fictional lunar greenhouse. Include a
+   materials checklist whenever you make a project plan.” Wait for background
+   consolidation, then inspect `/memory
    semantic` and `/memory middle`; `/memory show <tier> <id>` includes model provenance.
-2. Restart the backend and submit `study_brief.pdf` with “Using my saved study
-   preferences, make a study plan for this Project Orion brief.” Show the three steps.
+2. Restart the backend and submit `mission_brief.pdf` with “Make a greenhouse
+   setup plan from this brief.” Check that the plan includes a materials checklist.
 3. Delete the saved PDF with `/files forget <id>`. Reopen the completed plan using
    `/results show <id>`; show that the answer is retained separately from the source.
-4. Say: “Remind me to review my Project Orion study plan in 15 seconds.” Restart the
+4. Say: “Remind me to review the lunar greenhouse layout in 15 seconds.” Restart the
    backend, turn cloud access off, pause privacy, and show the reminder notification.
 
 Use `/privacy resume` and `/privacy cloud on` afterward to enable cloud assistance again.
