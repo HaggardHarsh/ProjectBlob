@@ -23,6 +23,12 @@ _PROGRAM = re.compile(
     r"|(?:i am|i['’]m)\s+(?:in|studying)\s+(?:b\.?\s?tech|b\.?\s?sc|m\.?\s?tech|ece|cse|eee|cve|mce)\b"
     r"|my\s+branch\s+is\s+(?:ece|cse|eee|cve|mce|civil|mechanical|electrical|electronics|computer)\b)", re.I)
 ACADEMIC_TOPICS = ("education:subjects", "education:program")
+PROFILE_TOPICS = ("name",)
+_NAME = re.compile(
+    r"^\s*(?:(?:hey|blob|please|actually|no|correction|update)[,:\s]+)*"
+    r"(?:my name (?:is|isn't|is not)\s+"
+    r"|(?:(?:you (?:can|should)|i want you to|i'd like you to)\s+)?call me\s+"
+    r"|(?:don't|do not|stop)\s+call(?:ing)? me\s+)", re.I)
 
 
 def academic_selector_known(statement: str) -> bool:
@@ -43,7 +49,7 @@ def topic_key(text: str) -> str:
     match = _FAVORITE.search(text)
     if match:
         return "favorite:" + " ".join(match.group(1).casefold().split())
-    if re.search(r"\bmy name is\b|\bcall me\b", text, re.I):
+    if _NAME.search(text.replace("’", "'")):
         return "name"
     if re.search(r"\bmy hobb(?:y is|ies are)\b", text, re.I):
         return "hobbies"

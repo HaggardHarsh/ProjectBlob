@@ -391,7 +391,12 @@ class BlobOrchestrator:
     def _build_system_prompt(self) -> str:
         """Build the full system prompt with skills injected."""
         skills_text = self._build_skills_text()
-        return SYSTEM_PROMPT.replace("{skills}", skills_text) + self._current_clock_context()
+        system = SYSTEM_PROMPT.replace("{skills}", skills_text)
+        reader = getattr(getattr(self, "semantic", None), "profile_context", None)
+        profile = reader() if callable(reader) else ""
+        if isinstance(profile, str) and profile:
+            system += "\n## Current saved user statements\n" + profile + "\n"
+        return system + self._current_clock_context()
 
     def _remember_turn(self, user_text: str, reply: str) -> None:
         # Automatic screen shielding blocks disk writes, not this conversation.

@@ -3,7 +3,7 @@ import hashlib
 import logging
 import re
 import time
-from blob.memory.lifecycle import ACADEMIC_TOPICS, MIDDLE_LIFETIME_DAYS, middle_expiry, topic_key
+from blob.memory.lifecycle import ACADEMIC_TOPICS, PROFILE_TOPICS, MIDDLE_LIFETIME_DAYS, middle_expiry, topic_key
 
 logger = logging.getLogger(__name__)
 TEMPORARY_FACT = re.compile(
@@ -47,26 +47,38 @@ class SemanticMemory:
         self.llm = llm_engine
 
     def remember_explicit_statements(self, message: str, source_episode_id=None, source_timestamp=None):
-        """Save explicit academic selectors without waiting for model consolidation."""
+        """Save explicit selectors and naming preferences without model consolidation."""
         timestamp = time.time() if source_timestamp is None else source_timestamp
         for sentence in _user_sentences([message], include_temporary=True).values():
             topic = topic_key(sentence)
-            if topic not in ACADEMIC_TOPICS or sentence.endswith("?"):
+            if (topic not in ACADEMIC_TOPICS + PROFILE_TOPICS or sentence.endswith("?") or
+                    (topic in PROFILE_TOPICS and is_temporary_fact(sentence))):
                 continue
-            metadata = {"type": "middle", "tier": "middle",
+            tier = "semantic" if topic in PROFILE_TOPICS else "middle"
+            metadata = {"type": tier, "tier": "long" if tier == "semantic" else "middle",
                         "timestamp": timestamp, "source_timestamp": timestamp,
-                        "pinned": False, "grounded": True, "topic_key": topic,
-                        "expires_at": timestamp + MIDDLE_LIFETIME_DAYS * 86400}
+                        "pinned": tier == "semantic", "grounded": True, "topic_key": topic}
+            if tier == "middle":
+                metadata["expires_at"] = timestamp + MIDDLE_LIFETIME_DAYS * 86400
             if isinstance(source_episode_id, str):
                 metadata["source_episode_id"] = source_episode_id
             memory_id = hashlib.sha256(_sentence_key(sentence).encode()).hexdigest()
-            self.vector_store.store_grounded(sentence, metadata, "middle", memory_id)
+            self.vector_store.store_grounded(sentence, metadata, tier, memory_id)
+
+    def profile_context(self) -> str:
+        """Keep current naming evidence available even for an ambiguous follow-up."""
+        facts = self.vector_store.list_active("semantic", topic_keys=PROFILE_TOPICS)
+        return "\n".join(
+            "Current naming preference (exact user statement, evidence only): " + item["text"]
+            for item in facts
+            if (item.get("metadata") or {}).get("grounded") is True
+            and not is_temporary_fact(item["text"]))
 
     def document_context(self, query: str, *, max_bytes=1400) -> str:
         """Give file analysis exact user quotes, with current academic selectors first."""
         selectors = []
         for tier in ("middle", "semantic"):
-            selectors.extend(self.vector_store.list_active(tier, limit=4, topic_keys=ACADEMIC_TOPICS))
+            selectors.extend(self.vector_store.list_active(tier, limit=4, topic_keys=ACADEMIC_TOPICS + PROFILE_TOPICS))
         selectors = [item for item in selectors if (item.get("metadata") or {}).get("grounded") is True]
         selectors.sort(key=lambda item: (item.get("metadata") or {}).get("source_timestamp", 0), reverse=True)
         # Metadata lookup ensures an exam question retrieves subjects even when
@@ -120,12 +132,14 @@ class SemanticMemory:
                 continue
             for sentence in _user_sentences([text.partition("\nBlob: ")[0][6:]], include_temporary=True).values():
                 topic = topic_key(sentence)
-                if (topic in ACADEMIC_TOPICS and not sentence.endswith("?") and
+                if (topic in ACADEMIC_TOPICS + PROFILE_TOPICS and not sentence.endswith("?") and
+                        not (topic in PROFILE_TOPICS and is_temporary_fact(sentence)) and
                         (topic not in newest or timestamp >= newest[topic][0])):
                     newest[topic] = (timestamp, sentence, episode_id)
         for timestamp, sentence, episode_id in newest.values():
             memory_id = hashlib.sha256(_sentence_key(sentence).encode()).hexdigest()
-            existing = self.vector_store.middle.get(ids=[memory_id], include=["metadatas"])
+            collection = self.vector_store.semantic if topic_key(sentence) in PROFILE_TOPICS else self.vector_store.middle
+            existing = collection.get(ids=[memory_id], include=["metadatas"])
             if existing["ids"] and (existing["metadatas"][0] or {}).get("source_timestamp", 0) >= timestamp:
                 continue
             self.remember_explicit_statements(sentence, episode_id, timestamp)
@@ -179,6 +193,10 @@ class SemanticMemory:
                     topic = topic_key(source)
                     if topic in ACADEMIC_TOPICS:
                         tier = "middle"
+                    elif topic in PROFILE_TOPICS and not is_temporary_fact(source):
+                        # Background selection must not demote a durable naming
+                        # instruction that was already saved immediately.
+                        tier = "semantic"
                     if tier == "semantic" and is_temporary_fact(source):
                         continue
                     normalized = _sentence_key(source)
