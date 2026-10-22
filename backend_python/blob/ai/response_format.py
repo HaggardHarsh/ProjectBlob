@@ -17,6 +17,31 @@ FORMAT_CORRECTION = (
     "Do not repeat completed actions."
 )
 FORMAT_FAILURE = "The model returned malformed tool text, so I discarded that reply. Please try again."
+EMPTY_REPLY_CORRECTION = (
+    "The previous completion contained no readable reply after presentation tags were removed. "
+    "Answer the latest user message in ordinary visible text using the conversation and existing tool results. "
+    "If the user gave a short acceptance, respond to the latest assistant offer; ask a brief clarification "
+    "if that offer leaves multiple choices. Do not output only reasoning or animation tags. "
+    "Do not call tools, repeat completed actions, or claim an action without a successful tool result. "
+    "Do not mention this correction."
+)
+
+EMOTE_NAMES = "IDLE|HAPPY|SAD|ANGRY|CONFUSED|THINKING|WORRIED|CELEBRATE|EXCITED|TIRED|OFFER_COFFEE|SHY|SLEEPING|EATING|PROUD|PLAYFUL|WORKING|DEEP_THINKING|LISTENING|SHOCKED|MELTING|ERROR|SUCCESS|WAITING"
+EMOTE_ALIASES = {"AMUSED": "PLAYFUL"}
+EMOTE_MARKER = re.compile(
+    rf"<emote>\s*([^<]*?)\s*</emote>|\(({EMOTE_NAMES}|{'|'.join(EMOTE_ALIASES)})\)",
+    re.IGNORECASE | re.DOTALL)
+EMOTE_OPEN = re.compile(
+    r"<emote>.*$|</?emote\b[^>]*$|</?(?:e|em|emo|emot)\s*$", re.IGNORECASE | re.DOTALL)
+REASONING_BLOCK = re.compile(r"<(think|thinking|analysis)>.*?</\1>", re.IGNORECASE | re.DOTALL)
+REASONING_OPEN = re.compile(r"<(?:think|thinking|analysis)>.*$", re.IGNORECASE | re.DOTALL)
+REASONING_CLOSE = re.compile(r"</(?:think|thinking|analysis)>", re.IGNORECASE)
+
+
+def strip_reasoning(text):
+    text = REASONING_BLOCK.sub("", text)
+    text = REASONING_OPEN.sub("", text)
+    return REASONING_CLOSE.sub("", text).strip()
 
 
 def has_tool_protocol(text, *, valid_text_call=False, search_arguments=False):
@@ -65,10 +90,16 @@ def display_text(text):
     return terminal_text(re.sub(r"<(\/?)\|emote>", r"<\1emote>", text, flags=re.I))
 
 
-def correction_messages(messages):
+def visible_reply_text(text):
+    """Use the same presentation rules to detect a tag-only final answer."""
+    text = display_text(strip_reasoning(text or ""))
+    return EMOTE_OPEN.sub("", EMOTE_MARKER.sub("", text)).strip()
+
+
+def correction_messages(messages, correction=FORMAT_CORRECTION):
     corrected = list(messages)
     if corrected and corrected[0].get("role") == "system":
-        corrected[0] = {**corrected[0], "content": corrected[0]["content"] + "\n\n" + FORMAT_CORRECTION}
+        corrected[0] = {**corrected[0], "content": corrected[0]["content"] + "\n\n" + correction}
     else:
-        corrected.insert(0, {"role": "system", "content": FORMAT_CORRECTION})
+        corrected.insert(0, {"role": "system", "content": correction})
     return corrected

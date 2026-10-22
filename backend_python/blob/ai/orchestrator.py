@@ -17,6 +17,9 @@ from blob.privacy.screen_filter import app_category
 from blob.privacy.shield import capture_block_message
 from blob.ai.llm_engine import NebiusEngine, ProviderConfigurationError
 from blob.ai.response_format import FORMAT_CORRECTION, FORMAT_FAILURE, correction_messages, display_text, has_tool_protocol
+from blob.ai.response_format import (
+    EMOTE_NAMES, EMOTE_ALIASES, EMOTE_MARKER, EMOTE_OPEN, strip_reasoning as _strip_reasoning,
+)
 from blob.ai.web_grounding import OFFICIAL_DOMAINS, live_product_query, mentions_requested_product, product_names, requested_system_tools
 from blob.ai.attachments import AttachmentReader, AttachmentError, MAX_IMAGES, parse_selected_files
 from blob.ipc import blob_service_pb2
@@ -42,13 +45,6 @@ MAX_REACT_ITERATIONS = 3
 STYLE_CACHE_TTL_SECONDS = 30
 MAX_MEMORY_DISTANCE = 1.35  # Calibrated for Chroma's default normalized MiniLM embeddings.
 STYLE_QUERY = "How does the user want Blob to speak to them: friendly buddy, formal, professional, direct, or quiet?"
-EMOTE_NAMES = "IDLE|HAPPY|SAD|ANGRY|CONFUSED|THINKING|WORRIED|CELEBRATE|EXCITED|TIRED|OFFER_COFFEE|SHY|SLEEPING|EATING|PROUD|PLAYFUL|WORKING|DEEP_THINKING|LISTENING|SHOCKED|MELTING|ERROR|SUCCESS|WAITING"
-EMOTE_ALIASES = {"AMUSED": "PLAYFUL"}
-EMOTE_MARKER = re.compile(
-    rf"<emote>\s*([^<]*?)\s*</emote>|\(({EMOTE_NAMES}|{'|'.join(EMOTE_ALIASES)})\)",
-    re.IGNORECASE | re.DOTALL)
-EMOTE_OPEN = re.compile(
-    r"<emote>.*$|</?emote\b[^>]*$|</?(?:e|em|emo|emot)\s*$", re.IGNORECASE | re.DOTALL)
 FACE_REQUEST = re.compile(
     r"(?:"
     r"(?:(?:can|could|would|will) you\s+)?(?:please\s+)?"
@@ -319,17 +315,6 @@ DAY_ONLY_REQUEST = re.compile(
     r"|what day is it(?: today)?|what day is today)\s*[.!?]*$",
     re.IGNORECASE,
 )
-REASONING_BLOCK = re.compile(r"<(think|thinking|analysis)>.*?</\1>", re.IGNORECASE | re.DOTALL)
-REASONING_OPEN = re.compile(r"<(?:think|thinking|analysis)>.*$", re.IGNORECASE | re.DOTALL)
-REASONING_CLOSE = re.compile(r"</(?:think|thinking|analysis)>", re.IGNORECASE)
-
-
-def _strip_reasoning(text: str) -> str:
-    text = REASONING_BLOCK.sub("", text)
-    text = REASONING_OPEN.sub("", text)
-    return REASONING_CLOSE.sub("", text).strip()
-
-
 def _visible_preview(text: str) -> str:
     text = display_text(text)
     text = _strip_reasoning(text)

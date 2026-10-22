@@ -44,6 +44,13 @@ Run receipts contain tool names, success flags, model-call count, worker reuse a
 timings for startup, first model request, provider calls, tools and total duration;
 they contain no tool arguments, file contents or conversation text.
 
+If a model completion contains no readable text after reasoning and animation
+tags are removed, Blob makes one text-only repair request with the same recent
+conversation and tool results. Native tool calls with empty text are valid and
+are not repaired. The repair disables tool calls, stays within the turn's model
+budget and timeout, and appears as `empty_reply_retries` in `/agent`. A second
+empty or invalid reply produces an explicit error without replaying actions.
+
 ## Installation
 
 Hermes is a separate runtime, not a dependency in Blob's virtual environment.

@@ -15,7 +15,7 @@ import tempfile
 import time
 
 from blob.ai.context_budget import compact_browser_snapshots, prompt_size_bytes
-from blob.ai.response_format import correction_messages, has_tool_protocol
+from blob.ai.response_format import EMPTY_REPLY_CORRECTION, correction_messages, has_tool_protocol, visible_reply_text
 from blob.privacy.controls import PrivacyBlocked
 
 MAX_FRAME_BYTES = 1024 * 1024
@@ -217,6 +217,30 @@ class HermesAgentWrapper:
                                 response = await self.llm._create(**kwargs)
                                 if has_tool_protocol(response.choices[0].message.content, search_arguments=search_arguments):
                                     raise AgentRuntimeError("The model returned malformed tool text again. Those generated actions were not executed.")
+                            message = response.choices[0].message
+                            if not message.tool_calls and not visible_reply_text(message.content):
+                                if (self.last_run.get("empty_reply_retries", 0) or
+                                        self.last_run["model_calls"] >= self.config.agent_max_iterations):
+                                    raise AgentRuntimeError("The model couldn't produce a readable reply. Please rephrase your last message.")
+                                # Repair only the answer. Keep the current user message,
+                                # recent offer and tool receipts; never rerun the task.
+                                retry = {**kwargs, "messages": correction_messages(kwargs["messages"], EMPTY_REPLY_CORRECTION)}
+                                if retry.get("tools"):
+                                    retry["tool_choice"] = "none"
+                                else:
+                                    retry.pop("tool_choice", None)
+                                if prompt_size_bytes(retry["messages"]) > self.config.max_prompt_bytes:
+                                    raise AgentRuntimeError("The model returned an empty reply; there is no room to repair it safely.")
+                                if self.controls:
+                                    self.controls.check(cloud=True)
+                                self.last_run["model_calls"] += 1
+                                self.last_run["empty_reply_retries"] = 1
+                                await on_event("model", {})
+                                response = await self.llm._create(**retry)
+                                message = response.choices[0].message
+                                if (message.tool_calls or has_tool_protocol(message.content, search_arguments=search_arguments)
+                                        or not visible_reply_text(message.content)):
+                                    raise AgentRuntimeError("The model couldn't produce a readable reply. Please rephrase your last message.")
                         except (PrivacyBlocked, asyncio.CancelledError):
                             raise
                         except AgentRuntimeError:
@@ -242,7 +266,7 @@ class HermesAgentWrapper:
                         await self._send({"id": frame.get("id"), "result": {"success": result.success, "output": result.output}})
                     elif kind == "final":
                         answer = frame.get("answer")
-                        if not isinstance(answer, str) or not answer.strip() or frame.get("completed") is not True:
+                        if not isinstance(answer, str) or not visible_reply_text(answer) or frame.get("completed") is not True:
                             raise AgentRuntimeError("Hermes did not complete the request within its task budget.")
                         self.last_run["status"] = "completed"
                         return answer
