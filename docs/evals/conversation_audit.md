@@ -1,5 +1,9 @@
 # Proactive conversation audit
 
+The newer [multi-turn conversation sweep](conversation_sweep.md) adds naming,
+face enrollment, camera follow-ups, restart and screen-failure trajectories to
+the request/tool checks below. Its offline catalog also runs automatically in CI.
+
 Sanitized machine-readable evidence: [conversation_audit.json](conversation_audit.json).
 
 The audit uses observable tool receipts and isolated stores as well as response

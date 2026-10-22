@@ -48,7 +48,7 @@ def make_assistant(root, runtime, *, live):
     controls.update(cloud_enabled=True)
     registry = SkillRegistry(root / "skills", controls=controls)
     registry.register(ReminderSkill(root / "reminders.sqlite3"))
-    camera = SimpleNamespace(scan_calls=0)
+    camera = SimpleNamespace(scan_calls=0, list_people=lambda: [])
     def scan():
         camera.scan_calls += 1
         return {"faces": 1, "full_bodies": 0, "recognized": [], "unknown_faces": 1}

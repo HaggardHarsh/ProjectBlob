@@ -126,3 +126,23 @@ async def test_background_consolidation_cannot_demote_a_saved_name(tmp_path):
     assert await blob.semantic.consolidate_once() == 1
     assert "Call me Cloudie." in blob.semantic.profile_context()
     assert blob.vector_store.list_active("middle", topic_keys=("name",)) == []
+
+
+@pytest.mark.parametrize("question", ["What do you call me?", "Do you remember my nickname?", "Why?"])
+def test_superseded_name_cannot_return_through_episode_retrieval(tmp_path, question):
+    blob = make_blob(tmp_path)
+    blob._remember_turn("Call me Luma.", "I call you Luma.")
+    blob._remember_turn("Actually, call me Moss.", "I call you Moss.")
+    restarted = make_blob(tmp_path)
+    context = restarted._build_context(question)
+    assert "Moss" in context and "Luma" not in context
+    assert "Luma" in restarted._build_context("What did you say in our previous chat?")
+    archive = restarted.vector_store.episodic.get(include=["documents"])["documents"]
+    assert any("Call me Luma." in episode for episode in archive)
+
+
+def test_removing_old_name_from_recall_keeps_other_user_evidence():
+    from blob.memory.context import current_profile_episode
+    episode = "User: Call me Luma. I love chess.\nBlob: Nice to meet you, Luma."
+    assert current_profile_episode(episode, {"name": "Call me Moss."}) == "User: I love chess."
+    assert current_profile_episode(episode, {}) == episode

@@ -6,6 +6,7 @@ import shutil
 from typing import Optional
 
 from blob.screen.portal import PortalCaptureError, PortalUnavailable, screenshot
+from blob.privacy.shield import capture_block_message
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +46,7 @@ class ScreenSampler:
         self.last_error = ""
         if self.privacy_shield.is_capture_blocked():
             logger.info("Screen capture blocked by privacy shield")
-            self.last_error = "Screen capture is blocked by the privacy shield."
+            self.last_error = capture_block_message(self.privacy_shield)
             return None
 
         # GNOME Wayland generally exposes screenshots through the desktop portal.
@@ -63,7 +64,7 @@ class ScreenSampler:
             else:
                 if self.privacy_shield.is_capture_blocked():
                     image.close()
-                    self.last_error = "Screen capture is blocked by the privacy shield."
+                    self.last_error = capture_block_message(self.privacy_shield)
                     return None
                 logger.info("Captured screen using desktop portal")
                 return image

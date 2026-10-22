@@ -107,7 +107,7 @@ class FixtureWeb:
         return SkillResult("Synthetic browser: live enquiry unavailable; no inventory was verified.", False)
 
 
-def make_assistant(root, runtime, web, calls, budget):
+def make_assistant(root, runtime, web, calls, budget, *, completion=None):
     from blob.ai.orchestrator import BlobOrchestrator
     from blob.config import BlobConfig
     from blob.evals.document_memory import OfflineEmbedding
@@ -120,6 +120,8 @@ def make_assistant(root, runtime, web, calls, budget):
     from blob.skills.registry import SkillRegistry
 
     config = BlobConfig.load()
+    if completion is not None:
+        config.nebius_api_key = "offline-conversation-audit"
     if runtime != "configured":
         config.agent_runtime = runtime
     for field, path in {"memory_db_path": "memory", "documents_dir_path": "documents",
@@ -154,7 +156,7 @@ def make_assistant(root, runtime, web, calls, budget):
             budget[0] -= 1
             kwargs["max_tokens"] = min(kwargs.get("max_tokens") or 4096, 4096)
             started = time.monotonic()
-            response = await _original(**kwargs)
+            response = await (completion(**kwargs) if completion is not None else _original(**kwargs))
             usage = getattr(response, "usage", None)
             calls.append({"role": _role, "model": response.model,
                           "seconds": round(time.monotonic() - started, 3),

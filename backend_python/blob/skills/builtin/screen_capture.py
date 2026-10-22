@@ -4,6 +4,7 @@ import re
 from PIL import Image, ImageDraw
 from blob.skills.base import SkillInterface, SkillResult, _skill_executor
 from blob.privacy.screen_filter import app_category, filter_screen_text
+from blob.privacy.shield import capture_block_message
 
 logger = logging.getLogger(__name__)
 _BLOB_CHAT_LINE = re.compile(r"^\s*Blob\s*[>:]", re.IGNORECASE)
@@ -79,7 +80,7 @@ class ScreenCaptureSkill(SkillInterface):
             return SkillResult("Screen sampler is not configured.", False, "WORRIED")
 
         if self.sampler.privacy_shield.is_capture_blocked():
-            return SkillResult("Screen capture is blocked by the privacy shield.", False, "WORRIED")
+            return SkillResult(capture_block_message(self.sampler.privacy_shield), False, "WORRIED")
 
         # Get active window title (lightweight)
         window_title = self.sampler.get_active_window_title()
@@ -96,7 +97,7 @@ class ScreenCaptureSkill(SkillInterface):
         if image and self.sampler.privacy_shield.is_capture_blocked():
             if hasattr(image, "close"):
                 image.close()
-            return SkillResult("Screen capture is blocked by the privacy shield.", False, "WORRIED")
+            return SkillResult(capture_block_message(self.sampler.privacy_shield), False, "WORRIED")
         if not image:
             return SkillResult(
                 self.sampler.last_error or "Screen capture failed. Check the backend logs.",
@@ -114,7 +115,7 @@ class ScreenCaptureSkill(SkillInterface):
         if self.sampler.privacy_shield.is_capture_blocked():
             if hasattr(image, "close"):
                 image.close()
-            return SkillResult("Screen capture is blocked by the privacy shield.", False, "WORRIED")
+            return SkillResult(capture_block_message(self.sampler.privacy_shield), False, "WORRIED")
 
         # Run OCR if available, then release the image promptly.
         try:
@@ -171,5 +172,5 @@ class ScreenCaptureSkill(SkillInterface):
         safe_title = app_category(getattr(active_window, "process_name", "")).capitalize()
         output = f"Active Window: {safe_title}\n\nExtracted Screen Text:\n{text}"
         if self.sampler.privacy_shield.is_capture_blocked():
-            return SkillResult("Screen capture is blocked by the privacy shield.", False, "WORRIED")
+            return SkillResult(capture_block_message(self.sampler.privacy_shield), False, "WORRIED")
         return SkillResult(output, True, "THINKING")

@@ -1,0 +1,721 @@
+{
+  "checked_at": "2026-10-22T14:02:43.269227+00:00",
+  "scope": "Synthetic conversations, disposable stores, fixture web and sensors; no real desktop or camera access.",
+  "offline_before": {
+    "conversations": 20,
+    "passed": 14,
+    "turns": 85,
+    "failed_turns": 19,
+    "model_requests": 42,
+    "provider_calls": 0
+  },
+  "offline_after": {
+    "conversations": 20,
+    "passed": 20,
+    "turns": 85,
+    "model_requests": 25,
+    "provider_calls": 0,
+    "failed_turns": 0
+  },
+  "live_initial": {
+    "conversations": 40,
+    "passed": 38,
+    "turns": 170,
+    "model_requests": 50,
+    "provider_calls": 50,
+    "failed_turns": 3
+  },
+  "live_name_recheck": {
+    "conversations": 2,
+    "passed": 2,
+    "turns": 12,
+    "model_requests": 12,
+    "provider_calls": 12,
+    "failed_turns": 0
+  },
+  "initial_live_results": [
+    {
+      "case": "face_memory_wording_1",
+      "runtime": "classic",
+      "passed": true
+    },
+    {
+      "case": "face_memory_wording_2",
+      "runtime": "classic",
+      "passed": true
+    },
+    {
+      "case": "face_memory_wording_3",
+      "runtime": "classic",
+      "passed": true
+    },
+    {
+      "case": "face_memory_wording_4",
+      "runtime": "classic",
+      "passed": true
+    },
+    {
+      "case": "face_memory_wording_5",
+      "runtime": "classic",
+      "passed": true
+    },
+    {
+      "case": "face_memory_wording_6",
+      "runtime": "classic",
+      "passed": true
+    },
+    {
+      "case": "face_memory_wording_7",
+      "runtime": "classic",
+      "passed": true
+    },
+    {
+      "case": "face_memory_wording_8",
+      "runtime": "classic",
+      "passed": true
+    },
+    {
+      "case": "no_face_enrollment",
+      "runtime": "classic",
+      "passed": true
+    },
+    {
+      "case": "saved_profile_unmatched_and_restarted",
+      "runtime": "classic",
+      "passed": true
+    },
+    {
+      "case": "camera_guidance_after_topic_change",
+      "runtime": "classic",
+      "passed": true
+    },
+    {
+      "case": "name_reason_and_correction",
+      "runtime": "classic",
+      "passed": false
+    },
+    {
+      "case": "name_after_long_topic_change",
+      "runtime": "classic",
+      "passed": true
+    },
+    {
+      "case": "declined_draft_stays_closed",
+      "runtime": "classic",
+      "passed": true
+    },
+    {
+      "case": "camera_denial_and_topic_switch",
+      "runtime": "classic",
+      "passed": true
+    },
+    {
+      "case": "screen_request_overrides_old_pdf",
+      "runtime": "classic",
+      "passed": true
+    },
+    {
+      "case": "unknown_window_explains_missing_bridge",
+      "runtime": "classic",
+      "passed": true
+    },
+    {
+      "case": "sensitive_window_recovers",
+      "runtime": "classic",
+      "passed": true
+    },
+    {
+      "case": "cloud_off_and_privacy_pause",
+      "runtime": "classic",
+      "passed": true
+    },
+    {
+      "case": "no_questions_and_topic_change",
+      "runtime": "classic",
+      "passed": true
+    },
+    {
+      "case": "face_memory_wording_1",
+      "runtime": "configured",
+      "passed": true
+    },
+    {
+      "case": "face_memory_wording_2",
+      "runtime": "configured",
+      "passed": true
+    },
+    {
+      "case": "face_memory_wording_3",
+      "runtime": "configured",
+      "passed": true
+    },
+    {
+      "case": "face_memory_wording_4",
+      "runtime": "configured",
+      "passed": true
+    },
+    {
+      "case": "face_memory_wording_5",
+      "runtime": "configured",
+      "passed": true
+    },
+    {
+      "case": "face_memory_wording_6",
+      "runtime": "configured",
+      "passed": true
+    },
+    {
+      "case": "face_memory_wording_7",
+      "runtime": "configured",
+      "passed": true
+    },
+    {
+      "case": "face_memory_wording_8",
+      "runtime": "configured",
+      "passed": true
+    },
+    {
+      "case": "no_face_enrollment",
+      "runtime": "configured",
+      "passed": true
+    },
+    {
+      "case": "saved_profile_unmatched_and_restarted",
+      "runtime": "configured",
+      "passed": true
+    },
+    {
+      "case": "camera_guidance_after_topic_change",
+      "runtime": "configured",
+      "passed": true
+    },
+    {
+      "case": "name_reason_and_correction",
+      "runtime": "configured",
+      "passed": false
+    },
+    {
+      "case": "name_after_long_topic_change",
+      "runtime": "configured",
+      "passed": true
+    },
+    {
+      "case": "declined_draft_stays_closed",
+      "runtime": "configured",
+      "passed": true
+    },
+    {
+      "case": "camera_denial_and_topic_switch",
+      "runtime": "configured",
+      "passed": true
+    },
+    {
+      "case": "screen_request_overrides_old_pdf",
+      "runtime": "configured",
+      "passed": true
+    },
+    {
+      "case": "unknown_window_explains_missing_bridge",
+      "runtime": "configured",
+      "passed": true
+    },
+    {
+      "case": "sensitive_window_recovers",
+      "runtime": "configured",
+      "passed": true
+    },
+    {
+      "case": "cloud_off_and_privacy_pause",
+      "runtime": "configured",
+      "passed": true
+    },
+    {
+      "case": "no_questions_and_topic_change",
+      "runtime": "configured",
+      "passed": true
+    }
+  ],
+  "initial_name_failures": [
+    {
+      "case": "name_reason_and_correction",
+      "runtime": "classic",
+      "turns": [
+        {
+          "turn": 1,
+          "request": "Call me Luma.",
+          "answer": "Got it! I'll call you Luma from now on.",
+          "tools": [],
+          "checks": {
+            "nonempty": true,
+            "no_protocol_leak": true,
+            "expected_tools": true,
+            "local_response": true,
+            "provider_boundary": true
+          },
+          "model_answer_check_skipped": false,
+          "model_calls": 1,
+          "seconds": 3.34,
+          "passed": true
+        },
+        {
+          "turn": 2,
+          "request": "What do you call me?",
+          "answer": "I call you Luma.",
+          "tools": [],
+          "checks": {
+            "nonempty": true,
+            "no_protocol_leak": true,
+            "expected_tools": true,
+            "local_response": true,
+            "provider_boundary": true,
+            "original_user_evidence_in_prompt": true,
+            "model_answer": true
+          },
+          "model_answer_check_skipped": false,
+          "model_calls": 1,
+          "seconds": 2.036,
+          "passed": true
+        },
+        {
+          "turn": 3,
+          "request": "Why that so",
+          "answer": "Because you told me to call you Luma. That's what you said, so that's what I use.",
+          "tools": [],
+          "checks": {
+            "nonempty": true,
+            "no_protocol_leak": true,
+            "expected_tools": true,
+            "local_response": true,
+            "provider_boundary": true,
+            "original_user_evidence_in_prompt": true,
+            "model_answer": true
+          },
+          "model_answer_check_skipped": false,
+          "model_calls": 1,
+          "seconds": 2.762,
+          "passed": true
+        },
+        {
+          "turn": 4,
+          "request": "Actually, call me Moss.",
+          "answer": "Sure thing\u2014I'll call you Moss from now on.",
+          "tools": [],
+          "checks": {
+            "nonempty": true,
+            "no_protocol_leak": true,
+            "expected_tools": true,
+            "local_response": true,
+            "provider_boundary": true
+          },
+          "model_answer_check_skipped": false,
+          "model_calls": 1,
+          "seconds": 2.875,
+          "passed": true
+        },
+        {
+          "turn": 5,
+          "request": "What do you call me?",
+          "answer": "I call you Luma.",
+          "tools": [],
+          "checks": {
+            "nonempty": true,
+            "no_protocol_leak": true,
+            "expected_tools": true,
+            "local_response": true,
+            "provider_boundary": true,
+            "original_user_evidence_in_prompt": true,
+            "model_answer": false
+          },
+          "model_answer_check_skipped": false,
+          "model_calls": 1,
+          "seconds": 3.963,
+          "passed": false
+        },
+        {
+          "turn": 6,
+          "request": "Why?",
+          "answer": "I call you Luma because you asked me to.",
+          "tools": [],
+          "checks": {
+            "nonempty": true,
+            "no_protocol_leak": true,
+            "expected_tools": true,
+            "local_response": true,
+            "provider_boundary": true,
+            "original_user_evidence_in_prompt": true,
+            "model_answer": true
+          },
+          "model_answer_check_skipped": false,
+          "model_calls": 1,
+          "seconds": 2.661,
+          "passed": true
+        }
+      ]
+    },
+    {
+      "case": "name_reason_and_correction",
+      "runtime": "configured",
+      "turns": [
+        {
+          "turn": 1,
+          "request": "Call me Luma.",
+          "answer": "Hey Luma! Nice to meet you. How's your day going?",
+          "tools": [],
+          "checks": {
+            "nonempty": true,
+            "no_protocol_leak": true,
+            "expected_tools": true,
+            "local_response": true,
+            "provider_boundary": true
+          },
+          "model_answer_check_skipped": false,
+          "model_calls": 1,
+          "seconds": 8.308,
+          "passed": true
+        },
+        {
+          "turn": 2,
+          "request": "What do you call me?",
+          "answer": "I call you Luma.",
+          "tools": [],
+          "checks": {
+            "nonempty": true,
+            "no_protocol_leak": true,
+            "expected_tools": true,
+            "local_response": true,
+            "provider_boundary": true,
+            "original_user_evidence_in_prompt": true,
+            "model_answer": true
+          },
+          "model_answer_check_skipped": false,
+          "model_calls": 1,
+          "seconds": 3.647,
+          "passed": true
+        },
+        {
+          "turn": 3,
+          "request": "Why that so",
+          "answer": "Because you told me to call you Luma.",
+          "tools": [],
+          "checks": {
+            "nonempty": true,
+            "no_protocol_leak": true,
+            "expected_tools": true,
+            "local_response": true,
+            "provider_boundary": true,
+            "original_user_evidence_in_prompt": true,
+            "model_answer": true
+          },
+          "model_answer_check_skipped": false,
+          "model_calls": 1,
+          "seconds": 2.588,
+          "passed": true
+        },
+        {
+          "turn": 4,
+          "request": "Actually, call me Moss.",
+          "answer": "Got it. I'll call you Moss from now on.",
+          "tools": [],
+          "checks": {
+            "nonempty": true,
+            "no_protocol_leak": true,
+            "expected_tools": true,
+            "local_response": true,
+            "provider_boundary": true
+          },
+          "model_answer_check_skipped": false,
+          "model_calls": 1,
+          "seconds": 3.852,
+          "passed": true
+        },
+        {
+          "turn": 5,
+          "request": "What do you call me?",
+          "answer": "I call you Luma.",
+          "tools": [],
+          "checks": {
+            "nonempty": true,
+            "no_protocol_leak": true,
+            "expected_tools": true,
+            "local_response": true,
+            "provider_boundary": true,
+            "original_user_evidence_in_prompt": true,
+            "model_answer": false
+          },
+          "model_answer_check_skipped": false,
+          "model_calls": 1,
+          "seconds": 9.813,
+          "passed": false
+        },
+        {
+          "turn": 6,
+          "request": "Why?",
+          "answer": "Because you said \u201cCall me Luma.\u201d",
+          "tools": [],
+          "checks": {
+            "nonempty": true,
+            "no_protocol_leak": true,
+            "expected_tools": true,
+            "local_response": true,
+            "provider_boundary": true,
+            "original_user_evidence_in_prompt": true,
+            "model_answer": false
+          },
+          "model_answer_check_skipped": false,
+          "model_calls": 1,
+          "seconds": 5.135,
+          "passed": false
+        }
+      ]
+    }
+  ],
+  "repaired_name_conversations": [
+    {
+      "case": "name_reason_and_correction",
+      "runtime": "classic",
+      "model": "nvidia/nemotron-3-super-120b-a12b",
+      "transport": "openshell",
+      "turns": [
+        {
+          "turn": 1,
+          "request": "Call me Luma.",
+          "answer": "Got it! I'll call you Luma from now on.",
+          "tools": [],
+          "checks": {
+            "nonempty": true,
+            "no_protocol_leak": true,
+            "expected_tools": true,
+            "local_response": true,
+            "provider_boundary": true
+          },
+          "model_answer_check_skipped": false,
+          "model_calls": 1,
+          "seconds": 3.046,
+          "passed": true
+        },
+        {
+          "turn": 2,
+          "request": "What do you call me?",
+          "answer": "I call you Luma.",
+          "tools": [],
+          "checks": {
+            "nonempty": true,
+            "no_protocol_leak": true,
+            "expected_tools": true,
+            "local_response": true,
+            "provider_boundary": true,
+            "original_user_evidence_in_prompt": true,
+            "model_answer": true
+          },
+          "model_answer_check_skipped": false,
+          "model_calls": 1,
+          "seconds": 2.227,
+          "passed": true
+        },
+        {
+          "turn": 3,
+          "request": "Why that so",
+          "answer": "Because you told me to call you Luma. That's what you asked me to use.",
+          "tools": [],
+          "checks": {
+            "nonempty": true,
+            "no_protocol_leak": true,
+            "expected_tools": true,
+            "local_response": true,
+            "provider_boundary": true,
+            "original_user_evidence_in_prompt": true,
+            "model_answer": true
+          },
+          "model_answer_check_skipped": false,
+          "model_calls": 1,
+          "seconds": 3.684,
+          "passed": true
+        },
+        {
+          "turn": 4,
+          "request": "Actually, call me Moss.",
+          "answer": "Got it! I'll call you Moss from now on.",
+          "tools": [],
+          "checks": {
+            "nonempty": true,
+            "no_protocol_leak": true,
+            "expected_tools": true,
+            "local_response": true,
+            "provider_boundary": true
+          },
+          "model_answer_check_skipped": false,
+          "model_calls": 1,
+          "seconds": 5.234,
+          "passed": true
+        },
+        {
+          "turn": 5,
+          "request": "What do you call me?",
+          "answer": "I call you Moss because you asked me to.",
+          "tools": [],
+          "checks": {
+            "nonempty": true,
+            "no_protocol_leak": true,
+            "expected_tools": true,
+            "local_response": true,
+            "provider_boundary": true,
+            "original_user_evidence_in_prompt": true,
+            "model_answer": true
+          },
+          "model_answer_check_skipped": false,
+          "model_calls": 1,
+          "seconds": 3.656,
+          "passed": true
+        },
+        {
+          "turn": 6,
+          "request": "Why?",
+          "answer": "Because you told me to\u2014your preference is to be called Moss.",
+          "tools": [],
+          "checks": {
+            "nonempty": true,
+            "no_protocol_leak": true,
+            "expected_tools": true,
+            "local_response": true,
+            "provider_boundary": true,
+            "original_user_evidence_in_prompt": true,
+            "model_answer": true
+          },
+          "model_answer_check_skipped": false,
+          "model_calls": 1,
+          "seconds": 2.457,
+          "passed": true
+        }
+      ],
+      "passed": true
+    },
+    {
+      "case": "name_reason_and_correction",
+      "runtime": "hermes",
+      "model": "nvidia/nemotron-3-super-120b-a12b",
+      "transport": "openshell",
+      "turns": [
+        {
+          "turn": 1,
+          "request": "Call me Luma.",
+          "answer": "Hey Luma.",
+          "tools": [],
+          "checks": {
+            "nonempty": true,
+            "no_protocol_leak": true,
+            "expected_tools": true,
+            "local_response": true,
+            "provider_boundary": true
+          },
+          "model_answer_check_skipped": false,
+          "model_calls": 1,
+          "seconds": 8.131,
+          "passed": true
+        },
+        {
+          "turn": 2,
+          "request": "What do you call me?",
+          "answer": "I call you Luma.",
+          "tools": [],
+          "checks": {
+            "nonempty": true,
+            "no_protocol_leak": true,
+            "expected_tools": true,
+            "local_response": true,
+            "provider_boundary": true,
+            "original_user_evidence_in_prompt": true,
+            "model_answer": true
+          },
+          "model_answer_check_skipped": false,
+          "model_calls": 1,
+          "seconds": 1.939,
+          "passed": true
+        },
+        {
+          "turn": 3,
+          "request": "Why that so",
+          "answer": "Because you told me to call you Luma.",
+          "tools": [],
+          "checks": {
+            "nonempty": true,
+            "no_protocol_leak": true,
+            "expected_tools": true,
+            "local_response": true,
+            "provider_boundary": true,
+            "original_user_evidence_in_prompt": true,
+            "model_answer": true
+          },
+          "model_answer_check_skipped": false,
+          "model_calls": 1,
+          "seconds": 2.117,
+          "passed": true
+        },
+        {
+          "turn": 4,
+          "request": "Actually, call me Moss.",
+          "answer": "Got it\u2014I'll call you Moss.",
+          "tools": [],
+          "checks": {
+            "nonempty": true,
+            "no_protocol_leak": true,
+            "expected_tools": true,
+            "local_response": true,
+            "provider_boundary": true
+          },
+          "model_answer_check_skipped": false,
+          "model_calls": 1,
+          "seconds": 3.014,
+          "passed": true
+        },
+        {
+          "turn": 5,
+          "request": "What do you call me?",
+          "answer": "I call you Moss.",
+          "tools": [],
+          "checks": {
+            "nonempty": true,
+            "no_protocol_leak": true,
+            "expected_tools": true,
+            "local_response": true,
+            "provider_boundary": true,
+            "original_user_evidence_in_prompt": true,
+            "model_answer": true
+          },
+          "model_answer_check_skipped": false,
+          "model_calls": 1,
+          "seconds": 7.865,
+          "passed": true
+        },
+        {
+          "turn": 6,
+          "request": "Why?",
+          "answer": "Because you asked me to call you Moss.",
+          "tools": [],
+          "checks": {
+            "nonempty": true,
+            "no_protocol_leak": true,
+            "expected_tools": true,
+            "local_response": true,
+            "provider_boundary": true,
+            "original_user_evidence_in_prompt": true,
+            "model_answer": true
+          },
+          "model_answer_check_skipped": false,
+          "model_calls": 1,
+          "seconds": 2.74,
+          "passed": true
+        }
+      ],
+      "passed": true
+    }
+  ],
+  "limits": [
+    "Initial full live run: 38/40 passed; both failing name conversations passed targeted recheck after the fix.",
+    "Offline model-answer checks are skipped, not presented as real-model validation.",
+    "Synthetic sensors do not validate actual desktop installation or real camera recognition."
+  ],
+  "backend_regressions": {
+    "passed": 903,
+    "failed": 0
+  }
+}

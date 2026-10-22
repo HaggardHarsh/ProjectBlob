@@ -14,6 +14,7 @@ from contextlib import nullcontext
 from blob.privacy.controls import PrivacyBlocked
 from blob.privacy.commands import handle_control_command
 from blob.privacy.screen_filter import app_category
+from blob.privacy.shield import capture_block_message
 from blob.ai.llm_engine import NebiusEngine, ProviderConfigurationError
 from blob.ai.response_format import FORMAT_CORRECTION, FORMAT_FAILURE, correction_messages, display_text, has_tool_protocol
 from blob.ai.web_grounding import OFFICIAL_DOMAINS, live_product_query, mentions_requested_product, product_names, requested_system_tools
@@ -29,7 +30,7 @@ from blob.memory.episodic import EpisodicMemory
 from blob.memory.documents import DocumentLibrary, DocumentError, DOCUMENT_REFERENCE
 from blob.memory.results import ResultLibrary, ResultError, REPLAY_REQUEST, EDIT_REQUEST, SOURCE_REQUEST
 from blob.memory.semantic import SemanticMemory, is_temporary_fact
-from blob.memory.context import build_memory_view
+from blob.memory.context import build_memory_view, current_profile_episode
 from blob.memory.lifecycle import SHORT_RECALL_DAYS, academic_selector_known, topic_key
 from blob.skills.commands import handle_skill_command
 from blob.skills.registry import SkillRegistry
@@ -89,11 +90,11 @@ CAMERA_DENIAL = re.compile(r"\b(?:don['’]t|do not|never)\b", re.I)
 CAMERA_TOPIC = re.compile(r"\b(?:camera|webcam)\b", re.I)
 CAMERA_MEMORY_REQUEST = re.compile(
     r"^\s*(?:(?:hi|hey|hello|blob)[,.!\s]+)*"
-    r"(?:do you (?:still )?(?:remember|recognize|recognise|know) my face"
-    r"|have you (?:stored|saved|enrolled|remembered) my face"
+    r"(?:do you (?:still )?(?:remember|recognize|recognise|know) (?:my face|what I look like)"
+    r"|have you (?:still )?(?:(?:stored|saved|enrolled|remembered) my face|got my face (?:stored|saved|enrolled))"
     r"|do you have my face (?:stored|saved|enrolled)"
-    r"|is my face (?:stored|saved|enrolled))"
-    r"(?: (?:yet|already|still|from before))?[?.!]*\s*$", re.I)
+    r"|is my face (?:still )?(?:stored|saved|enrolled))"
+    r"(?: (?:yet|already|still|from (?:before|last time|our last chat)))?[?.!]*\s*$", re.I)
 UNVERIFIED_CAMERA_CLAIM = re.compile(
     r"\bi(?:['’]m| am|['’]ve| have|['’]ll)?\s+(?:(?:currently|just|already|actually)\s+)?"
     r"(?:try to|tried to|attempted to|trying to|will try to|will|did|have)?\s*"
@@ -128,7 +129,7 @@ def _requested_camera_action(text, previous_action=None):
 def _needs_camera_instruction(text, recent):
     """Ambiguous acceptance of camera talk explains the explicit request syntax."""
     if not re.fullmatch(
-            r"\s*(?:yes|yeah|yep|sure|ok(?:ay)?|do (?:it|ti)|go ahead|try it|did you(?: do it)?)"
+            r"\s*(?:yes|yeah|yep|sure|ok(?:ay)?|do (?:it|ti)|go ahead|go for it|try it|did you(?: do it)?)"
             r"(?: please)?[?.!]*\s*", text, re.I):
         return False
     previous_user = next((item["content"] for item in reversed(recent) if item["role"] == "user"), "")
@@ -508,6 +509,12 @@ class BlobOrchestrator:
             clean_text, top_k=5, max_distance=MAX_MEMORY_DISTANCE,
             min_timestamp=None if historical else time.time() - SHORT_RECALL_DAYS * 86400,
             search_full_episode=bool(ASSISTANT_HISTORY_REQUEST.search(clean_text)))
+        if not (HISTORICAL_RECALL.search(clean_text) or ASSISTANT_HISTORY_REQUEST.search(clean_text)):
+            reader = getattr(self.semantic, "profile_statements", None)
+            current = reader() if callable(reader) else {}
+            if isinstance(current, dict) and current:
+                episodes = [{**item, "text": filtered} for item in episodes
+                            if (filtered := current_profile_episode(item["text"], current))]
         facts = (self.semantic.list_facts() if overview else
                  self.semantic.recall_facts(clean_text, top_k=3,
                                             max_distance=MAX_MEMORY_DISTANCE))
@@ -1792,7 +1799,7 @@ class BlobOrchestrator:
             if not screen_result.success:
                 return await self._send_direct_response(screen_result.output, screen_result.emote_suggestion)
             if self.screen_sampler and self.screen_sampler.privacy_shield.is_capture_blocked():
-                return await self._send_direct_response("Screen capture is blocked by the privacy shield.", "WORRIED")
+                return await self._send_direct_response(capture_block_message(self.screen_sampler.privacy_shield), "WORRIED")
             self.last_screen_context = "Fresh screen capture is supplied as a separate observation."
         # Show the thinking state before local memory retrieval begins.
         await self.dispatch_emote("THINKING")

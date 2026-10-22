@@ -274,6 +274,12 @@ Your own terminal messages about files are saved to personal memory before analy
 
 To run the backend test suite, install `backend_python[dev]` and run `python -m pytest backend_python/tests -q` from the repository root.
 
+The [multi-turn conversation sweep](docs/evals/conversation_sweep.md) tests 20
+conversation scenarios, including corrections, restarts, face-memory questions,
+camera follow-ups and screen failures. Offline checks run in CI. A separate
+bounded live mode tests actual model answers with synthetic inputs and normal
+provider charges, saving transcripts and tool receipts for investigation.
+
 ### Camera and named recognition
 
 Install the optional local vision dependency to use the camera. Camera access is enabled by default but opens only when requested; set `BLOB_CAMERA_ENABLED=0` in `.env` to disable it:

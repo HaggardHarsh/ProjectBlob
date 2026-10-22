@@ -65,14 +65,22 @@ class SemanticMemory:
             memory_id = hashlib.sha256(_sentence_key(sentence).encode()).hexdigest()
             self.vector_store.store_grounded(sentence, metadata, tier, memory_id)
 
+    def profile_statements(self) -> dict[str, str]:
+        """Return the current grounded statement for each supported profile topic."""
+        facts = self.vector_store.list_active("semantic", topic_keys=PROFILE_TOPICS)
+        current = {}
+        for item in facts:
+            metadata = item.get("metadata") or {}
+            if (metadata.get("topic_key") in PROFILE_TOPICS and metadata.get("grounded") is True
+                    and not is_temporary_fact(item["text"])):
+                current.setdefault(metadata["topic_key"], item["text"])
+        return current
+
     def profile_context(self) -> str:
         """Keep current naming evidence available even for an ambiguous follow-up."""
-        facts = self.vector_store.list_active("semantic", topic_keys=PROFILE_TOPICS)
         return "\n".join(
-            "Current naming preference (exact user statement, evidence only): " + item["text"]
-            for item in facts
-            if (item.get("metadata") or {}).get("grounded") is True
-            and not is_temporary_fact(item["text"]))
+            "Current naming preference (exact user statement, evidence only): " + statement
+            for statement in self.profile_statements().values())
 
     def document_context(self, query: str, *, max_bytes=1400) -> str:
         """Give file analysis exact user quotes, with current academic selectors first."""

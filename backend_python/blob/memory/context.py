@@ -5,6 +5,8 @@ The source records in Chroma are never shortened or deleted here.
 
 import re
 
+from blob.memory.lifecycle import topic_key
+
 
 MEMORY_CONTEXT_CHARS = 8000
 RECALL_CONTEXT_CHARS = 12000
@@ -12,6 +14,24 @@ FACT_CHARS = 400
 EPISODE_CHARS = 1100
 RECALL_EPISODE_CHARS = 1800
 STOPWORDS = {"about", "from", "have", "that", "them", "their", "this", "what", "when", "where", "which", "with", "would", "your"}
+
+
+def current_profile_episode(text: str, current: dict[str, str]) -> str:
+    """Omit superseded naming declarations from ordinary recall, not the archive."""
+    if not current or not text.startswith("User: "):
+        return text
+    user = text.removeprefix("User: ").partition("\nBlob: ")[0]
+    normalize = lambda value: " ".join(value.casefold().rstrip(".!? ").split())
+    sentences = re.split(r"(?<=[.!?])\s+|\n+|,\s+(?=I\s+(?:have|am|will|need|want)\b)", user)
+    kept = [sentence for sentence in sentences if topic_key(sentence) not in current or
+            normalize(sentence) == normalize(current[topic_key(sentence)])]
+    if len(kept) == len(sentences):
+        return text
+    if not any(sentence.strip() for sentence in kept):
+        return ""
+    # An old reply may also repeat the superseded name. Keep only surviving
+    # user evidence when a declaration was removed from this episode.
+    return "User: " + "\n".join(kept)
 
 
 def _excerpt(text: str, limit: int, query: str) -> str:

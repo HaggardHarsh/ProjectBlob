@@ -6,6 +6,14 @@ from blob.privacy.screen_filter import sensitive_window
 
 logger = logging.getLogger(__name__)
 
+
+def capture_block_message(shield):
+    """Explain a real shield decision; retain compatibility with simple samplers."""
+    reason = getattr(shield, "capture_block_reason", None)
+    message = reason() if callable(reason) else None
+    return message if isinstance(message, str) and message else "Screen capture is blocked by the privacy shield."
+
+
 class PrivacyShield:
     def __init__(self, config, event_dispatcher=None, controls=None):
         self.config = config
@@ -33,13 +41,21 @@ class PrivacyShield:
 
     def is_capture_blocked(self) -> bool:
         """Recheck the active window at capture time, not only at poll time."""
+        return bool(self.capture_block_reason())
+
+    def capture_block_reason(self):
+        """Distinguish missing desktop integration from sensitive content or pause."""
         if getattr(self, "controls", None) and self.controls.paused:
-            return True
-        if self.is_active:
-            return True
+            return "Screen capture is blocked by the privacy shield while privacy is paused. Use /privacy resume to continue."
         window_info = self.monitor.get_active_window()
-        return (not window_info or not window_info.title or not window_info.process_name or
-                self.blacklist.is_blacklisted(window_info) or sensitive_window(window_info))
+        if not window_info or not window_info.title or not window_info.process_name:
+            return ("Screen capture is blocked by the privacy shield because the active window could not be verified. "
+                    "On GNOME Wayland, check that Blob's screen bridge is installed and loaded. "
+                    "A newly installed bridge needs a desktop logout/login; restarting Blob alone won't load it.")
+        if self.blacklist.is_blacklisted(window_info) or sensitive_window(window_info):
+            return ("Screen capture is blocked by the privacy shield because the active window is marked sensitive. "
+                    "Switch to a non-sensitive window and try again.")
+        return None
 
     async def run(self):
         while True:
