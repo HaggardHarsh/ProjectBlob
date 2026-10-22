@@ -8,7 +8,7 @@ import pytest
 from blob.ai.orchestrator import BlobOrchestrator, _requested_camera_action
 from blob.privacy.controls import PrivacyControls
 from blob.skills.base import SkillResult
-from blob.skills.builtin.camera import CameraSkill
+from blob.skills.builtin.camera import CAMERA_OPEN_GUIDANCE, CameraSkill
 from blob.skills.registry import SkillRegistry
 from blob.vision.camera import CameraVision
 
@@ -34,7 +34,10 @@ def test_forget_deletes_enrolled_samples(tmp_path):
     assert camera.list_people() == []
 
 
-def test_scan_reports_enrolled_name_and_releases_camera(tmp_path):
+@pytest.mark.parametrize("distance, expected_names", [
+    (50, ["Asha"]), (65, ["Asha"]), (66, []), (-1, []), (float("nan"), []), (float("inf"), []),
+])
+def test_scan_reports_enrolled_name_and_releases_camera(tmp_path, distance, expected_names):
     person_id = "b" * 32
     person_dir = tmp_path / person_id
     person_dir.mkdir()
@@ -51,7 +54,7 @@ def test_scan_reports_enrolled_name_and_releases_camera(tmp_path):
     hog = MagicMock()
     hog.detectMultiScale.return_value = ([(0, 0, 100, 200)], [])
     recognizer = MagicMock()
-    recognizer.predict.return_value = (0, 50)
+    recognizer.predict.return_value = (0, distance)
     cv2 = SimpleNamespace(
         VideoCapture=lambda index: capture,
         CascadeClassifier=lambda path: detector,
@@ -69,7 +72,8 @@ def test_scan_reports_enrolled_name_and_releases_camera(tmp_path):
 
     result = camera.scan()
 
-    assert result == {"faces": 1, "full_bodies": 1, "recognized": ["Asha"], "unknown_faces": 0}
+    assert result == {"faces": 1, "full_bodies": 1, "recognized": expected_names,
+                      "unknown_faces": 0 if expected_names else 1}
     recognizer.train.assert_called_once()
     capture.release.assert_called_once()
 
@@ -232,9 +236,10 @@ def test_camera_is_available_by_default_but_can_be_disabled():
     assert BlobConfig(camera_enabled=False).camera_enabled is False
 
 
-def camera_chat(tmp_path, *, cloud_enabled=True):
-    skill = SimpleNamespace(name="camera", async_execute=AsyncMock(return_value=SkillResult(
-        "Camera opened successfully. Scan: 1 face(s). Recognized: none. Unknown faces: 1.", True, "HAPPY")))
+def camera_chat(tmp_path, *, cloud_enabled=True, vision=None):
+    skill = (CameraSkill(vision) if vision is not None else
+             SimpleNamespace(name="camera", async_execute=AsyncMock(return_value=SkillResult(
+                 "Camera opened successfully. Scan: 1 face(s). Recognized: none. Unknown faces: 1.", True, "HAPPY"))))
     controls = PrivacyControls(tmp_path / "privacy.json")
     controls.update(cloud_enabled=cloud_enabled)
     registry = SkillRegistry(tmp_path / "skills", controls=controls)
@@ -323,8 +328,103 @@ async def test_model_camera_claims_are_replaced_before_streamed_or_final_output(
 
 def test_unknown_face_reports_enrollment_instruction_without_enrolling():
     vision = SimpleNamespace(scan=lambda: {"faces": 1, "full_bodies": 0, "recognized": [], "unknown_faces": 1},
-                             enroll=MagicMock())
+                             enroll=MagicMock(), list_people=lambda: [])
     result = CameraSkill(vision).execute({"action": "scan"})
     assert result.success and "Unknown faces: 1" in result.output
     assert "/camera enroll <name>" in result.output
     vision.enroll.assert_not_called()
+
+
+def test_unknown_face_with_saved_profile_does_not_claim_it_was_forgotten():
+    vision = SimpleNamespace(scan=lambda: {"faces": 1, "full_bodies": 0, "recognized": [], "unknown_faces": 1},
+                             enroll=MagicMock(), list_people=lambda: ["Asha"])
+    result = CameraSkill(vision).execute({"action": "scan"})
+    assert result.success
+    assert "Saved face profiles are still present" in result.output
+    assert "did not match confidently" in result.output
+    assert "/camera enroll" not in result.output
+    vision.enroll.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("question", [
+    "Hi do you remember my face", "Do you still remember my face?",
+    "Have you saved my face?", "Do you have my face stored yet?", "Is my face enrolled?",
+])
+@pytest.mark.parametrize("people", [[], ["Asha"]])
+async def test_face_memory_questions_read_local_profiles_without_camera_or_model(tmp_path, question, people):
+    vision = SimpleNamespace(list_people=MagicMock(return_value=people), scan=MagicMock(), enroll=MagicMock())
+    blob, _ = camera_chat(tmp_path, cloud_enabled=False, vision=vision)
+    blob.agent_runtime = SimpleNamespace(run=AsyncMock())
+    blob._active_attachments = ["/old/schedule.pdf"]
+    blob._handle_attachment_message = AsyncMock(side_effect=AssertionError("Face memory opened a PDF"))
+    answer = await blob.handle_user_message(SimpleNamespace(text=question))
+    assert "Enrolled people: " + ("Asha" if people else "none") in answer
+    assert CAMERA_OPEN_GUIDANCE in answer
+    vision.list_people.assert_called_once_with()
+    vision.scan.assert_not_called()
+    vision.enroll.assert_not_called()
+    blob.llm.generate_from_messages.assert_not_awaited()
+    blob.agent_runtime.run.assert_not_awaited()
+    blob._handle_attachment_message.assert_not_awaited()
+    # Named enrollment results must stay out of later image-analysis history.
+    assert all("Asha" not in item["content"] for item in blob._attachment_history(images=True))
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_camera_acceptances_explain_trigger_until_camera_is_explicit(tmp_path):
+    vision = SimpleNamespace(list_people=MagicMock(return_value=["Asha"]),
+                             scan=MagicMock(return_value={"faces": 1, "full_bodies": 0,
+                                                         "recognized": ["Asha"], "unknown_faces": 0}))
+    blob, _ = camera_chat(tmp_path, cloud_enabled=False, vision=vision)
+    await blob.handle_user_message(SimpleNamespace(text="Hi do you remember my face"))
+    for text in ("do ti", "did you?", "yes", "do it", "go ahead"):
+        assert await blob.handle_user_message(SimpleNamespace(text=text)) == CAMERA_OPEN_GUIDANCE
+    vision.scan.assert_not_called()
+    blob.llm.generate_from_messages.assert_not_awaited()
+    assert "Camera opened successfully" in await blob.handle_user_message(SimpleNamespace(text="scan my camera"))
+    vision.scan.assert_called_once_with()
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_camera_offer_from_old_chat_is_not_an_unexecuted_promise(tmp_path):
+    blob, skill = camera_chat(tmp_path)
+    blob._remember_recent_turn("Do you remember my face?", "I can run a camera scan if you'd like.")
+    assert await blob.handle_user_message(SimpleNamespace(text="do ti")) == CAMERA_OPEN_GUIDANCE
+    skill.async_execute.assert_not_awaited()
+    blob.llm.generate_from_messages.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_camera_guidance_does_not_claim_unrelated_yes_or_real_scan_followup(tmp_path):
+    blob, skill = camera_chat(tmp_path)
+    await blob.handle_user_message(SimpleNamespace(text="scan my camera"))
+    await blob.handle_user_message(SimpleNamespace(text="did you?"))
+    blob.llm.generate_from_messages.assert_awaited_once()
+    await blob.handle_user_message(SimpleNamespace(text="Let's discuss dinner."))
+    assert await blob.handle_user_message(SimpleNamespace(text="yes")) == "Okay."
+    skill.async_execute.assert_awaited_once()
+
+
+def test_enrollment_samples_can_train_recognition_after_restart(tmp_path, monkeypatch):
+    cv2 = pytest.importorskip("cv2")
+    if not hasattr(cv2, "face"):
+        pytest.skip("Optional OpenCV recognition dependency is not installed")
+    config = SimpleNamespace(camera_enabled=True, camera_device_index=0, face_db_path=str(tmp_path / "faces"))
+    vision = CameraVision(config)
+    pixels = np.random.default_rng(19).integers(0, 256, (100, 100), dtype=np.uint8)
+    capture = MagicMock()
+    capture.read.return_value = (True, np.zeros((480, 640, 3), dtype=np.uint8))
+    vision._open = lambda module: capture
+    vision._face_detector = lambda module: object()
+    vision._faces = lambda *args: (pixels, [(0, 0, 100, 100)])
+    monkeypatch.setattr("blob.vision.camera.time.sleep", lambda _: None)
+    assert vision.enroll("Asha") == 12
+    capture.release.assert_called_once()
+    restarted = CameraVision(config)
+    assert restarted.list_people() == ["Asha"]
+    before = {path: path.read_bytes() for path in restarted.face_db_path.rglob("*") if path.is_file()}
+    recognizer, names = restarted._trained_recognizer(cv2, restarted._load_index())
+    label, distance = recognizer.predict(pixels)
+    assert names[label] == "Asha" and 0 <= distance <= 65
+    assert {path: path.read_bytes() for path in before} == before

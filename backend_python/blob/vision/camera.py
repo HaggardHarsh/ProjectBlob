@@ -171,7 +171,7 @@ class CameraVision:
                 if recognizer:
                     for box in faces:
                         label, distance = recognizer.predict(self._crop(cv2, gray, box))
-                        if distance <= 65 and label in labels:
+                        if math.isfinite(distance) and 0 <= distance <= 65 and label in labels:
                             names.append(labels[label])
             return {
                 "faces": len(faces),

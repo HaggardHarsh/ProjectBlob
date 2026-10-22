@@ -33,6 +33,7 @@ from blob.memory.context import build_memory_view
 from blob.memory.lifecycle import SHORT_RECALL_DAYS, academic_selector_known, topic_key
 from blob.skills.commands import handle_skill_command
 from blob.skills.registry import SkillRegistry
+from blob.skills.builtin.camera import CAMERA_OPEN_GUIDANCE
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +87,13 @@ CAMERA_RECOGNITION_REQUEST = re.compile(
     r"(?:recognize|recognise|identify)\s+me(?:\s+(?:now|again))?(?:[, ]+please)?[?.!]*\s*$", re.I)
 CAMERA_DENIAL = re.compile(r"\b(?:don['’]t|do not|never)\b", re.I)
 CAMERA_TOPIC = re.compile(r"\b(?:camera|webcam)\b", re.I)
+CAMERA_MEMORY_REQUEST = re.compile(
+    r"^\s*(?:(?:hi|hey|hello|blob)[,.!\s]+)*"
+    r"(?:do you (?:still )?(?:remember|recognize|recognise|know) my face"
+    r"|have you (?:stored|saved|enrolled|remembered) my face"
+    r"|do you have my face (?:stored|saved|enrolled)"
+    r"|is my face (?:stored|saved|enrolled))"
+    r"(?: (?:yet|already|still|from before))?[?.!]*\s*$", re.I)
 UNVERIFIED_CAMERA_CLAIM = re.compile(
     r"\bi(?:['’]m| am|['’]ve| have|['’]ll)?\s+(?:(?:currently|just|already|actually)\s+)?"
     r"(?:try to|tried to|attempted to|trying to|will try to|will|did|have)?\s*"
@@ -101,6 +109,8 @@ def _requested_camera_action(text, previous_action=None):
     stripped = text.strip()
     if CAMERA_DENIAL.search(stripped):
         return None
+    if CAMERA_MEMORY_REQUEST.fullmatch(stripped):
+        return "list"
     if re.fullmatch(r"(?:camera|webcam)[.!?]*", stripped, re.I):
         return "scan"
     if CAMERA_STATUS_REQUEST.search(stripped):
@@ -113,6 +123,21 @@ def _requested_camera_action(text, previous_action=None):
             CAMERA_RETRY_EXPLICIT.search(stripped)):
         return "scan"
     return None
+
+
+def _needs_camera_instruction(text, recent):
+    """Ambiguous acceptance of camera talk explains the explicit request syntax."""
+    if not re.fullmatch(
+            r"\s*(?:yes|yeah|yep|sure|ok(?:ay)?|do (?:it|ti)|go ahead|try it|did you(?: do it)?)"
+            r"(?: please)?[?.!]*\s*", text, re.I):
+        return False
+    previous_user = next((item["content"] for item in reversed(recent) if item["role"] == "user"), "")
+    # A real camera result is available for ordinary follow-up discussion.
+    if (_requested_camera_action(previous_user) in {"scan", "status"} or
+            previous_user.strip().lower().startswith("/camera")):
+        return False
+    previous_reply = next((item["content"] for item in reversed(recent) if item["role"] == "assistant"), "")
+    return bool(CAMERA_MEMORY_REQUEST.fullmatch(previous_user) or CAMERA_TOPIC.search(previous_reply))
 
 
 SCREEN_REQUEST = re.compile(
@@ -973,6 +998,8 @@ class BlobOrchestrator:
             return await self._send_direct_response(
                 "Stop requested. Completed actions were not undone.", "IDLE")
         camera_action = _requested_camera_action(user_msg.text, getattr(self, "_last_camera_action", None))
+        camera_instruction = (not getattr(user_msg, "attachments", ()) and
+                              _needs_camera_instruction(user_msg.text, getattr(self, "_recent_turns", ())))
         if command != "/camera" and camera_action is None:
             self._last_camera_action = None
         if command == "/agent":
@@ -997,13 +1024,14 @@ class BlobOrchestrator:
                  bool(self._image_identity_paths(user_msg)) or
                  (not getattr(user_msg, "attachments", ()) and (
                      _requested_face(user_msg.text) is not None or
-                     camera_action is not None)))
+                     camera_action is not None or camera_instruction)))
         generation = controls.generation if controls else None
         if controls and controls.paused:
             parts = user_msg.text.strip().lower().split()
             allowed = (command in {"/skills", "/reminders"} or
                        (command == "/files" and (len(parts) == 1 or parts[1] in {"saved", "forget", "clear", "remove"})) or
                        (command == "/results" and (len(parts) == 1 or parts[1] in {"show", "forget"})) or
+                       camera_action == "list" or
                        (command == "/camera" and len(parts) > 1 and parts[1] in {"list", "forget"}))
             if not allowed:
                 return await self._send_direct_response("Privacy pause is active. Use /privacy resume to continue.", "IDLE")
@@ -1063,6 +1091,11 @@ class BlobOrchestrator:
             if stripped and stripped.split(maxsplit=1)[0].lower() == "/results":
                 return await self._handle_results_command(stripped)
             if not getattr(user_msg, "attachments", ()):
+                if CAMERA_MEMORY_REQUEST.fullmatch(stripped):
+                    return await self._handle_camera_command("/camera list", stripped)
+                if _needs_camera_instruction(stripped, getattr(self, "_recent_turns", ())):
+                    self._remember_recent_turn(stripped, CAMERA_OPEN_GUIDANCE)
+                    return await self._send_direct_response(CAMERA_OPEN_GUIDANCE, "IDLE")
                 reply = conversation_reply(stripped, getattr(self, "_recent_turns", ()))
                 if reply is not None:
                     # Acknowledging/declining work never retrieves an older task,
@@ -1545,7 +1578,7 @@ class BlobOrchestrator:
             answer = await self._ground_public_answer(answer, policy, messages)
         answer = self.guardrails.filter_output(answer)
         if camera_discussion and UNVERIFIED_CAMERA_CLAIM.search(answer):
-            answer = "I haven't opened or read the camera for this request. Use /camera scan for a fresh scan."
+            answer = "I haven't opened or read the camera for this request. " + CAMERA_OPEN_GUIDANCE
             emote = "CONFUSED"
         if unsupported_personal_event_claim(answer,
                 [(text, None)] + [(item["content"], None) for item in reversed(self._recent_turns)
@@ -2041,8 +2074,7 @@ class BlobOrchestrator:
         # Apply output guardrails
         final_response = self.guardrails.filter_output(final_response)
         if camera_discussion and UNVERIFIED_CAMERA_CLAIM.search(final_response):
-            final_response = ("I haven't opened or read the camera for this request. "
-                              "Use /camera status to check access or /camera scan for a fresh scan.")
+            final_response = "I haven't opened or read the camera for this request. " + CAMERA_OPEN_GUIDANCE
             emote_str = "CONFUSED"
         if (direct_tool_emote is None and screen_result is None and not file_search_ran and
                 unsupported_personal_event_claim(

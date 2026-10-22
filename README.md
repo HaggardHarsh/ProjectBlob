@@ -298,6 +298,13 @@ turn clears that retry context. The same requests work with cloud assistance off
 while manual privacy pause still blocks camera access. Blob reports the camera
 tool's actual result rather than narrating an unexecuted attempt.
 
+Questions such as "Do you remember my face?" check the local enrollment list
+without opening the camera or asking the chat model. "Yes" or "do it" after
+camera discussion explains that an opening request needs to mention "camera"
+(for example, "scan my camera") or use `/camera scan`. An unknown face in a scan
+does not mean saved profiles were deleted; Blob distinguishes an unmatched frame
+from having no enrollment. Scanning alone does not save a face.
+
 Enrollment requires the person's consent and captures at least eight clear frames with one face visible. A scan reports face and full-body detections and matches enrolled faces by name. Recognition uses OpenCV's LBPH model; it can make mistakes, especially with poor light or a changed appearance, so it should not be used for authentication. The camera opens only for a request and is released afterward. Frames are not sent to the LLM or stored in chat memory. Enrollment stores cropped grayscale face samples under `~/.blob/faces/` (or `BLOB_FACE_DB_PATH`); `/camera forget <name>` deletes that person's samples.
 
 Dropped or selected photos also receive a separate local face check when profiles

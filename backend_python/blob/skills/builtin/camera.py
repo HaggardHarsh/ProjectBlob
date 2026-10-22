@@ -5,6 +5,11 @@ from blob.skills.contracts import object_schema
 from blob.vision.camera import CameraError
 from blob.privacy.controls import PrivacyBlocked
 
+CAMERA_OPEN_GUIDANCE = (
+    "To open the camera, mention 'camera' in your request, such as 'scan my camera', "
+    "or use /camera scan. A plain 'yes' or 'do it' doesn't open it."
+)
+
 
 class CameraSkill(SkillInterface):
     argument_schema = object_schema({
@@ -70,7 +75,12 @@ class CameraSkill(SkillInterface):
                     output += (" No face was detected in that frame, so there was nothing to recognize. "
                                "Face the camera in good light and try again.")
                 elif result["unknown_faces"]:
-                    output += " To recognize a consenting person by name, enroll them with /camera enroll <name>."
+                    if self.vision.list_people():
+                        output += (" Saved face profiles are still present, but at least one face in this frame "
+                                   "did not match confidently. Try facing the camera in good light; "
+                                   "an unknown result does not mean a saved profile was forgotten.")
+                    else:
+                        output += " No face profiles are saved. To recognize a consenting person by name, enroll them with /camera enroll <name>."
             elif action == "enroll":
                 name = args.get("name", "")
                 count = self.vision.enroll(name)
@@ -82,6 +92,11 @@ class CameraSkill(SkillInterface):
             elif action == "list":
                 people = self.vision.list_people()
                 output = "Enrolled people: " + (", ".join(people) if people else "none")
+                output += (". These face profiles are saved locally; a scan can still return unknown "
+                           "when there is no confident match." if people else
+                           ". No face profiles are saved. Scanning alone doesn't save a face; "
+                           "use /camera enroll <name> to enroll a consenting person.")
+                output += " " + CAMERA_OPEN_GUIDANCE
             else:
                 return SkillResult("Unknown camera action. Use status, scan, enroll, forget, or list.", False, "CONFUSED")
             return SkillResult(output, True, "HAPPY")
