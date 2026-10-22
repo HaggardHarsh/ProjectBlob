@@ -84,6 +84,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     add_executable(blob_chat_launcher_smoke tests/chat_launcher_smoke.cpp src/app/chat_launcher.cpp)
     target_include_directories(blob_chat_launcher_smoke PRIVATE src)
     add_test(NAME blob_chat_launcher_smoke COMMAND blob_chat_launcher_smoke)
+    add_test(NAME blob_video_backend_smoke COMMAND ${CMAKE_COMMAND}
+        -DBLOB_OVERLAY=$<TARGET_FILE:blob_overlay>
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/video_backend_smoke.cmake)
 endif()
 add_executable(blob_render_smoke
     tests/render_smoke.cpp

@@ -60,5 +60,11 @@ The overlay input mask scales with its size. High-resolution timing and one fram
 limiter replace the previous clock/vsync combination. SDL resources are destroyed
 before shutdown. Linux prefers X11/XWayland for overlay positioning; native Wayland
 compositor restrictions and the existing non-shaped fallback remain limitations.
+Linux startup explicitly selects X11 when `DISPLAY` is set, or Wayland when only
+`WAYLAND_DISPLAY` is set. If the desktop isn't ready, the overlay exits and the
+installed service retries; the login autostart imports the desktop environment
+and restarts it. Blob never falls back to a direct-display backend such as KMSDRM.
+Explicit `SDL_VIDEODRIVER` overrides accept only `x11`, `wayland`, `dummy` or
+`offscreen`; the last two are for headless checks.
 IPC remains authenticated. Disconnected actions are rejected; failed writes and
 disconnected queues are never automatically replayed.

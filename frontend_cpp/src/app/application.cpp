@@ -53,12 +53,38 @@ namespace {
 struct DesktopStatus { bool connected = false, shield = true, paused = false, cloud = false; };
 struct SdlRuntime {
     SdlRuntime() {
-        if (!std::getenv("SDL_VIDEODRIVER") && std::getenv("DISPLAY")) SDL_setenv("SDL_VIDEODRIVER", "x11", 0);
+        const char* driver = nullptr;
+#ifdef __linux__
+        const auto environment = [](const char* name) {
+            const char* value = std::getenv(name);
+            return value && *value ? value : nullptr;
+        };
+        driver = environment("SDL_VIDEODRIVER");
+        if (!driver) {
+            if (environment("DISPLAY")) driver = "x11";
+            else if (environment("WAYLAND_DISPLAY")) driver = "wayland";
+            else throw std::runtime_error("Desktop display is not ready; waiting for DISPLAY or WAYLAND_DISPLAY. "
+                                          "The desktop service will retry.");
+        }
+        const std::string requested(driver);
+        if (requested != "x11" && requested != "wayland" && requested != "dummy" && requested != "offscreen")
+            throw std::runtime_error("Unsupported SDL_VIDEODRIVER: " + requested +
+                                     ". Blob requires x11 or wayland (dummy/offscreen for headless checks).");
+#endif
         // The click that focuses Blob is also the first half of a double-click.
         SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1");
-        if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_TIMER)) throw std::runtime_error(SDL_GetError());
+        // An explicit driver prevents SDL from probing KMSDRM and taking control
+        // of the display when the desktop session isn't ready yet.
+        if (SDL_Init(SDL_INIT_EVENTS | SDL_INIT_TIMER) || SDL_VideoInit(driver)) {
+            const std::string error = SDL_GetError();
+            SDL_VideoQuit();
+            SDL_Quit();
+            throw std::runtime_error("Desktop video initialization failed (" +
+                                     std::string(driver ? driver : "default") + "): " + error);
+        }
+        std::cerr << "Blob video driver: " << SDL_GetCurrentVideoDriver() << '\n';
     }
-    ~SdlRuntime() { SDL_Quit(); }
+    ~SdlRuntime() { SDL_VideoQuit(); SDL_Quit(); }
 };
 int number(const std::string& text, int minimum, int maximum) {
     size_t length = 0;
