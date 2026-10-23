@@ -28,11 +28,17 @@ EMPTY_REPLY_CORRECTION = (
 
 EMOTE_NAMES = "IDLE|HAPPY|SAD|ANGRY|CONFUSED|THINKING|WORRIED|CELEBRATE|EXCITED|TIRED|OFFER_COFFEE|SHY|SLEEPING|EATING|PROUD|PLAYFUL|WORKING|DEEP_THINKING|LISTENING|SHOCKED|MELTING|ERROR|SUCCESS|WAITING"
 EMOTE_ALIASES = {"AMUSED": "PLAYFUL"}
+EMOTE_VALUES = EMOTE_NAMES + "|" + "|".join(EMOTE_ALIASES)
+# A bare mood is a control only when followed by an emote delimiter.
 EMOTE_MARKER = re.compile(
-    rf"<emote>\s*([^<]*?)\s*</emote>|\(({EMOTE_NAMES}|{'|'.join(EMOTE_ALIASES)})\)",
+    rf"<emote\s*>\s*([^<]*?)\s*</emote\s*>|\(({EMOTE_VALUES})\)"
+    rf"|(?<!\w)({EMOTE_VALUES})\s*</emote\s*>",
     re.IGNORECASE | re.DOTALL)
 EMOTE_OPEN = re.compile(
-    r"<emote>.*$|</?emote\b[^>]*$|</?(?:e|em|emo|emot)\s*$", re.IGNORECASE | re.DOTALL)
+    rf"(?<!\w)(?:{EMOTE_VALUES})\s*</(?:e|em|emo|emot|emote)?\s*$"
+    r"|<emote\s*>.*$|</?emote\b[^>]*$|</?(?:e|em|emo|emot)\s*$",
+    re.IGNORECASE | re.DOTALL)
+EMOTE_CLOSE = re.compile(r"</emote\s*>", re.IGNORECASE)
 REASONING_BLOCK = re.compile(r"<(think|thinking|analysis)>.*?</\1>", re.IGNORECASE | re.DOTALL)
 REASONING_OPEN = re.compile(r"<(?:think|thinking|analysis)>.*$", re.IGNORECASE | re.DOTALL)
 REASONING_CLOSE = re.compile(r"</(?:think|thinking|analysis)>", re.IGNORECASE)
@@ -90,10 +96,29 @@ def display_text(text):
     return terminal_text(re.sub(r"<(\/?)\|emote>", r"<\1emote>", text, flags=re.I))
 
 
+def strip_emotes(text):
+    """Hide complete markers and broken delimiters without removing ordinary mood words."""
+    text = EMOTE_MARKER.sub("", text)
+    text = EMOTE_OPEN.sub("", text)
+    return EMOTE_CLOSE.sub("", text).strip()
+
+
+def extract_emote(text):
+    """Recover an animation even when the model omits its opening tag."""
+    text = display_text(text)
+    matches = list(EMOTE_MARKER.finditer(text))
+    value = next((value for value in matches[-1].groups() if value), "IDLE") if matches else "IDLE"
+    emote = value.strip().upper()
+    emote = EMOTE_ALIASES.get(emote, emote)
+    if emote not in EMOTE_NAMES.split("|"):
+        emote = "IDLE"
+    return emote, strip_emotes(text)
+
+
 def visible_reply_text(text):
     """Use the same presentation rules to detect a tag-only final answer."""
     text = display_text(strip_reasoning(text or ""))
-    return EMOTE_OPEN.sub("", EMOTE_MARKER.sub("", text)).strip()
+    return strip_emotes(text)
 
 
 def correction_messages(messages, correction=FORMAT_CORRECTION):

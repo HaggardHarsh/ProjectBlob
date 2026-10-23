@@ -18,7 +18,7 @@ from blob.privacy.shield import capture_block_message
 from blob.ai.llm_engine import NebiusEngine, ProviderConfigurationError
 from blob.ai.response_format import FORMAT_CORRECTION, FORMAT_FAILURE, correction_messages, display_text, has_tool_protocol
 from blob.ai.response_format import (
-    EMOTE_NAMES, EMOTE_ALIASES, EMOTE_MARKER, EMOTE_OPEN, strip_reasoning as _strip_reasoning,
+    EMOTE_NAMES, EMOTE_ALIASES, EMOTE_MARKER, extract_emote, strip_emotes, strip_reasoning as _strip_reasoning,
 )
 from blob.ai.web_grounding import OFFICIAL_DOMAINS, live_product_query, mentions_requested_product, product_names, requested_system_tools
 from blob.ai.attachments import AttachmentReader, AttachmentError, MAX_IMAGES, parse_selected_files
@@ -319,8 +319,7 @@ DAY_ONLY_REQUEST = re.compile(
 def _visible_preview(text: str) -> str:
     text = display_text(text)
     text = _strip_reasoning(text)
-    text = EMOTE_MARKER.sub("", text)
-    text = EMOTE_OPEN.sub("", text)
+    text = strip_emotes(text)
     # A stream chunk may stop in the middle of a control tag.
     return re.sub(r"<[^>]*$", "", text).rstrip()
 
@@ -611,13 +610,7 @@ class BlobOrchestrator:
 
     def _extract_emote(self, text: str) -> tuple[str, str]:
         """Keep model mood markers for the slime, never for the chat text."""
-        text = display_text(text)
-        matches = list(EMOTE_MARKER.finditer(text))
-        emote = (matches[-1].group(1) or matches[-1].group(2) or "IDLE").strip().upper() if matches else "IDLE"
-        emote = EMOTE_ALIASES.get(emote, emote)
-        if emote not in EMOTE_NAMES.split("|"):
-            emote = "IDLE"
-        return emote, EMOTE_OPEN.sub("", EMOTE_MARKER.sub("", text)).strip()
+        return extract_emote(text)
 
     def _show_thinking(self):
         """Display the same terminal placeholder for ordinary chat and documents."""
@@ -667,9 +660,12 @@ class BlobOrchestrator:
                 if (not head or "{" in response or head.startswith(("```", "<tool_call>"))
                         or "```".startswith(head) or "<tool_call>".startswith(head)):
                     continue
-                # Hold the tail so incomplete control tags cannot reach the terminal.
+                # Hold the raw tail for incomplete markers and secrets, and require
+                # agreement with the full parsed text if slicing severs an emote.
                 filtered = guard.filter_output(response) if guard else response
-                safe = _visible_preview(filtered[:-buffer_chars])
+                safe = os.path.commonprefix((
+                    _visible_preview(filtered[:-buffer_chars]), _visible_preview(filtered),
+                )).rstrip()
                 if len(safe) > len(preview):
                     if not preview_started:
                         self._clear_thinking()

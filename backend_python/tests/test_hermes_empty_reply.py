@@ -29,6 +29,7 @@ emit({'type':'final','answer':answer,'completed':True})
     None, "", " \n\t", "<emote>HAPPY</emote>", "(THINKING)",
     "<think>Internal draft.</think><emote>IDLE</emote>",
     "<analysis>Unfinished internal draft", "<emote>THINK", "\x1b[31m\x1b[0m",
+    "THINKING</emote>", "DEEP_THINKING</emote>", "</emote>", "THINKING</emot",
 ])
 async def test_yes_after_synthetic_offer_repairs_empty_reply_with_context(tmp_path, empty):
     blob = normal_chat()
@@ -51,6 +52,25 @@ async def test_yes_after_synthetic_offer_repairs_empty_reply_with_context(tmp_pa
         assert "airship" not in str(runtime.last_run)
         blob.llm.generate_from_messages.assert_not_awaited()
         assert blob._recent_turns[-1]["content"] == "Start by sorting the model parts."
+    finally:
+        await runtime.close()
+
+
+@pytest.mark.asyncio
+async def test_hermes_orphan_emote_is_hidden_without_an_extra_model_call(tmp_path, capsys):
+    blob = normal_chat()
+    runtime = bridge(tmp_path, ECHO_MODEL)
+    runtime.llm._create.return_value = reply("Let us start with your example. THINKING</emote>")
+    blob.agent_runtime = runtime
+    try:
+        answer = await blob.handle_user_message(pb.UserMessage(text="Help me plan my project"))
+        assert answer == "Let us start with your example."
+        runtime.llm._create.assert_awaited_once()
+        blob.dispatch_emote.assert_awaited_with("THINKING")
+        assert blob.event_dispatcher.broadcast.call_args.args[0].notification.text == answer
+        assert blob._recent_turns[-1]["content"] == answer
+        output = capsys.readouterr().out
+        assert "THINKING" not in output and "</emote>" not in output
     finally:
         await runtime.close()
 
