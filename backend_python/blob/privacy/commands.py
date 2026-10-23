@@ -6,7 +6,7 @@ import shlex
 
 DATA_SHARING_NOTICE = """Blob stores conversation memory, selected document copies, generated answers, reminders and enrolled face samples locally. Local stores are not encrypted by Blob.
 Cloud assistance sends your messages, relevant recalled memories, selected document text/images and tool results to the configured AI provider (Nebius by default). Web searches send queries to the search provider; page reading and browser lookups contact the selected websites.
-Automatic screen shielding blocks screen capture and some storage; it does not turn off cloud chat. /privacy pause blocks new cloud requests, capture, camera and memory writes. Local reminders continue. /privacy cloud off blocks cloud assistance and web tools.
+Automatic screen shielding blocks screen capture and screen context; it does not turn off cloud chat. Authored chats and requested file answers still save locally. /privacy pause blocks new cloud requests, capture, camera and memory writes. Local reminders continue. /privacy cloud off blocks cloud assistance and web tools.
 Automatic screen awareness is off until /awareness on. Camera access occurs only on request. Enabling cloud assistance also permits background memory consolidation of eligible user statements.
 Occasional conversation invitations are off until /proactive on. When enabled with cloud assistance, they may make a bounded background model call using a light conversation topic, a grounded interest label, or an opted-in screen-awareness topic. /proactive quiet pauses invitations for today; /proactive off disables them.
 Use /memory, /files saved, /results, /reminders and /camera list to inspect each store; their deletion commands are separate. Data already sent to providers cannot be recalled by Blob.

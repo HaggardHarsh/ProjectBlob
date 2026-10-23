@@ -22,7 +22,7 @@ class EpisodicMemory:
         return self.vector_store.store(text, metadata, collection="episodic")
 
     def add_user_message(self, user_msg: str, context: dict = None):
-        """Persist user words from document chat without archiving model analysis."""
+        """Persist user words before processing, even if no reply can be completed."""
         metadata = {"type": "episodic", "timestamp": time.time(), "consolidated": False,
                     "user_only": True}
         if context:
@@ -30,6 +30,10 @@ class EpisodicMemory:
                 if isinstance(value, (int, float, str, bool)):
                     metadata[f"ctx_{key}"] = value
         return self.vector_store.store(f"User: {user_msg}", metadata, collection="episodic")
+
+    def complete_episode(self, memory_id: str, reply: str) -> bool:
+        """Attach a reply to its original archived message without creating another turn."""
+        return self.vector_store.complete_episode(memory_id, reply)
         
     def recall_relevant(self, query: str, top_k: int = 5,
                         max_distance: float | None = None,

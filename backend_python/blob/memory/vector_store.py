@@ -126,6 +126,23 @@ class VectorStore:
             self.semantic_revision = getattr(self, "semantic_revision", 0) + 1
         return doc_id
 
+    def complete_episode(self, memory_id: str, reply: str) -> bool:
+        """Update only an existing source; a forgotten episode must never be recreated."""
+        controls = getattr(self, "controls", None)
+        with controls.writing() if controls else nullcontext():
+            with self._write_lock:
+                data = self.episodic.get(ids=[memory_id], include=["documents", "metadatas"])
+                if not data["ids"]:
+                    return False
+                metadata = dict(data["metadatas"][0] or {})
+                document = data["documents"][0]
+                user = document if metadata.get("user_only") else document.partition("\nBlob: ")[0]
+                metadata["user_only"] = False
+                # Only the reply changes. Preserve source time and consolidation
+                # state so an in-flight reply cannot redate or reselect user facts.
+                self._store(user + "\nBlob: " + reply, metadata, "episodic", memory_id, False)
+                return True
+
     def store_grounded(self, text: str, metadata: dict, collection: str, memory_id: str):
         """Store an exact user quote and supersede older facts on the same clear topic."""
         controls = getattr(self, "controls", None)
@@ -245,10 +262,16 @@ class VectorStore:
         return [{"id": id_, "text": text, "metadata": metadata} for id_, text, metadata in zip(data["ids"], data["documents"], data["metadatas"])]
 
     def mark_consolidated(self, episodes: list):
-        for episode in episodes:
-            metadata = dict(episode["metadata"] or {})
-            metadata["consolidated"] = True
-            self.episodic.update(ids=[episode["id"]], metadatas=[metadata])
+        controls = getattr(self, "controls", None)
+        with controls.writing() if controls else nullcontext():
+            with getattr(self, "_write_lock", nullcontext()):
+                # A reply may have completed while consolidation awaited its
+                # model. Merge current metadata instead of restoring the snapshot.
+                data = self.episodic.get(ids=[episode["id"] for episode in episodes], include=["metadatas"])
+                for memory_id, metadata in zip(data["ids"], data["metadatas"]):
+                    values = dict(metadata or {})
+                    values["consolidated"] = True
+                    self.episodic.update(ids=[memory_id], metadatas=[values])
 
     def delete(self, memory_id: str, collection: str = "episodic"):
         self._collection(collection).delete(ids=[memory_id])

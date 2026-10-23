@@ -92,8 +92,9 @@ are excluded from automatic cloud context. Native Wayland windows require the
 local GNOME bridge and a desktop login after installation. See
 [screen awareness](screen_awareness.md) for setup, content filtering, and limitations.
 
-The automatic window shield retains its narrower meaning: block screen capture
-and personal/result storage. Manual pause applies to the whole assistant. Existing
+The automatic window shield blocks screen capture and automatic screen context.
+It does not block authored chat memory or requested file-answer storage, including
+when the active window cannot be verified. Manual pause applies to the whole assistant. Existing
 data remains stored until explicitly deleted. An HTTP request already transmitted
 cannot be recalled; cancellation closes pending model requests, but a synchronous
 local operation may take time to finish/release hardware. Its output is discarded,
@@ -138,6 +139,16 @@ inputs; Blob's own storage remains managed by trusted backend code.
 Disabled tools disappear from model tool listings and are rejected at execution.
 
 ## Personal memory
+
+Every authored chat message is saved to the episodic archive before processing,
+and ordinary replies complete the same record before delivery. Failed or cancelled
+requests retain their user message. Screen shielding does not disable this archive;
+manual privacy pause does. Administrative slash-command output, automatic file-drop
+overviews, document analysis, and local face-match labels are not archived as
+personal facts. Document-chat user messages remain archived, with requested
+answers kept separately in saved results. Initial archive failures stop processing
+with a visible error; reply-write failures leave the original user message saved
+and add a visible notice. Middle-term expiry does not delete source conversations.
 
 `/memory` lists up to 50 records per tier, with IDs and bounded excerpts.
 `/memory episodic`, `/memory middle`, and `/memory semantic` select one tier.

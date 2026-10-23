@@ -16,6 +16,18 @@ New installations start with cloud assistance off. Read `/privacy explain` and u
 consolidation when eligible statements exist. Existing saved preferences are
 preserved on upgrade. Starting Blob and using local commands require no API key.
 
+Authored chat messages enter the episodic archive before model requests or tool
+actions begin. Ordinary replies update that same record before delivery; short
+acknowledgements and direct tool replies are also archived. The original user
+message remains if a request fails, is cancelled, or the backend restarts before
+replying. Episodic archives do not expire automatically. Middle- and long-term
+selection adds useful facts without removing their archived source messages.
+Screen shielding does not suppress authored chat storage. Manual privacy pause
+still blocks new memory writes, and administrative slash commands are not archived.
+If the incoming message cannot be saved, Blob reports the failure before processing
+it. If saving a reply fails, Blob reports that the user message remains saved but
+the reply could not be retained.
+
 ## User-selected attachments
 
 The overlay forwards only files you drop onto Blob. Dropping files triggers
@@ -34,7 +46,7 @@ Completed answers requested by the user are stored independently in
 source filenames/original paths/checksums, saved time, and the user context used.
 These are generated work, not user-authored personal facts. Automatic drop
 overviews are not stored as results. The user's own terminal messages are archived
-before analysis unless the privacy shield blocks memory storage. Explicit academic
+before analysis unless manual privacy pause blocks memory storage. Explicit academic
 declarations are saved as exact quotes immediately; other user statements remain
 eligible for ordinary consolidation. File answers receive bounded recalled user
 statements alongside selected source evidence. PDF rows and inferred assistant
@@ -58,16 +70,17 @@ to 100 answers / 2 MB, and are not encrypted.
 Detaching keeps the saved copy available for a later relevant question. Stored
 sources and the index use mode 0600 inside private directories (0700), with a
 20-file / 200 MB limit. These are local plaintext files, not encrypted storage.
-The screen privacy shield controls
-screen capture, personal memory storage, and automatic result storage; explicitly selected attachments can still be
-sent and saved to the document library while it is active.
+The screen privacy shield controls screen capture and automatic screen context.
+Authored chat, requested file answers, and explicitly selected attachments can
+still be saved while it is active. Manual privacy pause blocks new memory and
+result writes.
 
 ## Screen capture
 
 The `screen_capture` skill runs only when called. It checks the active window
 against `backend_python/blob/data/blacklist.yaml` before capture and again before
-OCR. The privacy shield also suppresses screen context and new episodic memory
-while a blacklisted window is active. `gnome-screenshot` and `grim` can write a
+OCR. The privacy shield also suppresses screen context while a blacklisted window
+is active; it does not suppress the user's authored chat. `gnome-screenshot` and `grim` can write a
 temporary PNG during capture; Blob loads and removes that file immediately.
 On Wayland, Blob first asks the XDG screenshot portal for a capture. The desktop
 may show a permission dialog. If the portal is unavailable, Blob can try the
@@ -78,7 +91,7 @@ Window detection depends on platform support; the Linux implementation uses
 
 The OCR text can be sent to Nebius as part of a tool observation. Screen
 captures are not saved to ChromaDB directly, but user and assistant messages
-about a screen capture can enter episodic memory after the shield is inactive.
+about a screen capture enter episodic memory independently of the screen shield.
 
 ## Camera and face enrollment
 

@@ -182,7 +182,23 @@ async def test_subjects_from_ordinary_chat_are_available_when_a_pdf_is_opened_la
 
 
 @pytest.mark.asyncio
-async def test_privacy_shield_blocks_user_memory_writes_but_not_explicit_document_analysis(tmp_path):
+async def test_personal_statement_after_pasted_file_path_keeps_its_original_archived_source(tmp_path):
+    path = tmp_path / "exam schedule.pdf"
+    make_pdf(path)
+    blob = buffered_blob(tmp_path)
+    blob.screen_sampler = SimpleNamespace(privacy_shield=SimpleNamespace(is_capture_blocked=lambda: True))
+    text = f'"{path}" {SUBJECTS}'
+    await blob.handle_user_message(blob_service_pb2.UserMessage(text=text))
+    archive = blob.vector_store.episodic.get(include=["documents"])
+    assert archive["documents"] == ["User: " + text]
+    current = blob.vector_store.list_active("middle", topic_keys=("education:subjects",))
+    assert current[0]["text"] == SUBJECTS
+    assert current[0]["metadata"]["source_episode_id"] == archive["ids"][0]
+    assert SUBJECTS in buffered_blob(tmp_path).semantic.document_context("Monday")
+
+
+@pytest.mark.asyncio
+async def test_screen_privacy_shield_preserves_authored_document_chat_and_saved_answers(tmp_path):
     path = tmp_path / "exam_schedule.pdf"
     make_pdf(path)
     blob = buffered_blob(tmp_path)
@@ -190,8 +206,9 @@ async def test_privacy_shield_blocks_user_memory_writes_but_not_explicit_documen
     await blob.handle_attachment_drop([str(path)])
     await blob.handle_user_message(blob_service_pb2.UserMessage(text=SUBJECTS))
     assert blob.llm.generate_from_messages.await_count == 2
-    assert not blob.vector_store.episodic.get(include=[])["ids"]
-    assert not blob.vector_store.middle.get(include=[])["ids"]
+    assert blob.vector_store.episodic.get(include=["documents"])["documents"] == [f"User: {SUBJECTS}"]
+    assert blob.vector_store.middle.get(include=["documents"])["documents"] == [SUBJECTS]
+    assert blob._result_library().records()
 
 
 @pytest.mark.asyncio

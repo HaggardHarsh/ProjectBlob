@@ -206,14 +206,18 @@ async def test_request_to_reread_a_deleted_original_is_not_answered_as_a_saved_w
 
 
 @pytest.mark.asyncio
-async def test_privacy_shield_pauses_saved_result_writes(tmp_path):
+async def test_screen_privacy_shield_preserves_requested_saved_results(tmp_path):
     blob = make_blob(tmp_path)
     path = tmp_path / "exam_schedule.pdf"
     make_pdf(path)
     await blob.handle_attachment_drop([str(path)])
     blob.screen_sampler = SimpleNamespace(privacy_shield=SimpleNamespace(is_capture_blocked=lambda: True))
     await say(blob, "Summarize the attached PDF")
-    assert not blob._result_library().records()
+    saved = blob._result_library().records()
+    assert len(saved) == 1
+    assert saved[0]["question"] == "Summarize the attached PDF"
+    assert blob.vector_store.episodic.get(include=["documents"])["documents"] == [
+        "User: Summarize the attached PDF"]
 
 
 @pytest.mark.asyncio

@@ -1,5 +1,7 @@
 import asyncio
 from collections import deque
+from contextvars import ContextVar
+from dataclasses import dataclass
 from datetime import datetime
 import logging
 import hashlib
@@ -45,6 +47,18 @@ MAX_REACT_ITERATIONS = 3
 STYLE_CACHE_TTL_SECONDS = 30
 MAX_MEMORY_DISTANCE = 1.35  # Calibrated for Chroma's default normalized MiniLM embeddings.
 STYLE_QUERY = "How does the user want Blob to speak to them: friendly buddy, formal, professional, direct, or quiet?"
+
+
+@dataclass
+class _ArchivedChat:
+    memory_id: str
+    user_text: str
+    privacy_generation: int | None
+    deletion_revision: int
+    user_only: bool = False
+    finished: bool = False
+
+
 FACE_REQUEST = re.compile(
     r"(?:"
     r"(?:(?:can|could|would|will) you\s+)?(?:please\s+)?"
@@ -410,27 +424,74 @@ class BlobOrchestrator:
         return system + self._current_clock_context()
 
     def _remember_turn(self, user_text: str, reply: str) -> None:
-        # Automatic screen shielding blocks disk writes, not this conversation.
-        # Manual privacy pause is still enforced by _remember_recent_turn.
         self._remember_recent_turn(user_text, reply)
-        if self.screen_sampler and self.screen_sampler.privacy_shield.is_capture_blocked():
+        if self._archived_chat() is not None:
+            # The incoming user message is already durable. The delivery path
+            # attaches its final filtered reply to that same episode.
+            return
+        controls = getattr(self, "controls", None)
+        if controls and controls.paused:
             return
         episode_id = self.episodic.add_episode(user_text, reply)
+        self._remember_explicit_statement(user_text, episode_id)
+
+    def _remember_explicit_statement(self, user_text, episode_id):
         remember = getattr(getattr(self, "semantic", None), "remember_explicit_statements", None)
         if callable(remember):
-            remember(user_text, episode_id)
+            try:
+                remember(user_text, episode_id)
+            except PrivacyBlocked:
+                raise
+            except Exception:
+                # A derived-fact failure must not discard a successfully
+                # archived statement or interrupt the user's conversation.
+                logger.exception("Could not update derived user memories; source remains archived")
+
+    def _archived_chat(self):
+        context = getattr(self, "_chat_archive", None)
+        return context.get() if context is not None else None
+
+    def _archive_user_only(self):
+        turn = self._archived_chat()
+        if turn is not None:
+            turn.user_only = True
+
+    def _archive_reply(self, reply):
+        """Commit before delivery, keeping privacy changes and forgetting authoritative."""
+        turn = self._archived_chat()
+        if turn is None or turn.finished:
+            return reply
+        turn.finished = True
+        controls = getattr(self, "controls", None)
+        if (turn.user_only or (controls and (controls.paused or controls.generation != turn.privacy_generation)) or
+                self.vector_store.deletion_revision != turn.deletion_revision):
+            return reply
+        try:
+            self.episodic.complete_episode(turn.memory_id, reply)
+        except PrivacyBlocked:
+            pass
+        except Exception:
+            logger.exception("Could not archive assistant reply; user message remains archived")
+            return reply + "\n\nI saved your message, but couldn't save my reply for later. Check the backend logs."
+        return reply
 
     def _save_document_user_message(self, text):
         """Persist authored user words; document analysis is not a user fact."""
-        sampler = getattr(self, "screen_sampler", None)
-        if sampler and sampler.privacy_shield.is_capture_blocked():
+        turn = self._archived_chat()
+        if turn is not None:
+            self._archive_user_only()
+            if text != turn.user_text:
+                # Terminal selections are stripped before document analysis.
+                # Index the authored statement while retaining its original source.
+                self._remember_explicit_statement(text, turn.memory_id)
+            return
+        controls = getattr(self, "controls", None)
+        if controls and controls.paused:
             return
         add_user = getattr(self.episodic, "add_user_message", None)
         if callable(add_user):
             episode_id = add_user(text, {"source": "document_chat"})
-            remember = getattr(getattr(self, "semantic", None), "remember_explicit_statements", None)
-            if callable(remember):
-                remember(text, episode_id)
+            self._remember_explicit_statement(text, episode_id)
 
     def _thread_write(self, function):
         controls = getattr(self, "controls", None)
@@ -490,10 +551,13 @@ class BlobOrchestrator:
         historical = bool(MEMORY_TOPIC.search(clean_text) or
                           HISTORICAL_RECALL.search(clean_text) or
                           ASSISTANT_HISTORY_REQUEST.search(clean_text))
+        turn = self._archived_chat()
         episodes = [] if overview else self.episodic.recall_relevant(
-            clean_text, top_k=5, max_distance=MAX_MEMORY_DISTANCE,
+            clean_text, top_k=6 if turn is not None else 5, max_distance=MAX_MEMORY_DISTANCE,
             min_timestamp=None if historical else time.time() - SHORT_RECALL_DAYS * 86400,
             search_full_episode=bool(ASSISTANT_HISTORY_REQUEST.search(clean_text)))
+        if turn is not None:
+            episodes = [item for item in episodes if item.get("id") != turn.memory_id][:5]
         if not (HISTORICAL_RECALL.search(clean_text) or ASSISTANT_HISTORY_REQUEST.search(clean_text)):
             reader = getattr(self.semantic, "profile_statements", None)
             current = reader() if callable(reader) else {}
@@ -775,9 +839,6 @@ class BlobOrchestrator:
         self._recent_turns = deque(kept, maxlen=12)
 
     async def _save_generated_result(self, question, answer, sources, personal_context, **options):
-        sampler = getattr(self, "screen_sampler", None)
-        if sampler and sampler.privacy_shield.is_capture_blocked():
-            return None
         try:
             save = self._result_library().save
             save = self._thread_write(save)
@@ -820,6 +881,7 @@ class BlobOrchestrator:
         return await self._send_direct_response("Use /results, /results show <id>, or /results forget <id|all>.", "CONFUSED")
 
     async def _handle_saved_result_message(self, user_msg, records):
+        self._archive_user_only()
         question = self.guardrails.sanitize_input(user_msg.text).strip()
         if REPLAY_REQUEST.fullmatch(question):
             kind = records[0]["kind"]
@@ -963,6 +1025,48 @@ class BlobOrchestrator:
         return filtered
 
     async def handle_user_message(self, user_msg):
+        """Archive authored chat before any routing, model request, or tool action."""
+        text = user_msg.text.strip()
+        command = text.split(maxsplit=1)[0].casefold() if text else ""
+        controls = getattr(self, "controls", None)
+        episodic = getattr(self, "episodic", None)
+        # Administrative commands (especially forgetting and privacy changes)
+        # must not archive their output or recreate the data they just removed.
+        if (not text or command in {"/privacy", "/memory", "/stop", "/agent", "/awareness", "/proactive",
+                                    "/skills", "/reminders", "/files", "/results", "/camera"} or
+                (controls and controls.paused) or
+                not callable(getattr(episodic, "add_user_message", None)) or
+                not callable(getattr(episodic, "complete_episode", None))):
+            return await self._handle_incoming_message(user_msg)
+        if not hasattr(self, "_chat_archive"):
+            self._chat_archive = ContextVar("blob_chat_archive", default=None)
+        from blob.terminal import terminal_text
+        guard = getattr(self, "guardrails", None)
+        text = getattr(guard, "sanitize_input", terminal_text)(user_msg.text).strip()
+        try:
+            # Keep admission and immediate fact indexing in the same privacy /
+            # deletion generation, including when storage runs on another thread.
+            with controls.writing() if controls else nullcontext():
+                with self.vector_store._write_lock:
+                    memory_id = episodic.add_user_message(text, {"source": "chat"})
+                    turn = _ArchivedChat(memory_id, text, controls.generation if controls else None,
+                                         self.vector_store.deletion_revision)
+                    self._remember_explicit_statement(text, memory_id)
+        except PrivacyBlocked as exc:
+            return await self._send_direct_response(str(exc), "IDLE")
+        except Exception:
+            logger.exception("Could not archive incoming chat message")
+            return await self._send_direct_response(
+                "I couldn't save your message to local memory, so I haven't processed it. "
+                "Check the backend logs and try again.", "WORRIED")
+        token = self._chat_archive.set(turn)
+        try:
+            reply = await self._handle_incoming_message(user_msg)
+            return self._archive_reply(reply)
+        finally:
+            self._chat_archive.reset(token)
+
+    async def _handle_incoming_message(self, user_msg):
         proactive = getattr(self, "proactive", None)
         if proactive:
             proactive.user_activity()
@@ -1304,6 +1408,7 @@ class BlobOrchestrator:
 
     async def _handle_image_identity_question(self, question, paths, *, activate=False):
         """Use selected pixels and enrolled local samples, with no cloud request."""
+        self._archive_user_only()
         reader = getattr(self, "_attachment_reader", None)
         if reader is None:
             reader = self._attachment_reader = AttachmentReader()
@@ -2103,6 +2208,7 @@ class BlobOrchestrator:
             final_response = policy.grounded_answer(final_response)
         
         # Save episodic memory
+        final_response = self._archive_reply(final_response)
         if not prompt_overflow:
             self._remember_turn(clean_text, final_response)
         
@@ -2134,6 +2240,7 @@ class BlobOrchestrator:
         from blob.terminal import terminal_text
         guard = getattr(self, "guardrails", None)
         text = getattr(guard, "filter_output", terminal_text)(text)
+        text = self._archive_reply(text)
         self._clear_thinking()
         await self.dispatch_emote(emote)
         event = blob_service_pb2.BackendEvent()
@@ -2144,11 +2251,6 @@ class BlobOrchestrator:
         return text
 
     async def _handle_remember_me(self, user_text: str):
-        if self.screen_sampler and self.screen_sampler.privacy_shield.is_capture_blocked():
-            return await self._send_direct_response(
-                "My memory is paused while the privacy shield is active. Ask me again once it turns off.",
-                "WORRIED",
-            )
         try:
             self._remember_turn(user_text, MEMORY_CAPABILITY_RESPONSE)
         except Exception:
@@ -2159,6 +2261,7 @@ class BlobOrchestrator:
         return await self._send_direct_response(MEMORY_CAPABILITY_RESPONSE, "HAPPY")
 
     async def _handle_camera_command(self, command: str, user_text: str | None = None):
+        self._archive_user_only()
         parts = command.split(maxsplit=2)
         action = parts[1].lower() if len(parts) > 1 else "scan"
         name = parts[2] if len(parts) > 2 else ""

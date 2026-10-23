@@ -1130,7 +1130,7 @@ async def test_remember_me_uses_local_memory_instead_of_model_denial():
 
 
 @pytest.mark.asyncio
-async def test_remember_me_reports_when_privacy_shield_pauses_storage():
+async def test_remember_me_saves_while_screen_privacy_shield_is_active():
     orchestrator = BlobOrchestrator.__new__(BlobOrchestrator)
     orchestrator.guardrails = SimpleNamespace(sanitize_input=lambda text: text)
     orchestrator.screen_sampler = SimpleNamespace(privacy_shield=SimpleNamespace(is_capture_blocked=lambda: True))
@@ -1140,8 +1140,8 @@ async def test_remember_me_reports_when_privacy_shield_pauses_storage():
 
     answer = await orchestrator.handle_user_message(SimpleNamespace(text="Remember me"))
 
-    assert "privacy shield" in answer
-    orchestrator.episodic.add_episode.assert_not_called()
+    assert "persistent local memory" in answer
+    orchestrator.episodic.add_episode.assert_called_once_with("Remember me", answer)
 
 
 @pytest.mark.asyncio

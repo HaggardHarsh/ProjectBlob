@@ -293,7 +293,8 @@ Attachment analysis stays outside episodic storage and memory consolidation.
 User-authored terminal messages take a separate path: save a user-only episode
 before calling the provider, then immediately index explicit subject/program
 declarations as grounded middle-term quotes. Synthetic file-drop overviews do
-not enter personal memory. Privacy-shield checks apply to these writes.
+not enter personal memory. Manual privacy pause applies to these writes; automatic
+screen shielding does not block authored messages or requested file answers.
 
 File prompts reserve space for bounded recalled user statements before budgeting
 source evidence. Active academic declarations are looked up by topic rather than

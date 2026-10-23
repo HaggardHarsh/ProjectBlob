@@ -43,7 +43,7 @@ async def test_declined_web_lookup_never_contacts_tools_even_for_known_ai_produc
 
 
 @pytest.mark.asyncio
-async def test_screen_shield_keeps_recent_corrections_without_saving_them():
+async def test_screen_shield_keeps_recent_corrections_and_archives_each_turn():
     blob = normal_chat()
     blob.screen_sampler = SimpleNamespace(privacy_shield=SimpleNamespace(is_capture_blocked=lambda: True))
     blob.llm.generate_from_messages.return_value = SimpleNamespace(content="I'll call the project Cobalt.")
@@ -57,7 +57,9 @@ async def test_screen_shield_keeps_recent_corrections_without_saving_them():
 
     blob.llm.generate_from_messages.side_effect = followup
     assert await blob.handle_user_message(pb.UserMessage(text="What is the test project's name now?")) == "Cobalt."
-    blob.episodic.add_episode.assert_not_called()
+    assert blob.episodic.add_episode.call_count == 2
+    blob.episodic.add_episode.assert_any_call(correction, "I'll call the project Cobalt.")
+    blob.episodic.add_episode.assert_any_call("What is the test project's name now?", "Cobalt.")
 
 
 @pytest.mark.parametrize("opening,closing", [("【", "】"), ("“", "”"), ("[source](", ")"), ("", "."), ("\u200b", "\u200b")])
