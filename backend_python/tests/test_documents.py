@@ -145,9 +145,27 @@ async def test_save_failure_keeps_analysis_working_and_reports_no_restart_storag
     monkeypatch.setattr(instance._document_library(), "remember", lambda sources: (_ for _ in ()).throw(OSError("Disk full")))
     reply = await instance.handle_attachment_drop([str(original)])
     assert "Ohm's law" in reply
+    assert "could not be saved for restart" in reply
+    assert instance.event_dispatcher.broadcast.call_args.args[0].notification.text == reply
     output = capsys.readouterr().out
     assert "could not be saved for restart" in output
     assert "Saved local source copies" not in output
+
+
+@pytest.mark.asyncio
+async def test_document_save_warning_survives_model_failure_without_leaking_to_next_reply(tmp_path, monkeypatch):
+    original = tmp_path / "lesson.pdf"
+    text_pdf(original, ["Voltage equals current times resistance"])
+    instance = chat(tmp_path / "library")
+    remember = instance._document_library().remember
+    monkeypatch.setattr(instance._document_library(), "remember", lambda sources: (_ for _ in ()).throw(OSError("Disk full")))
+    instance._generate_attachment_answer = AsyncMock(side_effect=RuntimeError("Provider unavailable"))
+    reply = await instance.handle_attachment_drop([str(original)])
+    assert "couldn't analyze" in reply and "could not be saved for restart" in reply
+    assert instance.event_dispatcher.broadcast.call_args.args[0].notification.text == reply
+    monkeypatch.setattr(instance._document_library(), "remember", remember)
+    instance._generate_attachment_answer = AsyncMock(return_value="The answer.")
+    assert await instance.handle_attachment_drop([str(original)]) == "The answer."
 
 
 def test_storage_permissions_duplicate_sources_search_and_forget_all(tmp_path):

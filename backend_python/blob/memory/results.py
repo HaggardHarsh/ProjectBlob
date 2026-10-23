@@ -93,7 +93,7 @@ class ResultLibrary:
         scope = [kind, sorted(source["original_path"] for source in sources)]
         if kind == "timetable":
             scope.append(sorted(set(re.findall(r"\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b", question.casefold()))))
-        if kind == "answer":
+        if kind != "timetable":
             scope.append(" ".join(question.casefold().split()))
         identifier = replace_id or hashlib.sha256(json.dumps(scope).encode()).hexdigest()[:16]
         with self._lock:

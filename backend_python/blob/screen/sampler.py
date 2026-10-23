@@ -102,47 +102,42 @@ class ScreenSampler:
         return None
         
     async def _capture_gnome_screenshot(self):
-        if not shutil.which("gnome-screenshot"):
-            return None
-        path = self._get_temp_path()
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                'gnome-screenshot', '-f', path,
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL
-            )
-            await proc.wait()
-            if proc.returncode == 0 and os.path.exists(path):
-                img = self._load_image(path)
-                if img:
-                    img.load()
-                    self._cleanup(path)
-                    return img
-        except Exception as e:
-            logger.debug(f"gnome-screenshot failed: {e}")
-        self._cleanup(path)
-        return None
+        return await self._capture_command("gnome-screenshot", "-f")
 
     async def _capture_grim(self):
-        if not shutil.which("grim"):
+        return await self._capture_command("grim")
+
+    async def _capture_command(self, command, *arguments):
+        if not shutil.which(command):
             return None
         path = self._get_temp_path()
+        proc = None
         try:
             proc = await asyncio.create_subprocess_exec(
-                'grim', path,
+                command, *arguments, path,
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.DEVNULL
             )
-            await proc.wait()
+            await asyncio.wait_for(proc.wait(), timeout=10)
             if proc.returncode == 0 and os.path.exists(path):
                 img = self._load_image(path)
                 if img:
-                    img.load()
-                    self._cleanup(path)
-                    return img
+                    with img:
+                        img.load()
+                        return img.copy()
         except Exception as e:
-            logger.debug(f"grim failed: {e}")
-        self._cleanup(path)
+            logger.debug("%s failed: %s", command, e)
+        finally:
+            # Cancellation must stop the writer before removing its screenshot.
+            try:
+                if proc is not None and proc.returncode is None:
+                    try:
+                        proc.kill()
+                    except ProcessLookupError:
+                        pass
+                    await proc.wait()
+            finally:
+                self._cleanup(path)
         return None
 
     async def _capture_pil(self):

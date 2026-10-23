@@ -202,6 +202,19 @@ async def test_identity_rematches_after_profile_forgetting_and_keeps_other_selec
 
 
 @pytest.mark.asyncio
+async def test_image_save_failure_reaches_chat_without_losing_local_match(tmp_path, monkeypatch):
+    instance, vision, _, path = photo_chat(tmp_path)
+    monkeypatch.setattr(instance._document_library(), "remember",
+                        MagicMock(side_effect=OSError("Disk full")))
+    reply = await instance.handle_user_message(pb.UserMessage(
+        text="Who is in this picture?", attachments=[str(path)]))
+    assert "possible match to ExamplePerson" in reply
+    assert "could not be saved for restart" in reply
+    assert instance.event_dispatcher.broadcast.call_args.args[0].notification.text == reply
+    instance.llm.vision_engine.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("result,expected", [
     ({"enrolled": True, "faces": [{"name": None}]}, "unknown; no confident match"),
     ({"enrolled": True, "faces": []}, "No clear face detected"),

@@ -223,9 +223,47 @@ async def test_screen_privacy_shield_preserves_requested_saved_results(tmp_path)
 @pytest.mark.asyncio
 async def test_save_failure_is_reported_without_discarding_the_current_answer(tmp_path, capsys):
     blob, path, result = await completed_work(tmp_path)
+    blob.event_dispatcher.broadcast = AsyncMock()
     blob._result_library().save = Mock(side_effect=OSError("Disk full"))
-    assert await say(blob, "Make me a new timetable") == TIMETABLE
+    reply = await say(blob, "Make me a new timetable")
+    assert reply.startswith(TIMETABLE)
+    assert "could not be saved for later" in reply
+    assert blob.event_dispatcher.broadcast.call_args.args[0].notification.text == reply
+    assert blob._result_library().get(result["id"])["answer"] == TIMETABLE
     assert "could not be saved for later" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("question_template", ["Make notes for chapter {}", "Summarize chapter {}", "Create a plan for chapter {}"])
+def test_distinct_work_from_the_same_source_survives_restart(tmp_path, question_template):
+    library = ResultLibrary(tmp_path)
+    sources = [{"name": "lesson.pdf", "original_path": "/synthetic/lesson.pdf", "sha256": "abc"}]
+    first = library.save(question_template.format(1), "Chapter one work", sources)
+    second = library.save(question_template.format(2), "Chapter two work", sources)
+    assert first["id"] != second["id"]
+    restarted = ResultLibrary(tmp_path)
+    assert restarted.get(first["id"])["answer"] == "Chapter one work"
+    assert restarted.get(second["id"])["answer"] == "Chapter two work"
+    # Explicit edits still replace just the selected work, even if wording changes.
+    restarted.save("Rewrite it more clearly", "Revised chapter one", sources,
+                   kind=first["kind"], replace_id=first["id"])
+    assert len(restarted.records()) == 2
+    assert restarted.get(first["id"])["answer"] == "Revised chapter one"
+    assert restarted.get(second["id"])["answer"] == "Chapter two work"
+
+
+@pytest.mark.asyncio
+async def test_failed_saved_result_edit_reports_warning_and_preserves_previous_version(tmp_path):
+    blob, path, result = await completed_work(tmp_path)
+    await say(blob, "/files forget all")
+    blob._result_library().save = Mock(side_effect=OSError("Disk full"))
+    blob.event_dispatcher.broadcast = AsyncMock()
+    revised = TIMETABLE.replace("| Subject |", "| Paper |")
+    blob.llm.generate_from_messages.return_value = SimpleNamespace(content=revised)
+    reply = await say(blob, "Rewrite my timetable using clearer column names")
+    assert reply.startswith(revised)
+    assert "could not be saved for later" in reply
+    assert blob.event_dispatcher.broadcast.call_args.args[0].notification.text == reply
+    assert blob._result_library().get(result["id"])["answer"] == TIMETABLE
 
 
 def test_results_quota_does_not_evict_previous_work_and_complete_answers_remain_on_disk(tmp_path, monkeypatch):

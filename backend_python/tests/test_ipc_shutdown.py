@@ -11,7 +11,33 @@ import pytest
 from blob.ipc import blob_service_pb2, blob_service_pb2_grpc
 from blob.ipc.event_dispatcher import EventDispatcher
 from blob.ipc.servicer import BlobServiceServicer
+from blob.ipc.server import start_grpc_server
 from blob.main import read_cli_line
+
+
+@pytest.mark.asyncio
+async def test_second_backend_cannot_share_a_listening_tcp_address(tmp_path):
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    config = SimpleNamespace(ipc_address=f"127.0.0.1:{port}", ipc_token_path=str(tmp_path / "token"))
+    instance = SimpleNamespace(screen_sampler=None)
+    first, service = await start_grpc_server(config, instance, EventDispatcher())
+    second = None
+    try:
+        with pytest.raises(RuntimeError):
+            second, _ = await start_grpc_server(config, instance, EventDispatcher())
+        # The failed startup must leave the original listener serving requests.
+        async with grpc.aio.insecure_channel(config.ipc_address) as channel:
+            await asyncio.wait_for(channel.channel_ready(), 2)
+    finally:
+        if second is not None:
+            await second.stop(0)
+        await service.close_streams()
+        await first.stop(0)
+    restarted, service = await start_grpc_server(config, instance, EventDispatcher())
+    await service.close_streams()
+    await restarted.stop(0)
 
 
 @pytest.mark.asyncio

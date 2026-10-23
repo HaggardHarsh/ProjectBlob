@@ -838,7 +838,7 @@ class BlobOrchestrator:
             kept.extend(pair)
         self._recent_turns = deque(kept, maxlen=12)
 
-    async def _save_generated_result(self, question, answer, sources, personal_context, **options):
+    async def _save_generated_result(self, question, answer, sources, personal_context, *, notices, **options):
         try:
             save = self._result_library().save
             save = self._thread_write(save)
@@ -846,8 +846,8 @@ class BlobOrchestrator:
                 question, answer, sources, personal_context, **options)
         except (ResultError, OSError, sqlite3.Error) as exc:
             logger.warning("Generated result save failed: %s", exc)
-            self._clear_thinking()
-            print(f"Blob: This answer is usable now but could not be saved for later: {exc}\n")
+            notices.append("This answer is usable now but could not be saved for later. "
+                           "Keep a copy before deleting the source. Check the backend logs.")
             return None
 
     async def _handle_results_command(self, command):
@@ -937,15 +937,16 @@ class BlobOrchestrator:
         if not response:
             return await self._send_direct_response("I couldn't produce a reliable answer. Try /results show <id>.", "CONFUSED")
         record = records[0]
+        notices = []
         if EDIT_REQUEST.search(question):
             updated = await self._save_generated_result(question, response, record["sources"], personal_context,
-                                                       kind=record["kind"], replace_id=record["id"])
+                                                       notices=notices, kind=record["kind"], replace_id=record["id"])
             if updated:
                 record = updated
                 self._prune_recent_context("[Saved result: ", {record["id"]})
         self._last_saved_result_id = record["id"]
         self._remember_recent_turn(question + f"\n[Saved result: {record['id']}]", response)
-        return await self._send_direct_response(response, emote)
+        return await self._send_direct_response("\n\n".join([response, *notices]), emote)
 
     def _uses_attachment_context(self, text):
         """Require a document request; keeping files attached must not claim all chat."""
@@ -1419,18 +1420,19 @@ class BlobOrchestrator:
         if activate:
             self._active_attachments = list(paths)
         self._last_camera_action = None
+        notices = []
         try:
             await asyncio.to_thread(self._thread_write(self._document_library().remember), attached.sources)
         except (DocumentError, OSError, sqlite3.Error) as exc:
             logger.warning("Image save failed: %s", exc)
-            print("Blob: This image is available now but could not be saved for restart.\n")
+            notices.append("This image is available now but could not be saved for restart. Keep the original.")
         answer = await self._local_face_summary(attached.sources, required=True)
         # Keep the reply available to the user, while withholding local biometric
         # labels from future model history and generated-work storage.
         history_reply = LOCAL_FACE_CHECK + " Completed locally; ask about the image to check again."
         self._remember_recent_turn(question + "\n[Attached: " + ", ".join(attached.names) + "]",
                                    IMAGE_IDENTITY_REPLY if answer == IMAGE_IDENTITY_REPLY else history_reply)
-        return await self._send_direct_response(answer, "IDLE")
+        return await self._send_direct_response("\n\n".join([answer, *notices]), "IDLE")
 
     async def _generate_attachment_answer(self, messages, system, engine, *, has_images):
         backup_name = getattr(getattr(self, "config", None), "vision_fallback_model_name", "openbmb/MiniCPM-V-4_5")
@@ -1457,17 +1459,22 @@ class BlobOrchestrator:
         return response
 
     async def _handle_attachment_message(self, user_msg, *, activate=False, user_authored=True):
+        notices = []
+
+        async def respond(text, emote):
+            return await self._send_direct_response("\n\n".join([text, *notices]), emote)
+
         question = self.guardrails.sanitize_input(user_msg.text).strip() or "Explain these attached files."
         self._show_thinking()
         await self.dispatch_emote("WORKING")
         if user_authored:
             try:
                 await asyncio.to_thread(self._thread_write(self._save_document_user_message), question)
+            except PrivacyBlocked:
+                raise
             except Exception:
                 logger.exception("Could not save document-chat user memory")
-                self._clear_thinking()
-                print("Blob: I couldn't save what you shared to personal memory. It may be unavailable after a restart.\n")
-                self._show_thinking()
+                notices.append("I couldn't save what you shared to personal memory. It may be unavailable after a restart.")
         configured = getattr(getattr(self, "config", None), "vision_model_name", "auto")
         engine = None
         try:
@@ -1481,7 +1488,7 @@ class BlobOrchestrator:
             personal_context = await asyncio.to_thread(self._document_user_context, question)
         except Exception:
             logger.exception("Could not retrieve document-chat user memory")
-            return await self._send_direct_response(
+            return await respond(
                 "I couldn't load your saved personal context. Try again or check the backend logs; I won't guess which timetable rows are yours.",
                 "WORRIED")
         selected_images = sum(Path(path).suffix.lower() != ".pdf" for path in user_msg.attachments)
@@ -1495,7 +1502,7 @@ class BlobOrchestrator:
         available = max_bytes - prompt_size_bytes([
             {"role": "system", "content": system}, {"role": "user", "content": question}]) - 1
         if available < 512:
-            return await self._send_direct_response(
+            return await respond(
                 "That question leaves too little room for file content. Try a shorter question.", "CONFUSED")
         # Reserve a complete exchange only when usable file evidence can also
         # fit. A partial reservation can starve multi-file requests without
@@ -1516,7 +1523,7 @@ class BlobOrchestrator:
                 vision=engine is not None, text_budget=text_budget,
                 max_images=image_limit, search_context=personal_context), 3.0, "WAITING")
         except AttachmentError as exc:
-            return await self._send_direct_response(str(exc), "CONFUSED")
+            return await respond(str(exc), "CONFUSED")
         self._last_camera_action = None
         if activate:
             self._active_attachments = list(user_msg.attachments)
@@ -1532,7 +1539,7 @@ class BlobOrchestrator:
                     *history, current]
         bounded = fit_messages(messages, current, max_bytes)
         if bounded is None:
-            return await self._send_direct_response(
+            return await respond(
                 "These attachments exceed my current context limit. Send fewer files or ask about a specific PDF page.", "CONFUSED")
         try:
             remember = self._document_library().remember
@@ -1544,9 +1551,8 @@ class BlobOrchestrator:
                 self._show_thinking()
         except (DocumentError, OSError, sqlite3.Error) as exc:
             logger.warning("Document save failed: %s", exc)
-            self._clear_thinking()
-            print(f"Blob: These files are usable now but could not be saved for restart: {exc}\n")
-            self._show_thinking()
+            notices.append("These files are usable now but could not be saved for restart. "
+                           "Keep the originals. Check the backend logs.")
         await self.dispatch_emote("THINKING")
         try:
             response = await self._generate_attachment_answer(bounded, system, engine, has_images=attached.has_images)
@@ -1554,17 +1560,17 @@ class BlobOrchestrator:
             raise
         except Exception:
             logger.exception("Attachment analysis failed")
-            return await self._send_direct_response(
+            return await respond(
                 "I couldn't analyze these files with the AI provider. Try again, or set BLOB_VISION_MODEL "
                 "to an available vision model. Set it to off to use local OCR for image text.", "WORRIED")
         tool, _ = self._parse_tool_call(response)
         if tool:
-            return await self._send_direct_response(
+            return await respond(
                 "I couldn't produce an explanation of these files. Try asking about a specific part.", "CONFUSED")
         emote, response = self._extract_emote(self._strip_tool_call_block(_strip_reasoning(response)))
         response = self.guardrails.filter_output(response).strip()
         if not response:
-            return await self._send_direct_response("I couldn't read those files reliably. Try a clearer image or a specific page.", "CONFUSED")
+            return await respond("I couldn't read those files reliably. Try a clearer image or a specific page.", "CONFUSED")
         needs_selector = (callable(getattr(getattr(self, "semantic", None), "document_context", None)) and
                           self._needs_exam_selector(question, attached, personal_context))
         if needs_selector:
@@ -1578,11 +1584,10 @@ class BlobOrchestrator:
                 sources = [{"name": Path(source.path).name,
                             "original_path": await asyncio.to_thread(library.original_path, source.path),
                             "sha256": hashlib.sha256(source.data).hexdigest()} for source in attached.sources]
-                result = await self._save_generated_result(question, response, sources, personal_context)
+                result = await self._save_generated_result(question, response, sources, personal_context, notices=notices)
             except (DocumentError, OSError, sqlite3.Error) as exc:
                 logger.warning("Could not retain generated work provenance: %s", exc)
-                self._clear_thinking()
-                print("Blob: I couldn't save this answer for later. Keep it before deleting the source.\n")
+                notices.append("I couldn't save this answer for later. Keep it before deleting the source.")
         if result:
             self._last_saved_result_id = result["id"]
             self._prune_recent_context("[Saved result: ", {result["id"]})
@@ -1595,7 +1600,7 @@ class BlobOrchestrator:
             if face_summary:
                 response += "\n\n" + face_summary
         self._remember_recent_turn(question + "\n" + reference, history_response)
-        return await self._send_direct_response(response, emote)
+        return await respond(response, emote)
 
     async def _handle_hermes_turn(self, messages, system_prompt, text, required_tool, camera_discussion,
                                   *, screen_captured=False, current_request=None):

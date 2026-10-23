@@ -331,9 +331,12 @@ document copies, so their old sessions cannot be migrated.
 SQLite database inside `BLOB_MEMORY_DB_PATH`. Records keep the request, answer,
 source names/original paths/checksums, creation time, and user-context snapshot.
 They survive source deletion; automatic file-drop overviews are excluded, and
-privacy-shield checks pause result writes. Saving a new version of the same
-timetable updates that result, while unrelated answers remain separate. Storage
-quotas report failure rather than discarding existing work.
+manual privacy pause blocks result writes. Saving a new version of the same
+timetable updates that result. Notes, summaries, plans, and other answers include
+the normalized request in their identity so different chapters from one PDF
+remain separate; explicit edits retain the selected result's ID. Storage quotas
+report failure rather than discarding existing work. Source-copy and result-save
+failures appear alongside the answer in chat and frontend notifications.
 
 `/files forget` only deletes source copies and removes their source-only recent
 overviews. It preserves completed results and unrelated conversation. `/results`
@@ -376,6 +379,10 @@ about how capture works does not trigger a screenshot. Follow-up authorization
 uses the same intent detector. Regression tests combine these requests with
 active and saved timetables, detachment, real skill execution with test captures,
 and privacy, portal, and OCR failures.
+
+GNOME and Grim screenshot helpers have a ten-second timeout. Cancellation or
+timeout kills and reaps the helper before removing its temporary screenshot;
+successful captures return a detached image after closing the file.
 
 ### Skill Pill Ingestion Flow
 
