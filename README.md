@@ -2,8 +2,6 @@
 
 **A desktop companion that remembers your context, helps with your work, and lets you decide what it can see.**
 
-Built for the **NVIDIA × Nebius Global AI Hackathon — Personal AI Track**, powered by **NVIDIA Nemotron** through **Nebius Token Factory**.
-
 ![Blob's rendered expressions: neutral, happy, angry, shocked, thinking, sad, crying, and embarrassed](frontend_cpp/preview/desktop_emotions.png)
 
 *Previews from Blob's C++ renderer. The running slime is drawn and animated from code.*
