@@ -21,6 +21,9 @@ DECLINED_WEB = re.compile(
     r"(?:(?:want|need)\s+(?:you\s+)?to\s+)?"
     r"(?:(?:do|any|more|further|another|the|a|web|internet|online|browser)\s+){0,4}"
     r"(?:search(?:es|ing)?|brows(?:e|ing)|look(?:ing)?\s+up|(?:check|use|using)\s+(?:the\s+)?(?:web|internet|browser|online))\b", re.I)
+PUBLIC_SUBJECT = re.compile(
+    r"^\s*(?:what(?:['’]?s| is)|who(?:['’]?s| is)|tell me about)\s+"
+    r"(?P<subject>[\w][\w .&'’/-]{0,100}?)[?.!]*\s*$", re.I)
 
 
 def declines_web_lookup(text):
@@ -32,6 +35,25 @@ def live_travel_request(text):
     if re.search(r"\b(?:remember|recall|saved|stored|downloaded|files?|folders?|documents?)\b", text, re.I):
         return False
     return bool(TRAVEL_TOPIC.search(text) and (TRAVEL_LOOKUP.search(text) or TRAVEL_QUESTION.search(text)))
+
+
+def news_followup_query(text, recent=()):
+    """Resolve a news reference from the latest user-named public subject only."""
+    if (PERSONAL.search(text) or declines_web_lookup(text) or
+            not re.search(r"\b(?:news|updates)\b|\b(?:any|recent|latest)\s+update\b", text, re.I) or
+            not re.search(r"\b(?:it|its|that|this|them|their)\b", text, re.I)):
+        return None
+    previous = next((turn.get("content", "") for turn in reversed(list(recent))
+                     if turn.get("role") == "user"), "")
+    if not isinstance(previous, str) or PERSONAL.search(previous):
+        return None
+    match = PUBLIC_SUBJECT.fullmatch(previous)
+    if match is None:
+        return None
+    subject = match.group("subject").strip()
+    if subject.casefold() in {"it", "this", "that", "they", "them"}:
+        return None
+    return (subject + " " + text.strip())[:500]
 
 
 def product_names(text):

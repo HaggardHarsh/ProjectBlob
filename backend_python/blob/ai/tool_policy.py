@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 import json
 import re
 
-from blob.ai.web_grounding import declines_web_lookup, live_product_query, live_travel_request, requested_system_tools
+from blob.ai.web_grounding import declines_web_lookup, live_product_query, live_travel_request, news_followup_query, requested_system_tools
 from blob.ai.response_format import FORMAT_FAILURE
 from blob.skills.web_network import public_url
 
@@ -53,8 +53,9 @@ class ModelToolPolicy:
         if files:
             policy.allowed.add("file_search")
         product = live_product_query(request, recent)
+        news = news_followup_query(request, recent)
         declined = declines_web_lookup(request)
-        public = not declined and required_tool is None and bool(product or live_travel_request(request) or EXPLICIT_WEB.search(request) or (
+        public = not declined and required_tool is None and bool(news or product or live_travel_request(request) or EXPLICIT_WEB.search(request) or (
             PUBLIC_REQUEST.search(request) and not requested_system_tools(request) and
             not re.search(r"\b(?:my|our|remember|saved|forget)\b", request, re.I)))
         referenced_followup = FOLLOWUP.search(request) and (REFERENT.search(request) or (
@@ -65,8 +66,8 @@ class ModelToolPolicy:
             policy.allowed.update({"web_search", "web_read", "browser"})
             # The host chooses the outbound search text. A model cannot append
             # recalled private facts or encoded data to a search query.
-            policy.query = product or (request if public else previous.query + " " + request)
-            policy.public_input = (request + " " + (previous.public_input if followup else ""))[:4000]
+            policy.query = news or product or (request if public else previous.query + " " + request)
+            policy.public_input = ((news or request) + " " + (previous.public_input if followup else ""))[:4000]
             if followup:
                 policy.urls.update(previous.urls)
         for url in URL.findall(request):

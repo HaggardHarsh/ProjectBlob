@@ -102,6 +102,9 @@ skill did not complete its task. Never retry a reminder creation after success
 just to rephrase its result. For reminder cancellation or snoozing, get the
 exact ID from a list result if the user has not provided it. Use the current
 local clock to turn requested dates into ISO date/time arguments.
+Read-only results may be marked as evidence excerpts to keep a long task within
+the request budget. They are partial evidence: do not invent omitted values or
+repeat completed actions. Source URLs and action receipts retain their meaning.
 
 The app handles camera requests directly: opening/scanning, "Can you recognize me",
 "camera"/"webcam", and /camera scan|status|enroll <name>|forget <name>|list.

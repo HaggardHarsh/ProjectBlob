@@ -14,7 +14,7 @@ import sys
 import tempfile
 import time
 
-from blob.ai.context_budget import compact_browser_snapshots, prompt_size_bytes
+from blob.ai.context_budget import fit_agent_messages, is_context_limit_error, prompt_size_bytes, tool_schema_size_bytes
 from blob.ai.response_format import EMPTY_REPLY_CORRECTION, correction_messages, has_tool_protocol, visible_reply_text
 from blob.privacy.controls import PrivacyBlocked
 
@@ -157,6 +157,46 @@ class HermesAgentWrapper:
         async with self._lock:
             return await self._run(messages, system_prompt, tools, execute_tool, on_event)
 
+    def _fit_model_request(self, request, original_messages, *, reserve_bytes=0):
+        limit = min(self.config.max_prompt_bytes, self.last_run.get("effective_prompt_limit", self.config.max_prompt_bytes))
+        schema_bytes = tool_schema_size_bytes(request.get("tools", []))
+        before = prompt_size_bytes(request["messages"]) + schema_bytes
+        fitted = fit_agent_messages(request["messages"], original_messages,
+                                    limit - schema_bytes, reserve_bytes=reserve_bytes)
+        if fitted is None:
+            return False
+        request["messages"] = fitted
+        after = prompt_size_bytes(fitted) + schema_bytes
+        self.last_run["max_request_bytes"] = max(self.last_run.get("max_request_bytes", 0), after)
+        if after < before:
+            self.last_run["context_compactions"] = self.last_run.get("context_compactions", 0) + 1
+        return True
+
+    async def _create_with_context_recovery(self, request, original_messages, on_event):
+        try:
+            return await self.llm._create(**request)
+        except Exception as exc:
+            if not is_context_limit_error(exc):
+                raise
+            if (self.last_run.get("context_retries", 0) or
+                    self.last_run["model_calls"] >= self.config.agent_max_iterations):
+                raise AgentRuntimeError("The provider could not fit the required input after context recovery.") from exc
+            size = prompt_size_bytes(request["messages"]) + tool_schema_size_bytes(request.get("tools", []))
+            self.last_run["effective_prompt_limit"] = int(size * 0.75)
+            if not self._fit_model_request(request, original_messages):
+                raise AgentRuntimeError("The required input is too large even after automatic context trimming. Split the material into smaller parts.") from exc
+            if self.controls:
+                self.controls.check(cloud=True)
+            self.last_run["context_retries"] = 1
+            self.last_run["model_calls"] += 1
+            await on_event("model", {})
+            try:
+                return await self.llm._create(**request)
+            except Exception as retry_error:
+                if is_context_limit_error(retry_error):
+                    raise AgentRuntimeError("The provider could not fit the required input after context recovery.") from retry_error
+                raise
+
     async def _run(self, messages, system_prompt, tools, execute_tool, on_event):
         self.last_run = {"runtime": "hermes", "status": "starting", "model_calls": 0,
                          "tools": [], "duration_ms": 0, "worker_reused": self.worker_ready,
@@ -185,13 +225,12 @@ class HermesAgentWrapper:
                         request = frame.get("request")
                         if not isinstance(request, dict) or not isinstance(request.get("messages"), list):
                             raise AgentRuntimeError("Hermes returned an invalid model request.")
-                        request["messages"] = compact_browser_snapshots(request["messages"])
-                        if prompt_size_bytes(request["messages"]) > self.config.max_prompt_bytes:
-                            raise AgentRuntimeError("Hermes reached Blob's context limit. Narrow the request.")
                         requested = request.get("tools", [])
                         if not isinstance(requested, list) or any(
                             tool.get("function", {}).get("name") not in names for tool in requested):
                             raise AgentRuntimeError("Hermes requested an unapproved tool schema.")
+                        if not self._fit_model_request(request, messages, reserve_bytes=1024):
+                            raise AgentRuntimeError("The required input exceeds Blob's context limit even after automatic trimming. Split large input into smaller parts.")
                         if self.last_run["model_calls"] >= self.config.agent_max_iterations:
                             raise AgentRuntimeError("Hermes reached the model-call budget. Check /agent before retrying completed actions.")
                         self.last_run["model_calls"] += 1
@@ -205,16 +244,16 @@ class HermesAgentWrapper:
                                                for tool in requested)
                         try:
                             model_started = time.monotonic()
-                            response = await self.llm._create(**kwargs)
+                            response = await self._create_with_context_recovery(kwargs, messages, on_event)
                             if has_tool_protocol(response.choices[0].message.content, search_arguments=search_arguments):
                                 if self.last_run["model_calls"] >= self.config.agent_max_iterations:
                                     raise AgentRuntimeError("The model returned malformed tool text; that completion was discarded.")
+                                kwargs["messages"] = correction_messages(kwargs["messages"])
+                                if not self._fit_model_request(kwargs, messages):
+                                    raise AgentRuntimeError("The model returned malformed tool text; there is no room to repair it safely.")
                                 self.last_run["model_calls"] += 1
                                 self.last_run["format_retries"] = self.last_run.get("format_retries", 0) + 1
-                                kwargs["messages"] = correction_messages(kwargs["messages"])
-                                if prompt_size_bytes(kwargs["messages"]) > self.config.max_prompt_bytes:
-                                    raise AgentRuntimeError("The model returned malformed tool text; there is no room to repair it safely.")
-                                response = await self.llm._create(**kwargs)
+                                response = await self._create_with_context_recovery(kwargs, messages, on_event)
                                 if has_tool_protocol(response.choices[0].message.content, search_arguments=search_arguments):
                                     raise AgentRuntimeError("The model returned malformed tool text again. Those generated actions were not executed.")
                             message = response.choices[0].message
@@ -229,14 +268,14 @@ class HermesAgentWrapper:
                                     retry["tool_choice"] = "none"
                                 else:
                                     retry.pop("tool_choice", None)
-                                if prompt_size_bytes(retry["messages"]) > self.config.max_prompt_bytes:
+                                if not self._fit_model_request(retry, messages):
                                     raise AgentRuntimeError("The model returned an empty reply; there is no room to repair it safely.")
                                 if self.controls:
                                     self.controls.check(cloud=True)
                                 self.last_run["model_calls"] += 1
                                 self.last_run["empty_reply_retries"] = 1
                                 await on_event("model", {})
-                                response = await self.llm._create(**retry)
+                                response = await self._create_with_context_recovery(retry, messages, on_event)
                                 message = response.choices[0].message
                                 if (message.tool_calls or has_tool_protocol(message.content, search_arguments=search_arguments)
                                         or not visible_reply_text(message.content)):

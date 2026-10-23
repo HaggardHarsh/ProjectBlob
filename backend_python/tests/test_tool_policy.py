@@ -101,6 +101,62 @@ def test_current_local_requests_do_not_create_web_search_scope(tmp_path):
     assert not ModelToolPolicy.for_request("List my latest reminders", registry, required_tool="reminder").query
 
 
+@pytest.mark.parametrize("question", ["Whats eMudhra", "What's eMudhra?", "What’s eMudhra?", "Tell me about eMudhra"])
+def test_news_followup_search_keeps_the_user_named_subject(tmp_path, question):
+    registry, *_ = web_registry(tmp_path)
+    recent = [{"role": "user", "content": question},
+              {"role": "assistant", "content": "An invented private-company description."}]
+    policy = ModelToolPolicy.for_request("Any reccent news regarding it?", registry, recent=recent)
+    assert policy.query == "eMudhra Any reccent news regarding it?"
+    assert policy.arguments("web_search", {"query": "unrelated headlines"})["query"] == policy.query
+    assert "private-company" not in policy.public_input
+
+
+@pytest.mark.parametrize("previous", [
+    "Remember my private company code 83724",
+    "What is my bank password?",
+    "Let's talk about lunch",
+    "What is it?",
+])
+def test_news_followup_does_not_retrieve_a_private_or_old_subject(tmp_path, previous):
+    registry, *_ = web_registry(tmp_path)
+    recent = [{"role": "user", "content": "Whats eMudhra"},
+              {"role": "user", "content": previous},
+              {"role": "assistant", "content": "Imaginary secret subject"}]
+    policy = ModelToolPolicy.for_request("Any recent news regarding it?", registry, recent=recent)
+    assert policy.query == "Any recent news regarding it?"
+
+
+@pytest.mark.parametrize("utterance", ["Update it", "Can you update it?", "Forget it"])
+def test_update_actions_are_not_mistaken_for_news_lookups(tmp_path, utterance):
+    registry, *_ = web_registry(tmp_path)
+    recent = [{"role": "user", "content": "What is Python?"}]
+    assert ModelToolPolicy.for_request(utterance, registry, recent=recent).query is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("native", [False, True])
+async def test_news_followup_fetches_named_subject_before_answering(tmp_path, native):
+    blob = normal_chat()
+    blob.skill_registry, search, read, _ = web_registry(tmp_path)
+    blob._remember_recent_turn("Whats eMudhra", "A digital signature certificate provider.")
+    answer = "Synthetic eMudhra announcement. [Source](https://example.com/news)"
+    search.async_execute.return_value = web_result({"results": [{"url": "https://example.com/news"}]})
+    read.async_execute.return_value = web_result({"url": "https://example.com/news",
+        "text": "Synthetic eMudhra announcement for this regression test."})
+    if native:
+        async def respond(messages, system, tools, execute, event):
+            assert {"role": "user", "content": "Any reccent news regarding it?"} in messages
+            assert "Synthetic eMudhra announcement" in messages[-1]["content"]
+            return answer
+        blob.agent_runtime = SimpleNamespace(run=respond, last_run={})
+    else:
+        blob.llm.generate_from_messages.return_value = SimpleNamespace(content=answer)
+    assert await blob.handle_user_message(pb.UserMessage(text="Any reccent news regarding it?")) == answer
+    assert search.async_execute.call_args.args[0]["query"] == "eMudhra Any reccent news regarding it?"
+    read.async_execute.assert_awaited_once_with({"url": "https://example.com/news"})
+
+
 def test_only_read_sources_can_support_citations(tmp_path):
     registry, *_ = web_registry(tmp_path)
     policy = ModelToolPolicy.for_request("Search the web for Python", registry)

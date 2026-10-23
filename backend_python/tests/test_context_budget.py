@@ -1,4 +1,4 @@
-from blob.ai.context_budget import OMITTED_CONTEXT, fit_messages, prompt_size_bytes
+from blob.ai.context_budget import OMITTED_CONTEXT, fit_agent_messages, fit_messages, prompt_size_bytes
 
 
 def _message(role, content):
@@ -96,3 +96,25 @@ def test_latest_exchange_survives_when_only_background_must_be_removed():
     expected = [system, *latest, current]
     assert fit_messages([system, background, *latest, current], current,
                         prompt_size_bytes(expected)) == expected
+
+
+def test_agent_budget_keeps_screen_request_and_its_separate_observation():
+    system = _message("system", "System")
+    background = _message("user", "Historical background:\n" + "Old memory\n" * 100)
+    current = _message("user", "Read my screen")
+    observation = _message("user", "[Observation] A fresh screen capture succeeded. Voltage divider")
+    original = [system, background, current, observation]
+    expected = [system, current, observation]
+    assert fit_agent_messages(original, original, prompt_size_bytes(expected)) == expected
+    assert background["content"].endswith("Old memory\n")
+
+
+def test_agent_budget_never_discards_current_tool_calls_or_receipts():
+    system = _message("system", "System")
+    current = _message("user", "Any recent news regarding it?")
+    call = {"role": "assistant", "content": None, "tool_calls": [
+        {"id": "news", "type": "function", "function": {"name": "blob_web_search", "arguments": "{}"}}]}
+    receipt = {"role": "tool", "tool_call_id": "news", "content": "Verified source " * 1000}
+    original = [system, current]
+    assert fit_agent_messages([*original, call, receipt], original, 4096) is None
+    assert receipt["content"] == "Verified source " * 1000

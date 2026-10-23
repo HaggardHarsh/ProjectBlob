@@ -25,6 +25,64 @@ SCREEN_HELP = [
 ]
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("utterance", [
+    "whats going on my screen rn",
+    "whats happening on my screen rn",
+    "whats on my screen",
+    "what’s going on my screen rn",
+    "my screen, whats on it?",
+])
+async def test_informal_screen_question_captures_before_answer(tmp_path, utterance):
+    instance, screen, library = setup_screen_chat(tmp_path, "attached")
+    await instance.handle_user_message(blob_service_pb2.UserMessage(text=utterance))
+    screen.sampler.capture.assert_awaited_once_with()
+    observation = instance.llm.generate_from_messages.call_args.args[0][-1]["content"]
+    assert "A fresh screen capture succeeded" in observation
+    assert "Voltage divider" in observation
+    instance._handle_attachment_message.assert_not_awaited()
+    library.find.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_do_the_capture_after_reported_screen_access_denial(tmp_path):
+    instance, screen, library = setup_screen_chat(tmp_path, "attached")
+    instance._recent_turns = deque([
+        {"role": "user", "content": "whats going on my screen rn"},
+        {"role": "assistant", "content":
+            "I don’t have a fresh screen capture right now, so I can’t see what’s on your screen."},
+    ], maxlen=12)
+    await instance.handle_user_message(blob_service_pb2.UserMessage(text="do the capture"))
+    screen.sampler.capture.assert_awaited_once_with()
+    assert "A fresh screen capture succeeded" in instance.llm.generate_from_messages.call_args.args[0][-1]["content"]
+    instance._handle_attachment_message.assert_not_awaited()
+    library.find.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("answer", [
+    "The voltage divider gives 6 V.",
+    "I don’t have a screen‑capture tool available in this environment.",
+])
+async def test_hermes_screen_exchange_uses_fresh_capture_and_rejects_false_tool_denial(tmp_path, answer):
+    instance, screen, library = setup_screen_chat(tmp_path, "attached")
+    instance.agent_runtime = SimpleNamespace(run=AsyncMock(return_value=answer))
+    for count, utterance in enumerate(("whats going on my screen rn", "do the capture"), 1):
+        reply = await instance.handle_user_message(blob_service_pb2.UserMessage(text=utterance))
+        assert screen.sampler.capture.await_count == count
+        observation = instance.agent_runtime.run.call_args.args[0][-1]["content"]
+        assert "A fresh screen capture succeeded" in observation
+        assert "Voltage divider" in observation
+        if "tool available" in answer:
+            assert reply.startswith("I captured your screen")
+            assert "tool available" not in reply
+        else:
+            assert reply == answer
+    instance.llm.generate_from_messages.assert_not_awaited()
+    instance._handle_attachment_message.assert_not_awaited()
+    library.find.assert_not_called()
+
+
 def setup_screen_chat(tmp_path, mode):
     instance = orchestrator()
     instance.screen_sampler = SimpleNamespace(
@@ -169,11 +227,26 @@ def test_screen_followup_accepts_natural_help_but_not_unrelated_or_denied_captur
     assert not _wants_screen_capture("Go ahead", [{"role": "user", "content": "Don't capture my screen"}])
 
 
+@pytest.mark.parametrize("utterance", [
+    "Don’t capture my screen",
+    "No capture of my screen",
+    "Explain the PDF, not my screen",
+    "How do I capture my screen?",
+    "Why can’t you capture my screen?",
+    "Why won’t you capture my screen?",
+    "Explain the PDF instead",
+])
+def test_informal_screen_question_does_not_override_denial_or_topic_change(utterance):
+    history = [{"role": "user", "content": "whats going on my screen rn"}]
+    assert not _wants_screen_capture(utterance, history)
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("denial", [
     "I can't peek at your screen or any files you haven't dropped here.",
     "I can’t see your screen unless you send me a screenshot.",
     "I don't have access to your screen.",
+    "I don’t have a screen‑capture tool available in this environment.",
 ])
 async def test_prior_pdf_access_denial_cannot_override_a_successful_fresh_capture(tmp_path, denial):
     instance, screen, library = setup_screen_chat(tmp_path, "attached")

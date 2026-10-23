@@ -18,6 +18,7 @@ from blob.skills.base import SkillResult
 from blob.skills.registry import SkillRegistry
 from blob.skills.builtin.reminder import ReminderSkill
 from blob.ai.prompt_templates import SYSTEM_PROMPT
+from blob.ai.context_budget import prompt_size_bytes
 from blob.ipc import blob_service_pb2 as pb
 from test_attachments import orchestrator
 
@@ -166,6 +167,54 @@ async def test_context_limit_blocks_provider_before_model_call(tmp_path):
     with pytest.raises(AgentRuntimeError, match="context limit"):
         await run(runtime)
     runtime.llm._create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_native_loop_trims_history_as_sources_grow_without_replaying_tools(tmp_path):
+    runtime = bridge(tmp_path, '''
+messages=request['messages']
+for index in range(4):
+ emit({'type':'model','id':index*2,'request':{'messages':messages}})
+ receive()
+ if index < 3:
+  emit({'type':'tool','id':index*2+1,'name':'blob_web_search','args':{'query':'eMudhra news'}})
+  result=receive()['result']
+  messages += [
+   {'role':'assistant','content':None,'tool_calls':[{'id':str(index),'type':'function',
+    'function':{'name':'blob_web_search','arguments':'{"query":"eMudhra news"}'}}]},
+   {'role':'tool','tool_call_id':str(index),'content':json.dumps(result)}]
+emit({'type':'final','answer':'Verified news sources are ready.','completed':True})
+''')
+    runtime.config.max_prompt_bytes = 4096
+    subject = {"role": "user", "content": "Whats eMudhra"}
+    definition = {"role": "assistant", "content": "eMudhra provides digital signature certificates."}
+    current = {"role": "user", "content": "Any reccent news regarding it?"}
+    background = {"role": "user", "content": "Historical background:\n" + "Old memory\n" * 120}
+    old = [{"role": "user", "content": "Old question " * 30},
+           {"role": "assistant", "content": "Old answer " * 30}]
+    messages = [{"role": "system", "content": "System rules.\n" * 50},
+                background, *old, subject, definition, current]
+    assert prompt_size_bytes(messages) <= runtime.config.max_prompt_bytes
+    output = json.dumps({"checked_at": "2026-10-23", "untrusted_web_content": True,
+                         "results": [{"url": "https://example.com/news", "snippet": "Source snippet. " * 35}]})
+    execute = AsyncMock(return_value=SkillResult(output, True))
+    try:
+        assert await runtime.run(messages, messages[0]["content"], [{"name": "blob_web_search"}],
+                                 execute, AsyncMock()) == "Verified news sources are ready."
+        assert execute.await_count == 3
+        assert runtime.llm._create.await_count == 4
+        assert runtime.last_run["context_compactions"] >= 1
+        prompts = [call.kwargs["messages"] for call in runtime.llm._create.await_args_list]
+        assert all(prompt_size_bytes(prompt) <= runtime.config.max_prompt_bytes for prompt in prompts)
+        final = prompts[-1]
+        assert all(item in final for item in (subject, definition, current))
+        assert not any(item in final for item in old)
+        assert [item["tool_call_id"] for item in final if item["role"] == "tool"] == ["0", "1", "2"]
+        assert all(json.loads(item["content"]) == {"success": True, "output": output}
+                   for item in final if item["role"] == "tool")
+        assert background["content"].endswith("Old memory\n")
+    finally:
+        await runtime.close()
 
 
 @pytest.mark.asyncio

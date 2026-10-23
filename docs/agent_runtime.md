@@ -51,6 +51,23 @@ are not repaired. The repair disables tool calls, stays within the turn's model
 budget and timeout, and appears as `empty_reply_retries` in `/agent`. A second
 empty or invalid reply produces an explicit error without replaying actions.
 
+Both chat loops manage context as a task grows, independently of its topic.
+They remove old conversation pairs and trim retrieved background before reducing
+evidence. If successful read-only results still exceed the budget, Blob keeps
+marked excerpts with source metadata and preserves the tool-call/result pairs.
+Failed tools and action receipts, including reminder IDs, remain intact. The
+current user message, screen observation and selected images are not cut to make
+room. These changes affect the outgoing request, not the original stored data.
+
+Hermes includes native tool definitions in the request budget and reserves space
+for reply repairs when history can be reduced. Repair requests use the same
+compaction path. A provider context-length rejection can trigger one smaller
+model request within the existing deadline and model-call budget. This recovery
+does not restart the task or repeat tools. `/agent` reports context compactions,
+context retries and the largest outgoing request size without recording contents.
+If protected input cannot fit after compaction, Blob reports that the material
+must be split rather than silently dropping instructions or action receipts.
+
 ## Installation
 
 Hermes is a separate runtime, not a dependency in Blob's virtual environment.
