@@ -2,12 +2,23 @@
 #include <iostream>
 #include <algorithm>
 
+namespace {
+SDL_Point bottomLeftPosition(int display, int width, int height) {
+    SDL_Rect usable{};
+    if (SDL_GetDisplayUsableBounds(display, &usable) != 0 &&
+        SDL_GetDisplayBounds(display, &usable) != 0) return {24, 24};
+    return {usable.x + std::min(24, std::max(0, usable.w - width)),
+            usable.y + std::max(0, usable.h - height - 24)};
+}
+}
+
 OverlayWindow::OverlayWindow(int w, int h) : width_(w), height_(h) {
+    const auto position = bottomLeftPosition(0, width_, height_);
     // SDL_CreateShapedWindow creates a non-rectangular window whose visible
     // area is determined by an alpha-mask surface passed to SDL_SetWindowShape.
     window_ = SDL_CreateShapedWindow(
         "Blob",
-        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+        position.x, position.y,
         width_, height_,
         SDL_WINDOW_BORDERLESS | SDL_WINDOW_ALWAYS_ON_TOP | SDL_WINDOW_ALLOW_HIGHDPI);
 
@@ -17,7 +28,7 @@ OverlayWindow::OverlayWindow(int w, int h) : width_(w), height_(h) {
                   << "), falling back to normal window.\n";
         window_ = SDL_CreateWindow(
             "Blob",
-            SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+            position.x, position.y,
             width_, height_,
             SDL_WINDOW_BORDERLESS | SDL_WINDOW_ALWAYS_ON_TOP);
         if (!window_) {
@@ -87,11 +98,8 @@ void OverlayWindow::stopDrag() {
 }
 
 void OverlayWindow::resetPosition() {
-    SDL_Rect usable{};
-    int display = SDL_GetWindowDisplayIndex(window_);
-    if (SDL_GetDisplayUsableBounds(std::max(0, display), &usable) == 0)
-        SDL_SetWindowPosition(window_, usable.x + std::max(0, usable.w - width_ - 24),
-                             usable.y + std::max(0, usable.h - height_ - 24));
+    const auto position = bottomLeftPosition(std::max(0, SDL_GetWindowDisplayIndex(window_)), width_, height_);
+    SDL_SetWindowPosition(window_, position.x, position.y);
 }
 
 void OverlayWindow::restorePosition(int x, int y) {

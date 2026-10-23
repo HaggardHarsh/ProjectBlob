@@ -136,8 +136,8 @@ int runDesktop(int argc, char** argv) {
     auto settings = DesktopSettings::load(settingsPath);
     if (requestedScale) settings.scale = *requestedScale;
     if (reduced) settings.reducedMotion = true;
+    // Start each launch in the bottom-left corner, regardless of the last drag position.
     OverlayWindow window(int(width * settings.scale), int(height * settings.scale));
-    if (settings.positioned) window.restorePosition(settings.x, settings.y);
     Renderer renderer(window.getSDLWindow(), width, height);
     InputHandler input;
     GrpcClient client(address);
