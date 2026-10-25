@@ -13,6 +13,11 @@ SKILL_HELP = """/skills — list available tools
 /skills history — show recent execution status
 /skills doctor [tool] — check dependencies, privacy and command isolation
 /skills project [path|clear] — inspect or select the active approved project
+/skills packages | info <skill_id> — inspect installed skill metadata
+/skills preview <file> — validate and compare an update without installing
+/skills install <file> — install/update and report permission changes
+/skills rollback <skill_id> — restore the previous installed version
+/skills uninstall <skill_id> — remove an installed skill or custom override
 Example: /skills run git_status {}
 Example: /skills run weather {"location":"Delhi"}"""
 REMINDER_HELP = """/reminders — list scheduled reminders and IDs
@@ -49,6 +54,32 @@ async def handle_skill_command(registry, text):
                                    not report["load_errors"] and all(item["status"] == "ready" for item in report["tools"]))
             if parts[1] == "help":
                 return SkillResult(SKILL_HELP, True)
+            if parts[1] == "packages":
+                if len(parts) != 2:
+                    raise ValueError("Usage: /skills packages")
+                lines = [f"{item['slug']} · {item['version']} · {item['author'] or 'unknown author'} · "
+                         f"{'bundled' if item['bundled'] else 'installed'} · {len(item['tools'])} tools"
+                         for item in registry.packages()]
+                return SkillResult("Skill packages:\n" + ("\n".join(lines) or "No YAML skills loaded."), True)
+            if parts[1] in {"info", "preview", "install", "rollback", "uninstall"}:
+                tokens = shlex.split(text)
+                action = parts[1]
+                if len(tokens) != 3:
+                    raise ValueError(f"Usage: /skills {action} <{'file' if action in {'preview', 'install'} else 'skill_id'}>")
+                value = tokens[2]
+                if action == "info":
+                    return SkillResult(json.dumps(registry.package(value), indent=2, ensure_ascii=False), True)
+                if action == "preview":
+                    change = registry.preview_file(value)
+                    return SkillResult(f"Preview: {change['slug']}\n" + registry.format_change(change), True)
+                if action == "uninstall":
+                    output = registry.uninstall(value)
+                else:
+                    slug = registry.rollback(value) if action == "rollback" else registry.install_file(value)
+                    output = registry.installation_summary(slug)
+                if registry.controls:
+                    registry.controls.cancel_requests()
+                return SkillResult(output, True)
             if parts[1] == "project":
                 tokens = shlex.split(text)
                 controls = registry.controls
@@ -79,8 +110,12 @@ async def handle_skill_command(registry, text):
                 raise ValueError(SKILL_HELP)
             info = registry.describe(parts[1])
             from blob.skills.health import format_health
+            package = info["package"]
+            metadata = (f"Skill: {package['slug']} · version {package['version']} · "
+                        f"author {package['author'] or 'unknown'}\n") if package else ""
             return SkillResult(f"{info['name']}: {info['description']}\n"
                                f"Health: {format_health(registry.health(parts[1]))}\n"
+                               f"{metadata}"
                                f"Permissions: {', '.join(info['permissions']) or 'none'}\n"
                                f"Timeout: {info['timeout_seconds']} seconds\n"
                                "Arguments:\n" + json.dumps(info["arguments"], indent=2, ensure_ascii=False), True)

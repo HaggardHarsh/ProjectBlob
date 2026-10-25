@@ -8,6 +8,7 @@ import re
 from blob.ai.web_grounding import declines_web_lookup, live_product_query, live_travel_request, news_followup_query, requested_system_tools
 from blob.ai.response_format import FORMAT_FAILURE
 from blob.skills.web_network import public_url
+from blob.skills.discovery import discover
 
 
 MODEL_POLICY = ContextVar("blob_model_tool_policy", default=None)
@@ -48,8 +49,9 @@ class ModelToolPolicy:
     @classmethod
     def for_request(cls, request, registry, *, required_tool=None, files=False, previous=None, recent=()):
         policy = cls(request)
-        if registry.controls:
-            policy.active_project = registry.controls.state.get("active_project")
+        controls = getattr(registry, "controls", None)
+        if controls:
+            policy.active_project = controls.state.get("active_project")
         policy.allowed.update(requested_system_tools(request))
         if required_tool:
             policy.allowed.add(required_tool)
@@ -78,7 +80,8 @@ class ModelToolPolicy:
                 policy.urls.add(public_url(url.rstrip(".,;!?")))
             except ValueError:
                 pass
-        policy.allowed.update(match["name"] for match in registry.discover(request))
+        policy.allowed.update(match["name"] for match in discover(
+            registry.skills, request, disabled=controls.state["disabled_skills"] if controls else ()))
         return policy
 
     def arguments(self, name, args):

@@ -209,6 +209,8 @@ def main():
         from blob.skills.registry import SkillRegistry
         config = BlobConfig.load()
         registry = SkillRegistry(config.skills_dir_path, controls=PrivacyControls(config.privacy_settings_path))
+        registry.load_directory(Path(__file__).resolve().parent / "data/skills")
+        registry.load_directory(config.skills_dir_path)
         skill_id = registry.install_file(args.install_skill)
         print(registry.installation_summary(skill_id))
         return

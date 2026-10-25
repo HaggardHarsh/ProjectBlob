@@ -26,6 +26,10 @@ class SkillRegistry:
         self.skills = {}
         self.install_dir = Path(install_dir or Path.home() / ".blob/skills").expanduser()
         self._installed = {}
+        self._contents = {}
+        self._sources = {}
+        self._bundled = {}
+        self._changes = {}
         self.validator = SkillValidator()
         self.history = deque(maxlen=30)
         self.controls = controls
@@ -59,9 +63,38 @@ class SkillRegistry:
         tools = [self.health(name) for name in sorted(self._installed.get(slug, ()))]
         blocked = [item for item in tools if item["status"] == "blocked"]
         summary = f"Installed skill {slug} ({len(tools)} tools)."
+        if slug in self._changes:
+            summary += "\n" + self.format_change(self._changes[slug])
         if blocked:
             summary += " Installed but blocked:\n" + "\n".join(format_health(item) for item in blocked)
         return summary
+
+    def package(self, slug):
+        if slug not in self._installed:
+            raise ValueError("Unknown installed skill. Use /skills packages to list skill IDs.")
+        names = sorted(self._installed[slug])
+        definition = self.skills[names[0]].definition
+        source = self._sources[slug]
+        return {"slug": slug, "name": definition.name, "description": definition.description,
+                "version": definition.version, "author": definition.author, "color": definition.color,
+                "icon": definition.icon, "permissions": sorted(definition.permissions), "tools": names,
+                "commands": {tool.name: tool.command for tool in definition.tools},
+                "triggers": list(definition.triggers), "examples": list(definition.examples),
+                "source": str(source), "bundled": source == self._bundled.get(slug),
+                "sha256": hashlib.sha256(self._contents[slug]).hexdigest(),
+                "rollback_available": self._rollback_path(slug).is_file()}
+
+    def packages(self):
+        return [self.package(slug) for slug in sorted(self._installed)]
+
+    @staticmethod
+    def format_change(change):
+        lines = [f"Version: {change['previous_version'] or '(new)'} -> {change['version']}"]
+        for key, label in (("permissions_added", "Permissions added"), ("permissions_removed", "Permissions removed"),
+                           ("tools_added", "Tools added"), ("tools_removed", "Tools removed"),
+                           ("tools_changed", "Tools changed")):
+            lines.append(f"{label}: {', '.join(change[key]) or 'none'}")
+        return "\n".join(lines)
 
     def describe(self, name):
         skill = self.get_skill(name)
@@ -73,7 +106,8 @@ class SkillRegistry:
                 "timeout_seconds": getattr(skill, "timeout_seconds", 15),
                 "model_callable": getattr(skill, "model_callable", True),
                 "triggers": list(getattr(skill, "triggers", ())),
-                "examples": list((*skill.definition.examples, *skill.tool.examples)) if isinstance(skill, CommandSkill) else []}
+                "examples": list((*skill.definition.examples, *skill.tool.examples)) if isinstance(skill, CommandSkill) else [],
+                "package": self.package(skill.definition.slug) if isinstance(skill, CommandSkill) and skill.definition.slug in self._installed else None}
 
     def prompt_text(self, *, permitted=None):
         lines = []
@@ -144,7 +178,7 @@ class SkillRegistry:
             if close is not None:
                 await close()
 
-    def install_file(self, file_path: str | Path, expected_hash: bytes | None = None, persist: bool = True) -> str:
+    def _read_file(self, file_path, expected_hash=None):
         source = Path(file_path).expanduser()
         if not source.name.endswith(".skill.yaml") or source.is_symlink() or not source.is_file():
             raise ValueError("Choose a regular .skill.yaml file.")
@@ -158,31 +192,127 @@ class SkillRegistry:
             definition = self.validator.validate(content.decode("utf-8"))
         except UnicodeDecodeError as exc:
             raise ValueError("Skill file must be UTF-8 text.") from exc
+        return source.resolve(), content, definition
+
+    def _prepare(self, definition):
         new_tools = {f"{definition.slug}.{tool.name}": CommandSkill(definition, tool) for tool in definition.tools}
         for tool in new_tools.values():
             tool.controls = self.controls
         for name in new_tools:
             if name in self.skills and name not in self._installed.get(definition.slug, set()):
                 raise ValueError(f"Skill tool conflicts with an existing tool: {name}")
+        return new_tools
+
+    def _comparison(self, definition, content):
+        slug = definition.slug
+        previous = self.package(slug) if slug in self._installed else None
+        old_permissions = set(previous["permissions"]) if previous else set()
+        old_tools = set(previous["tools"]) if previous else set()
+        old_definitions = {name: self.skills[name].tool for name in old_tools}
+        names = {f"{slug}.{tool.name}" for tool in definition.tools}
+        return {"slug": slug, "version": definition.version,
+                "previous_version": previous["version"] if previous else None,
+                "changed": content != self._contents.get(slug),
+                "permissions_added": sorted(definition.permissions - old_permissions),
+                "permissions_removed": sorted(old_permissions - definition.permissions),
+                "tools_added": sorted(names - old_tools), "tools_removed": sorted(old_tools - names),
+                "tools_changed": sorted(f"{slug}.{tool.name}" for tool in definition.tools
+                                        if f"{slug}.{tool.name}" in old_definitions and
+                                        old_definitions[f"{slug}.{tool.name}"] != tool)}
+
+    def preview_file(self, file_path):
+        _, content, definition = self._read_file(file_path)
+        self._prepare(definition)
+        return self._comparison(definition, content)
+
+    def _rollback_path(self, slug):
+        if self.install_dir.is_symlink() or (self.install_dir / ".rollback").is_symlink():
+            raise ValueError("Skill storage directories must not be symbolic links.")
+        return self.install_dir / ".rollback" / f"{slug}.skill.yaml"
+
+    @staticmethod
+    def _write_file(destination, content):
+        destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if destination.parent.is_symlink():
+            raise ValueError("Skill storage directories must not be symbolic links.")
+        os.chmod(destination.parent, 0o700)
+        with tempfile.NamedTemporaryFile(mode="wb", dir=destination.parent, prefix=".skill-", delete=False) as temporary:
+            temp_path = Path(temporary.name)
+            try:
+                temporary.write(content)
+                temporary.flush()
+                os.fsync(temporary.fileno())
+            except BaseException:
+                temp_path.unlink(missing_ok=True)
+                raise
+        try:
+            os.chmod(temp_path, 0o600)
+            temp_path.replace(destination)
+        finally:
+            temp_path.unlink(missing_ok=True)
+
+    def install_file(self, file_path: str | Path, expected_hash: bytes | None = None, persist: bool = True) -> str:
+        source, content, definition = self._read_file(file_path, expected_hash)
+        new_tools = self._prepare(definition)
+        change = self._comparison(definition, content)
+        slug = definition.slug
         if persist:
-            self.install_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-            os.chmod(self.install_dir, 0o700)
-            destination = self.install_dir / f"{definition.slug}.skill.yaml"
-            if source.resolve() != destination.resolve():
-                with tempfile.NamedTemporaryFile(mode="wb", dir=self.install_dir, prefix=".skill-", delete=False) as temporary:
-                    temporary.write(content)
-                    temp_path = Path(temporary.name)
-                try:
-                    os.chmod(temp_path, 0o600)
-                    temp_path.replace(destination)
-                finally:
-                    temp_path.unlink(missing_ok=True)
+            if self.install_dir.is_symlink():
+                raise ValueError("Skill storage directories must not be symbolic links.")
+            if self.controls:
+                self.controls.check()
+            previous = self._contents.get(slug)
+            if previous is not None and previous != content:
+                self._write_file(self._rollback_path(slug), previous)
+            destination = self.install_dir / f"{slug}.skill.yaml"
+            self._write_file(destination, content)
+            old_source = self._sources.get(slug)
+            if old_source and old_source != destination.resolve() and old_source.parent == self.install_dir.resolve():
+                old_source.unlink(missing_ok=True)
+            source = destination.resolve()
+        elif source.parent == (Path(__file__).resolve().parents[1] / "data/skills"):
+            self._bundled[slug] = source
         for name in self._installed.get(definition.slug, set()):
             self.skills.pop(name, None)
         self.skills.update(new_tools)
-        self._installed[definition.slug] = set(new_tools)
+        self._installed[slug] = set(new_tools)
+        self._contents[slug] = content
+        self._sources[slug] = source
+        self._changes[slug] = change
         logger.info("Installed skill %s with %d tools", definition.name, len(new_tools))
-        return definition.slug
+        return slug
+
+    def rollback(self, slug):
+        self.package(slug)  # Validate the ID before constructing a storage path.
+        path = self._rollback_path(slug)
+        if not path.is_file():
+            raise ValueError("No previous version is available for this skill.")
+        _, _, definition = self._read_file(path)
+        if definition.slug != slug:
+            raise ValueError("Rollback snapshot does not match this skill.")
+        return self.install_file(path)
+
+    def uninstall(self, slug):
+        package = self.package(slug)
+        source = self._sources[slug]
+        if package["bundled"] or source.parent != self.install_dir.resolve():
+            raise ValueError("Bundled/external skills cannot be uninstalled here. Use /privacy disable <tool>.")
+        if self.controls:
+            self.controls.check()
+        bundled = self._bundled.get(slug)
+        if bundled:
+            self._prepare(self._read_file(bundled)[2])
+        source.unlink(missing_ok=True)
+        self._rollback_path(slug).unlink(missing_ok=True)
+        for name in self._installed.pop(slug):
+            self.skills.pop(name, None)
+        self._contents.pop(slug, None)
+        self._sources.pop(slug, None)
+        self._changes.pop(slug, None)
+        self.load_errors.pop(str(source), None)
+        if bundled:
+            self.install_file(bundled, persist=False)
+        return f"Uninstalled {slug}." + (" Restored the bundled skill." if bundled else "")
 
     def load_directory(self, directory: str | Path) -> list[str]:
         path = Path(directory).expanduser()

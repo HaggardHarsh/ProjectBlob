@@ -49,6 +49,10 @@ class SkillDefinition:
     emote_on_success: str = "HAPPY"
     emote_on_failure: str = "CONFUSED"
     examples: tuple[str, ...] = ()
+    version: str = "0.0.0"
+    author: str = ""
+    color: str = ""
+    icon: str = ""
 
 
 def phrase_list(data, key):
@@ -75,6 +79,17 @@ class SkillValidator:
         slug = re.sub(r"[^a-z0-9]+", "_", name.casefold()).strip("_")
         if not slug:
             raise ValueError("Skill name must contain letters or numbers.")
+        metadata = {}
+        for field, default, limit in (("version", "0.0.0", 100), ("author", "", 200),
+                                      ("color", "", 7), ("icon", "", 100)):
+            value = data.get(field, default)
+            if not isinstance(value, str) or len(value) > limit or any(ord(char) < 32 for char in value):
+                raise ValueError(f"Skill {field} must be a string of at most {limit} printable characters.")
+            metadata[field] = value.strip()
+        if not re.fullmatch(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?", metadata["version"]):
+            raise ValueError("Skill version must use major.minor.patch, optionally with a prerelease/build suffix.")
+        if metadata["color"] and not re.fullmatch(r"#[0-9a-fA-F]{6}", metadata["color"]):
+            raise ValueError("Skill color must be a six-digit hex color, such as #4FC3F7.")
         raw_permissions = data.get("permissions", [])
         if not isinstance(raw_permissions, list) or any(not isinstance(item, str) for item in raw_permissions):
             raise ValueError("Skill permissions must be a list of strings.")
@@ -186,4 +201,5 @@ class SkillValidator:
             response_template=response_template,
             emote_on_success=success_emote,
             emote_on_failure=failure_emote,
+            **metadata,
         )
