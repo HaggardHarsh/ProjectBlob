@@ -29,6 +29,7 @@ class SkillRegistry:
         self.validator = SkillValidator()
         self.history = deque(maxlen=30)
         self.controls = controls
+        self.load_errors = {}
 
     def register(self, skill):
         if skill.name in self.skills:
@@ -44,6 +45,23 @@ class SkillRegistry:
         from blob.skills.discovery import discover
         disabled = self.controls.state["disabled_skills"] if self.controls else ()
         return discover(self.skills, request, disabled=disabled)
+
+    def health(self, name):
+        from blob.skills.health import health
+        return health(self, name)
+
+    def doctor(self, name=None):
+        from blob.skills.health import doctor
+        return doctor(self, name)
+
+    def installation_summary(self, slug):
+        from blob.skills.health import format_health
+        tools = [self.health(name) for name in sorted(self._installed.get(slug, ()))]
+        blocked = [item for item in tools if item["status"] == "blocked"]
+        summary = f"Installed skill {slug} ({len(tools)} tools)."
+        if blocked:
+            summary += " Installed but blocked:\n" + "\n".join(format_health(item) for item in blocked)
+        return summary
 
     def describe(self, name):
         skill = self.get_skill(name)
@@ -172,9 +190,12 @@ class SkillRegistry:
             return []
         errors = []
         for file_path in sorted(path.glob("*.skill.yaml")):
+            key = str(file_path.resolve())
             try:
                 self.install_file(file_path, persist=False)
+                self.load_errors.pop(key, None)
             except (OSError, ValueError) as exc:
+                self.load_errors[key] = str(exc)
                 errors.append(f"{file_path.name}: {exc}")
                 logger.warning("Could not load skill %s: %s", file_path, exc)
         return errors

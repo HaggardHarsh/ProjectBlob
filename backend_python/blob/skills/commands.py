@@ -1,5 +1,6 @@
 """Terminal controls for the skill hub; these do not call the cloud model."""
 
+import asyncio
 import json
 import shlex
 
@@ -9,6 +10,7 @@ SKILL_HELP = """/skills — list available tools
 /skills <tool> — inspect arguments and permissions
 /skills run <tool> <JSON arguments> — run a tool directly
 /skills history — show recent execution status
+/skills doctor [tool] — check dependencies, privacy and command isolation
 Example: /skills run git_status {}
 Example: /skills run weather {"location":"Delhi"}"""
 REMINDER_HELP = """/reminders — list scheduled reminders and IDs
@@ -30,8 +32,19 @@ async def handle_skill_command(registry, text):
                 lines = []
                 for name in sorted(registry.skills):
                     info = registry.describe(name)
-                    lines.append(f"{name}: {info['description']}")
+                    lines.append(f"{name} [{registry.health(name)['status']}]: {info['description']}")
+                if registry.load_errors:
+                    lines.append(f"{len(registry.load_errors)} skill file(s) failed to load. Use /skills doctor.")
                 return SkillResult("Available tools:\n" + "\n".join(lines) + "\n\n" + SKILL_HELP, True)
+            if parts[1] == "doctor":
+                if len(parts) > 3:
+                    raise ValueError("Usage: /skills doctor [tool]")
+                from blob.skills.health import format_health
+                report = await asyncio.to_thread(registry.doctor, parts[2] if len(parts) == 3 else None)
+                lines = [format_health(item) for item in report["tools"]]
+                lines.extend(f"Load failed: {path}: {error}" for path, error in report["load_errors"].items())
+                return SkillResult("Skill health:\n" + ("\n".join(lines) or "No tools installed."),
+                                   not report["load_errors"] and all(item["status"] == "ready" for item in report["tools"]))
             if parts[1] == "help":
                 return SkillResult(SKILL_HELP, True)
             if parts[1] == "history":
@@ -45,7 +58,9 @@ async def handle_skill_command(registry, text):
             if len(parts) != 2:
                 raise ValueError(SKILL_HELP)
             info = registry.describe(parts[1])
+            from blob.skills.health import format_health
             return SkillResult(f"{info['name']}: {info['description']}\n"
+                               f"Health: {format_health(registry.health(parts[1]))}\n"
                                f"Permissions: {', '.join(info['permissions']) or 'none'}\n"
                                f"Timeout: {info['timeout_seconds']} seconds\n"
                                "Arguments:\n" + json.dumps(info["arguments"], indent=2, ensure_ascii=False), True)

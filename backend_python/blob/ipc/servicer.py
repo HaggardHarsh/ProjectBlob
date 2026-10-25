@@ -132,7 +132,7 @@ class BlobServiceServicer(blob_service_pb2_grpc.BlobServiceServicer):
                 )
                 response.skill_ack.skill_name = skill_id
                 response.skill_ack.success = True
-                response.skill_ack.description = f"Installed skill {skill_id}."
+                response.skill_ack.description = self.orchestrator.skill_registry.installation_summary(skill_id)
             except (OSError, ValueError, PrivacyBlocked) as exc:
                 response.skill_ack.skill_name = request.skill_name or request.file_path
                 response.skill_ack.success = False

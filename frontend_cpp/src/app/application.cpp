@@ -261,7 +261,8 @@ int runDesktop(int argc, char** argv) {
             } else if (event->has_skill_ack()) {
                 expression = event->skill_ack().success() ? BlobExpression::SUCCESS : BlobExpression::ERROR;
                 intensity = 0.7f; expressionUntil = now + 2200;
-                std::cout << (event->skill_ack().success() ? "Skill installed.\n" : "Skill installation failed.\n");
+                std::cout << (event->skill_ack().success() ? event->skill_ack().description() :
+                              "Skill installation failed: " + event->skill_ack().error_message()) << '\n';
             } else if (event->has_emote()) {
                 expression = expressionFor(event->emote().emote());
                 intensity = event->emote().intensity() > 0 ? event->emote().intensity() : 0.6f;

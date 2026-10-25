@@ -109,6 +109,8 @@ async def main_async(*, daemon=False):
     bundled_skills = Path(__file__).resolve().parent / "data/skills"
     skill_registry.load_directory(bundled_skills)
     skill_registry.load_directory(config.skills_dir_path)
+    if skill_registry.load_errors:
+        print(f"Blob: {len(skill_registry.load_errors)} skill file(s) failed to load. Run /skills doctor for details.", flush=True)
     
     # ── Orchestrator (with screen sampler) ───────────────────────────
     orchestrator = BlobOrchestrator(
@@ -206,8 +208,9 @@ def main():
     if args.install_skill:
         from blob.skills.registry import SkillRegistry
         config = BlobConfig.load()
-        skill_id = SkillRegistry(config.skills_dir_path).install_file(args.install_skill)
-        print(f"Installed skill: {skill_id}")
+        registry = SkillRegistry(config.skills_dir_path, controls=PrivacyControls(config.privacy_settings_path))
+        skill_id = registry.install_file(args.install_skill)
+        print(registry.installation_summary(skill_id))
         return
     asyncio.run(main_async(daemon=args.daemon))
 
