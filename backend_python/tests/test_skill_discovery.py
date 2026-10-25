@@ -31,6 +31,10 @@ def test_triggers_names_and_word_boundaries(registry):
     assert not registry.discover("Don't run git_status_checker")
     assert not registry.discover("Hello, how are you?")
     assert not registry.discover("Search for a restaurant")
+    assert not registry.discover("Where is Rome?")
+    assert not registry.discover("Locate a restaurant")
+    assert not registry.discover("Don't show recent commits")
+    assert not registry.discover("Please don’t list git_status_checker")
 
 
 def test_descriptions_and_examples_are_used_and_validated(tmp_path):

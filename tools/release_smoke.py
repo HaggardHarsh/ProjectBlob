@@ -47,6 +47,31 @@ async def check_daemon(root):
                 assert "Cloud assistance is off" in await send("Hello")
                 assert "synthetic release reminder" in await send("/reminders add 5 synthetic release reminder")
                 assert "synthetic release reminder" in await send("/reminders")
+                project = root / "project"
+                project.mkdir()
+                approval = await send(f"/privacy allow {project}")
+                assert str(project) in approval, approval
+                selection = await send(f"/skills project {project}")
+                assert str(project) in selection, selection
+                assert str(project) in await send("/skills project")
+                skill_file = root / "wheel_probe.skill.yaml"
+                definition = ('skill:\n  name: Wheel Probe\n  description: Verify installed wheel skill management\n'
+                              '  version: "1.0.0"\n  author: Release Smoke\n  permissions: [shell.execute]\n'
+                              '  tools:\n    - name: echo\n      command: echo wheel-skill-v1\n')
+                skill_file.write_text(definition)
+                assert "Permissions added: shell.execute" in await send(f"/skills preview {skill_file}")
+                assert "Installed skill wheel_probe" in await send(f"/skills install {skill_file}")
+                assert json.loads(await send("/skills info wheel_probe"))["version"] == "1.0.0"
+                skill_file.write_text(definition.replace("1.0.0", "2.0.0").replace("wheel-skill-v1", "wheel-skill-v2"))
+                assert "Tools changed: wheel_probe.echo" in await send(f"/skills preview {skill_file}")
+                assert "Version: 1.0.0 -> 2.0.0" in await send(f"/skills install {skill_file}")
+                assert "Version: 2.0.0 -> 1.0.0" in await send("/skills rollback wheel_probe")
+                health = await send("/skills doctor wheel_probe.echo")
+                if "wheel_probe.echo: ready" in health:
+                    assert "wheel-skill-v1" in await send("/skills run wheel_probe.echo {}")
+                else:
+                    assert "blocked" in health
+                assert "Uninstalled wheel_probe" in await send("/skills uninstall wheel_probe")
                 stream = stub.EventStream(metadata=metadata)
                 await stream.write(pb.FrontendEvent(heartbeat=pb.HeartbeatPing()))
                 try:
@@ -119,7 +144,8 @@ def main():
     print(json.dumps({"version": blob.__version__, "wheel_import": True, "resources": True,
                       "ipc_import": True, "cloud_opt_in": True, "daemon_without_key": True,
                       "local_reminders": True, "durable_reminder_ack": True,
-                      "missing_key_message": True, "openshell_policy": True}))
+                      "missing_key_message": True, "openshell_policy": True,
+                      "skill_management": True, "project_selection": True}))
 
 
 if __name__ == "__main__":

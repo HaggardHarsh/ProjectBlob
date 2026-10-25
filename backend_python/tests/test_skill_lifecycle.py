@@ -182,3 +182,38 @@ def test_cli_upgrade_loads_current_version_and_keeps_a_snapshot(tmp_path, monkey
     restarted.load_directory(registry.install_dir)
     restarted.rollback("echo_example")
     assert restarted.package("echo_example")["version"] == "1.0.0"
+
+
+@pytest.mark.asyncio
+async def test_management_commands_keep_their_request_alive_and_cancel_other_work(tmp_path):
+    import asyncio
+    from blob.ipc import blob_service_pb2 as pb
+    from test_reply_presentation import normal_chat
+
+    registry, source = install(tmp_path)
+    controls = PrivacyControls(tmp_path / "private/privacy.json")
+    project = tmp_path / "project"
+    project.mkdir()
+    controls.approve(project)
+    registry.controls = controls
+    blob = normal_chat()
+    blob.controls = controls
+    blob.skill_registry = registry
+    pending = asyncio.create_task(asyncio.sleep(3600))
+    controls.tasks.add(pending)
+    try:
+        selection = await blob.handle_user_message(pb.UserMessage(text=f"/skills project {project}"))
+        assert f"Active project: {project}" in selection
+        await asyncio.sleep(0)
+        assert pending.cancelled()
+        source.write_text(definition("2.0.0"))
+        for text, expected in (
+            (f"/skills install {source}", "Version: 1.0.0 -> 2.0.0"),
+            ("/skills rollback echo_example", "Version: 2.0.0 -> 1.0.0"),
+            ("/skills uninstall echo_example", "Uninstalled echo_example"),
+        ):
+            assert expected in await blob.handle_user_message(pb.UserMessage(text=text))
+    finally:
+        pending.cancel()
+        await asyncio.gather(pending, return_exceptions=True)
+        controls.tasks.discard(pending)

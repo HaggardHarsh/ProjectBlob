@@ -1176,8 +1176,15 @@ class BlobOrchestrator:
                 if opener:
                     self._recent_turns.append({"role": "assistant", "content": opener})
             if stripped and stripped.split(maxsplit=1)[0].lower() in {"/skills", "/reminders"}:
-                result = await self._await_with_progress(
-                    handle_skill_command(self.skill_registry, stripped), 3.0, "WAITING")
+                parts = stripped.split(maxsplit=2)
+                if parts[0].lower() == "/skills" and len(parts) > 1 and parts[1] in {
+                        "project", "install", "rollback", "uninstall"}:
+                    # These controls cancel other tracked requests. Keep them in
+                    # this request's task so cancel_requests() excludes itself.
+                    result = await handle_skill_command(self.skill_registry, stripped)
+                else:
+                    result = await self._await_with_progress(
+                        handle_skill_command(self.skill_registry, stripped), 3.0, "WAITING")
                 self._remember_recent_turn(stripped, result.output)
                 return await self._send_direct_response(result.output, result.emote_suggestion)
             if stripped and stripped.split(maxsplit=1)[0].lower() == "/files":

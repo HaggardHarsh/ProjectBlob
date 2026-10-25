@@ -27,7 +27,7 @@ Blob brings that continuity onto the desktop as a small blue slime with expressi
 | **Actions backed by results** | Reminders, searches, browser lookups, and permitted local tools run through the host's skill registry. Tool receipts establish what actually ran; failed actions are reported as failures. |
 | **Companionship with boundaries** | Conversation guidance follows tone preferences, respects requests for no advice or questions, and keeps declined tasks closed. Occasional conversation invitations are a separate opt-in. |
 | **Local face enrollment** | Explicit camera commands can compare faces with locally enrolled samples. Saved profiles are checked directly rather than guessed from chat memory. |
-| **Expandable skills** | Drop a validated `.skill.yaml` file onto Blob to add an allowed command tool. Folder approvals, argument validation, and command isolation apply to execution. |
+| **Expandable skills** | Drop a validated `.skill.yaml` file onto Blob to add command tools discoverable through triggers and examples. Inspect health, select an approved project, preview updates, and roll back installed skills. |
 
 These features work together: a remembered study preference can shape a document answer, that answer can become saved work, and a confirmed reminder can bring you back to it later.
 
@@ -245,6 +245,8 @@ This exercises Nemotron memory selection, a personalized document plan, saved-re
 | Task | Commands |
 | --- | --- |
 | Inspect runtime and tools | `/agent`, `/skills` |
+| Diagnose tools and choose a project | `/skills doctor`, `/skills project /approved/path` |
+| Manage installed skills | `/skills packages`, `/skills info <skill_id>`, `/skills preview <file>`, `/skills install <file>`, `/skills rollback <skill_id>`, `/skills uninstall <skill_id>` |
 | Manage selected and saved documents | `/files`, `/files saved`, `/files clear` |
 | Inspect or replay saved answers | `/results`, `/results show <id>` |
 | Inspect or delete personal memories | `/memory`, `/memory show <tier> <id>`, `/memory forget <tier> <id>` |

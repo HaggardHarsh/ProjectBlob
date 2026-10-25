@@ -8,8 +8,8 @@ import re
 
 ACTION = re.compile(r"\b(?:run|execute|show|check|list|find|search|locate|get|display|inspect|read)\b", re.I)
 EXPLANATION = re.compile(r"^\s*(?:please\s+)?(?:explain|describe|teach|what\s+(?:is|are)|how\s+(?:does|do))\b", re.I)
-NEGATED = re.compile(r"\b(?:don't|do not|never|without|avoid)\s+(?:\w+\s+){0,2}(?:run|execute|use|check|search|read)\b", re.I)
-STOP_WORDS = frozenset("a an and are as at by can check current display execute file files find for from get how i in is it list local me my of on or please read run search show the this to tool tools use what with you your".split())
+NEGATED = re.compile(r"\b(?:don't|do not|never|without|avoid)\s+(?:\w+\s+){0,2}(?:run|execute|use|check|search|read|show|list|find|locate|get|display|inspect)\b", re.I)
+STOP_WORDS = frozenset("a an and are as at by can check current display execute file files find for from get how i in is it list local locate me my of on or please read run search show the this to tool tools use what where with you your".split())
 
 
 def normalized(value):
@@ -30,7 +30,7 @@ def discover(skills, request, *, disabled=()):
     """Return ordered installed-tool candidates with inspectable match reasons."""
     from blob.skills.command_skill import CommandSkill
 
-    if EXPLANATION.search(request) or NEGATED.search(request):
+    if EXPLANATION.search(request) or NEGATED.search(request.replace("’", "'")):
         return []
     text = normalized(request)
     matches = []
