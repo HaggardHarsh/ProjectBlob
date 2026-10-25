@@ -339,7 +339,9 @@ async def test_model_cannot_create_unrequested_reminder_or_change_wrong_action(u
         SimpleNamespace(content="I couldn't complete that action."),
     ]))
     try:
-        await instance.handle_user_message(blob_service_pb2.UserMessage(text=user_text))
+        # Exercise model authorization even when the ordinary relative-timer
+        # route can now satisfy this request without a model.
+        await instance._handle_text_message(blob_service_pb2.UserMessage(text=user_text))
         reminder.async_execute.assert_not_called()
         assert reminder.reminders == []
     finally:

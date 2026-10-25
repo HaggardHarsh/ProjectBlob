@@ -38,6 +38,7 @@ from blob.memory.semantic import SemanticMemory, is_temporary_fact
 from blob.memory.context import build_memory_view, current_profile_episode
 from blob.memory.lifecycle import SHORT_RECALL_DAYS, academic_selector_known, topic_key
 from blob.skills.commands import handle_skill_command
+from blob.skills.reminder_requests import relative_reminder_request
 from blob.skills.registry import SkillRegistry
 from blob.skills.builtin.camera import CAMERA_OPEN_GUIDANCE
 
@@ -1113,8 +1114,11 @@ class BlobOrchestrator:
         if controls and command in {"/privacy", "/memory"}:
             text = await handle_control_command(self, user_msg.text.strip())
             return await self._send_direct_response(text, "IDLE")
+        reminder_request = (relative_reminder_request(user_msg.text)
+                            if not getattr(user_msg, "attachments", ()) else None)
         # Listing/deletion and direct reminders remain available while paused.
-        local = (command in {"/skills", "/reminders", "/files", "/results", "/camera"} or
+        local = (reminder_request is not None or
+                 command in {"/skills", "/reminders", "/files", "/results", "/camera"} or
                  bool(self._image_identity_paths(user_msg)) or
                  (not getattr(user_msg, "attachments", ()) and (
                      _requested_face(user_msg.text) is not None or
@@ -1122,7 +1126,7 @@ class BlobOrchestrator:
         generation = controls.generation if controls else None
         if controls and controls.paused:
             parts = user_msg.text.strip().lower().split()
-            allowed = (command in {"/skills", "/reminders"} or
+            allowed = (reminder_request is not None or command in {"/skills", "/reminders"} or
                        (command == "/files" and (len(parts) == 1 or parts[1] in {"saved", "forget", "clear", "remove"})) or
                        (command == "/results" and (len(parts) == 1 or parts[1] in {"show", "forget"})) or
                        camera_action == "list" or
@@ -1192,6 +1196,12 @@ class BlobOrchestrator:
             if stripped and stripped.split(maxsplit=1)[0].lower() == "/results":
                 return await self._handle_results_command(stripped)
             if not getattr(user_msg, "attachments", ()):
+                reminder_request = relative_reminder_request(stripped)
+                if reminder_request is not None:
+                    result = await self.skill_registry.execute("reminder", reminder_request, source="terminal")
+                    self._public_lookup_policy = None
+                    self._remember_turn(stripped, result.output)
+                    return await self._send_direct_response(result.output, result.emote_suggestion)
                 if CAMERA_MEMORY_REQUEST.fullmatch(stripped):
                     return await self._handle_camera_command("/camera list", stripped)
                 if _needs_camera_instruction(stripped, getattr(self, "_recent_turns", ())):

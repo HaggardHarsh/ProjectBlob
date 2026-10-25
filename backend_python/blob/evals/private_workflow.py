@@ -177,8 +177,8 @@ async def run_workflow(root, *, live=False, model=None, memory_model=None):
               and "orion" in pending[0]["message"].casefold()
               and 0 < pending[0]["due_at"] - time.time() <= 16
               and pending[0]["due_at"] >= started
-              and any(item["name"] == "reminder" and item["success"]
-                      and item["source"] == "model" for item in invocation), answer=confirmation)
+              and sum(item["name"] == "reminder" and item["success"]
+                      for item in invocation) == 1, answer=confirmation)
         await close_assistant(blob)
         blob = open_assistant()
         check("reminder_survives_store_reopen", len(blob.skill_registry.get_skill("reminder").reminders) == 1)

@@ -373,7 +373,7 @@ async def test_terminal_can_list_remove_and_clear_files_without_model_calls(tmp_
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("text", ["/camera list", "Remind me to read this PDF in 10 minutes", "What day is today?",
+@pytest.mark.parametrize("text", ["/camera list", "Remind me to read this PDF tomorrow morning", "What day is today?",
                                      "Read the image on my screen", "Make a sad face", "What is the weather in Delhi?"])
 async def test_active_files_preserve_normal_commands_and_explicit_tool_requests(text):
     instance = orchestrator()

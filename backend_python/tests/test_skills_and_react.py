@@ -364,7 +364,9 @@ async def test_reminder_request_without_tool_call_does_not_claim_success():
     orchestrator.llm = SimpleNamespace(generate_from_messages=AsyncMock(return_value=SimpleNamespace(
         content="I set your reminder for five minutes.")))
 
-    answer = await orchestrator.handle_user_message(SimpleNamespace(text="Remind me to stretch in five minutes"))
+    # Model fallbacks still require a real receipt; the direct relative-timer
+    # route is covered separately by test_natural_reminders.
+    answer = await orchestrator._handle_text_message(SimpleNamespace(text="Remind me to stretch in five minutes"))
 
     assert answer.startswith("I haven't set a reminder")
     assert "I set your reminder" not in answer

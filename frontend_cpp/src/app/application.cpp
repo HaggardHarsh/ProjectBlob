@@ -152,7 +152,7 @@ int runDesktop(int argc, char** argv) {
     bool running = true, hovered = false, lastConnected = false;
     BlobExpression expression = BlobExpression::IDLE, secondary = BlobExpression::IDLE;
     float intensity = 0.6f, blend = 0;
-    Uint32 expressionUntil = 0, speakingUntil = 0;
+    Uint32 expressionUntil = 0, speakingUntil = 0, reminderShakeUntil = 0;
     auto persist = [&]() {
         SDL_GetWindowPosition(window.getSDLWindow(), &settings.x, &settings.y); settings.positioned = true;
         if (!demo && !settings.save(settingsPath)) std::cerr << "Could not save desktop preferences.\n";
@@ -257,7 +257,10 @@ int runDesktop(int argc, char** argv) {
                         intensity = 0.45f; expressionUntil = now + 2500;
                         speakingUntil = now + 1600;
                     }
-                } else speakingUntil = now + 1600;
+                } else {
+                    speakingUntil = now + 1600;
+                    if (!notice.delivery_id().empty()) reminderShakeUntil = now + 8000;
+                }
             } else if (event->has_skill_ack()) {
                 expression = event->skill_ack().success() ? BlobExpression::SUCCESS : BlobExpression::ERROR;
                 intensity = 0.7f; expressionUntil = now + 2200;
@@ -302,6 +305,11 @@ int runDesktop(int argc, char** argv) {
         if (!hovered) animation.setAttention(0, 0, false);
         animation.update(dt);
         BlobPose pose = animation.pose();
+        if (!settings.reducedMotion && connected && reminderShakeUntil && !SDL_TICKS_PASSED(now, reminderShakeUntil)) {
+            const float remaining = (reminderShakeUntil - now) / 1000.0f;
+            // Rapid reminder shake, easing out over the final third of a second.
+            pose.shake += 6.0f * std::min(1.0f, remaining / 0.35f) * std::sin((8.0f - remaining) * 75.0f);
+        }
         if (!settings.reducedMotion && !status.paused && connected && speakingUntil && !SDL_TICKS_PASSED(now, speakingUntil))
             pose.mouthOpen = std::max(pose.mouthOpen, 0.25f + 0.30f * (0.5f + 0.5f * std::sin(now * 0.014f)));
         physics.setPose(pose); physics.update(dt);
