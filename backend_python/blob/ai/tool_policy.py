@@ -43,10 +43,13 @@ class ModelToolPolicy:
     public_input: str = ""
     browser_texts: list = field(default_factory=list)
     read_results: dict = field(default_factory=dict)
+    active_project: str | None = None
 
     @classmethod
     def for_request(cls, request, registry, *, required_tool=None, files=False, previous=None, recent=()):
         policy = cls(request)
+        if registry.controls:
+            policy.active_project = registry.controls.state.get("active_project")
         policy.allowed.update(requested_system_tools(request))
         if required_tool:
             policy.allowed.add(required_tool)
@@ -82,6 +85,8 @@ class ModelToolPolicy:
         if name not in self.allowed:
             raise ValueError("That tool was not authorized by the user's request and was not executed.")
         args = dict(args)
+        if "project" in args and args["project"] != self.active_project and args["project"] not in self.request:
+            raise ValueError("Use the active project or a project path supplied in the user's current request.")
         if name == "shell_command":
             command = args.get("command", "").strip()
             diagnostics = set()

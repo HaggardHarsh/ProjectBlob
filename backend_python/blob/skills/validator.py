@@ -115,6 +115,8 @@ class SkillValidator:
                 if not isinstance(raw_arg, dict) or not isinstance(raw_arg.get("name"), str):
                     raise ValueError(f"Tool {tool_name} has an invalid argument.")
                 arg_name = raw_arg["name"]
+                if arg_name == "project":
+                    raise ValueError("'project' is reserved for the tool's working directory; use another argument name.")
                 if not re.fullmatch(r"[a-z][a-z0-9_]*", arg_name) or arg_name in arg_names:
                     raise ValueError(f"Tool {tool_name} has a duplicate or invalid argument name.")
                 arg_names.add(arg_name)

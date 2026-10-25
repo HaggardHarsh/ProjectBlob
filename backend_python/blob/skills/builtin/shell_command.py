@@ -1,12 +1,13 @@
 import subprocess
 import shlex
 from blob.skills.base import SkillInterface, SkillResult
-from blob.skills.contracts import object_schema
+from blob.skills.contracts import PROJECT_ARGUMENT, object_schema
 from blob.skills.command_policy import allowed_command, command_argv
 from blob.skills.process import run_command
 
 class ShellCommandSkill(SkillInterface):
-    argument_schema = object_schema({"command": {"type": "string", "minLength": 1, "maxLength": 2048}}, ("command",))
+    argument_schema = object_schema({"command": {"type": "string", "minLength": 1, "maxLength": 2048},
+                                    "project": dict(PROJECT_ARGUMENT)}, ("command",))
     permissions = ("filesystem.read", "shell.execute")
     @property
     def name(self): return "shell_command"
@@ -32,7 +33,7 @@ class ShellCommandSkill(SkillInterface):
             return SkillResult(f"Command '{cmd}' not allowed for safety.", False, "WORRIED")
             
         try:
-            result = run_command(command_argv(argv), controls=getattr(self, "controls", None))
+            result = run_command(command_argv(argv), controls=getattr(self, "controls", None), cwd=args.get("project"))
             return SkillResult(result.stdout, result.returncode == 0, "THINKING" if result.returncode == 0 else "WORRIED")
         except subprocess.TimeoutExpired:
             return SkillResult("Command timed out.", False, "WORRIED")

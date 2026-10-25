@@ -7,7 +7,7 @@ import time
 from blob.privacy.controls import PrivacyBlocked
 
 
-def sandbox_command(argv, controls):
+def sandbox_command(argv, controls, *, cwd=None):
     controls.check()
     generation = controls.generation
     deadline = time.monotonic() + 3
@@ -21,6 +21,7 @@ def sandbox_command(argv, controls):
     roots = [root for root in controls.folders if root.is_dir() and root.resolve() == root]
     if not roots:
         raise PrivacyBlocked("Approved folders are unavailable or changed. Review /privacy folders.")
+    project = controls.project_directory(cwd)
     controls.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     empty = controls.path.parent / "sandbox-empty"
     fd = os.open(empty, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0), 0o600)
@@ -57,5 +58,5 @@ def sandbox_command(argv, controls):
                     target = Path(directory) / name
                     if not target.is_symlink():
                         command += ["--ro-bind", str(empty), str(target)]
-    command += ["--chdir", str(roots[0]), "--", *argv]
+    command += ["--chdir", str(project), "--", *argv]
     return command

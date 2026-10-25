@@ -7,19 +7,19 @@ import threading
 import time
 
 
-def run_command(argv, *, timeout=10, max_output_bytes=8000, controls=None):
+def run_command(argv, *, timeout=10, max_output_bytes=8000, controls=None, cwd=None):
     started = time.monotonic()
     if controls is not None:
         from blob.privacy.sandbox import sandbox_command
         generation = controls.generation
-        argv = sandbox_command(argv, controls)
+        argv = sandbox_command(argv, controls, cwd=cwd)
         if controls.generation != generation:
             from blob.privacy.controls import PrivacyBlocked
             raise PrivacyBlocked("Privacy settings changed before starting the command.")
     if controls is not None:
         controls.check()
     process = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                               start_new_session=os.name == "posix")
+                               start_new_session=os.name == "posix", cwd=cwd if controls is None else None)
     output = bytearray()
     truncated = [False]
 

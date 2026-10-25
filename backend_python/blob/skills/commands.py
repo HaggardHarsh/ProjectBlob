@@ -5,12 +5,14 @@ import json
 import shlex
 
 from blob.skills.base import SkillResult
+from blob.privacy.controls import PrivacyBlocked
 
 SKILL_HELP = """/skills — list available tools
 /skills <tool> — inspect arguments and permissions
 /skills run <tool> <JSON arguments> — run a tool directly
 /skills history — show recent execution status
 /skills doctor [tool] — check dependencies, privacy and command isolation
+/skills project [path|clear] — inspect or select the active approved project
 Example: /skills run git_status {}
 Example: /skills run weather {"location":"Delhi"}"""
 REMINDER_HELP = """/reminders — list scheduled reminders and IDs
@@ -47,6 +49,24 @@ async def handle_skill_command(registry, text):
                                    not report["load_errors"] and all(item["status"] == "ready" for item in report["tools"]))
             if parts[1] == "help":
                 return SkillResult(SKILL_HELP, True)
+            if parts[1] == "project":
+                tokens = shlex.split(text)
+                controls = registry.controls
+                if not controls:
+                    raise ValueError("Runtime privacy controls are unavailable.")
+                if len(tokens) == 2:
+                    selected = controls.state["active_project"]
+                    if selected:
+                        return SkillResult(f"Active project: {selected}", True)
+                    if len(controls.folders) == 1:
+                        return SkillResult(f"Default project (only approved folder): {controls.folders[0]}", True)
+                    return SkillResult("No active project. Use /skills project /approved/path.\nApproved folders:\n" +
+                                       "\n".join(map(str, controls.folders)), True)
+                if len(tokens) != 3:
+                    raise ValueError("Usage: /skills project [path|clear] (quote paths containing spaces)")
+                selected = controls.select_project(None if tokens[2] == "clear" else tokens[2])
+                controls.cancel_requests()
+                return SkillResult(f"Active project: {selected}" if selected else "Active project cleared.", True)
             if parts[1] == "history":
                 lines = [f"{'OK' if item['success'] else 'FAILED'} · {item['name']} · {item['duration_ms']} ms · {item['source']}"
                          for item in registry.history]
@@ -85,5 +105,5 @@ async def handle_skill_command(registry, text):
         else:
             raise ValueError(REMINDER_HELP)
         return await registry.execute("reminder", args, source="terminal")
-    except (ValueError, TypeError) as exc:
+    except (ValueError, TypeError, OSError, PrivacyBlocked) as exc:
         return SkillResult(str(exc), False, "CONFUSED")

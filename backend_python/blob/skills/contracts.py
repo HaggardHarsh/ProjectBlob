@@ -2,6 +2,9 @@
 
 import math
 
+PROJECT_ARGUMENT = {"type": "string", "minLength": 1, "maxLength": 4096,
+                    "description": "Working directory inside an approved folder. Defaults to the active project."}
+
 
 def object_schema(properties=None, required=()):
     return {"type": "object", "properties": properties or {},

@@ -6,7 +6,7 @@ import subprocess
 
 from blob.skills.base import SkillInterface, SkillResult
 from blob.skills.validator import SkillDefinition, ToolDefinition
-from blob.skills.contracts import object_schema, validate_arguments
+from blob.skills.contracts import PROJECT_ARGUMENT, object_schema, validate_arguments
 from blob.skills.command_policy import allowed_command as _allowed, command_argv
 from blob.skills.process import run_command
 
@@ -22,7 +22,7 @@ class CommandSkill(SkillInterface):
 
     @property
     def argument_schema(self):
-        properties = {}
+        properties = {"project": dict(PROJECT_ARGUMENT)}
         for argument in self.tool.arguments:
             rule = {"type": argument.type, "description": argument.description}
             if not argument.required:
@@ -65,7 +65,7 @@ class CommandSkill(SkillInterface):
         if not _allowed(argv, self.definition.permissions):
             return SkillResult("This command is not allowed by the skill permissions or command policy.", False, self.definition.emote_on_failure)
         try:
-            result = run_command(command_argv(argv), controls=getattr(self, "controls", None))
+            result = run_command(command_argv(argv), controls=getattr(self, "controls", None), cwd=args.get("project"))
         except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
             return SkillResult(f"Command failed: {exc}", False, self.definition.emote_on_failure)
         output = result.stdout

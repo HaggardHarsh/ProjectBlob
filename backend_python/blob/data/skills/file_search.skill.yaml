@@ -29,7 +29,7 @@ skill:
         - name: "directory"
           description: "Starting directory"
           required: false
-          default: "~"
+          default: "."
 
     - name: "find_by_extension"
       description: "Find files with a specific extension"
@@ -41,7 +41,7 @@ skill:
         - name: "directory"
           description: "Starting directory"
           required: false
-          default: "~"
+          default: "."
 
     - name: "find_by_content"
       description: "Search for files containing specific text"
@@ -57,7 +57,7 @@ skill:
         - name: "directory"
           description: "Starting directory"
           required: false
-          default: "~"
+          default: "."
 
     - name: "recent_files"
       description: "Find recently modified files"
@@ -73,7 +73,7 @@ skill:
         - name: "directory"
           description: "Starting directory"
           required: false
-          default: "~"
+          default: "."
 
   response_template: |
     I found these files:

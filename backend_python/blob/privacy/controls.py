@@ -22,13 +22,14 @@ class PrivacyControls:
         maintenance = os.environ.get("BLOB_MAINTENANCE_PATH", "")
         self.maintenance_path = Path(maintenance) if maintenance else None
         self.state = {"paused": False, "cloud_enabled": False, "approved_folders": [], "disabled_skills": [],
-                      "awareness_enabled": False, "proactive_enabled": False}
+                      "awareness_enabled": False, "proactive_enabled": False, "active_project": None}
         if self.path.exists():
             data = json.loads(self.path.read_text())
             if (not isinstance(data, dict) or type(data.get("paused")) is not bool or
                     type(data.get("cloud_enabled")) is not bool or
                     ("awareness_enabled" in data and type(data["awareness_enabled"]) is not bool) or
                     ("proactive_enabled" in data and type(data["proactive_enabled"]) is not bool) or
+                    (data.get("active_project") is not None and not isinstance(data["active_project"], str)) or
                     any(not isinstance(data.get(key), list) or
                         any(not isinstance(item, str) for item in data[key])
                         for key in ("approved_folders", "disabled_skills"))):
@@ -53,6 +54,9 @@ class PrivacyControls:
     def update(self, **changes):
         with self.lock:
             state = {**self.state, **changes}
+            if "approved_folders" in changes and state["active_project"] and not any(
+                    Path(state["active_project"]).is_relative_to(root) for root in state["approved_folders"]):
+                state["active_project"] = None
             self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
             if self.path.parent.stat().st_mode & 0o077:
                 raise ValueError("Privacy settings must be stored in a private directory (0700).")
@@ -131,3 +135,27 @@ class PrivacyControls:
     def allows(self, path):
         resolved = Path(path).expanduser().resolve()
         return any(resolved.is_relative_to(root) for root in self.folders)
+
+    def project_directory(self, requested=None):
+        """Resolve an invocation's directory without silently choosing a project."""
+        selected = requested or self.state["active_project"]
+        if not selected:
+            if len(self.folders) != 1:
+                raise PrivacyBlocked("Select a project with /skills project /approved/path before running commands.")
+            selected = self.folders[0]
+        try:
+            path = Path(selected).expanduser().resolve(strict=True)
+        except (OSError, RuntimeError) as exc:
+            raise PrivacyBlocked("The selected project is unavailable. Review /skills project.") from exc
+        if not path.is_dir() or not self.allows(path):
+            raise PrivacyBlocked("The project must be a directory inside an approved folder. Use /privacy folders.")
+        if any(part in {".ssh", ".aws", ".gnupg", ".blob", ".codex"} for part in path.parts):
+            raise PrivacyBlocked("Credential and Blob storage folders cannot be selected as projects.")
+        return path
+
+    def select_project(self, path=None):
+        with self.lock:
+            self.check()
+            selected = str(self.project_directory(path)) if path is not None else None
+            self.update(active_project=selected)
+            return selected

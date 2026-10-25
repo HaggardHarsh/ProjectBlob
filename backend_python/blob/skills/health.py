@@ -35,6 +35,11 @@ def health(registry, name):
             issues.append("No approved folders. Use /privacy allow /path/to/project.")
         elif not any(root.is_dir() and root.resolve() == root for root in controls.folders):
             issues.append("Approved folders are unavailable or changed. Review /privacy folders.")
+        else:
+            try:
+                controls.project_directory()
+            except (ValueError, RuntimeError, OSError) as exc:
+                issues.append(str(exc))
     elif name == "file_search" and controls and not controls.folders:
         issues.append("No approved folders. Use /privacy allow /path/to/project.")
     return {"name": name, "status": "blocked" if issues else "ready", "issues": issues}
