@@ -33,6 +33,8 @@ class ToolDefinition:
     description: str
     command: str
     arguments: tuple[ToolArgument, ...]
+    triggers: tuple[str, ...] = ()
+    examples: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -46,6 +48,15 @@ class SkillDefinition:
     response_template: str = "{result}"
     emote_on_success: str = "HAPPY"
     emote_on_failure: str = "CONFUSED"
+    examples: tuple[str, ...] = ()
+
+
+def phrase_list(data, key):
+    values = data.get(key, [])
+    if (not isinstance(values, list) or len(values) > 32 or
+            any(not isinstance(value, str) or not value.strip() or len(value) > 500 for value in values)):
+        raise ValueError(f"Skill {key} must be a list of up to 32 nonempty strings (500 characters each).")
+    return tuple(value.strip() for value in values)
 
 
 class SkillValidator:
@@ -151,10 +162,10 @@ class SkillValidator:
             preview = [token.format_map({a.name: str(a.default) for a in arguments}) for token in tokens]
             if not allowed_command(preview, permissions):
                 raise ValueError(f"Tool {tool_name} command is not allowed by the declared permissions or command policy.")
-            tools.append(ToolDefinition(tool_name, str(tool_description or tool_name), command, tuple(arguments)))
-        raw_triggers = data.get("triggers", [])
-        if not isinstance(raw_triggers, list) or any(not isinstance(item, str) for item in raw_triggers):
-            raise ValueError("Skill triggers must be a list of strings.")
+            tools.append(ToolDefinition(tool_name, str(tool_description or tool_name), command, tuple(arguments),
+                                        phrase_list(raw_tool, "triggers"), phrase_list(raw_tool, "examples")))
+        triggers = phrase_list(data, "triggers")
+        examples = phrase_list(data, "examples")
         response_template = data.get("response_template", "{result}")
         if not isinstance(response_template, str) or len(response_template) > 2048:
             raise ValueError("Response template must be a string of at most 2048 characters.")
@@ -169,7 +180,7 @@ class SkillValidator:
             raise ValueError("Skill emotes must use a supported emote name.")
         return SkillDefinition(
             name=name.strip(), slug=slug, description=description.strip(),
-            permissions=permissions, triggers=tuple(raw_triggers), tools=tuple(tools),
+            permissions=permissions, triggers=triggers, tools=tuple(tools), examples=examples,
             response_template=response_template,
             emote_on_success=success_emote,
             emote_on_failure=failure_emote,

@@ -40,6 +40,11 @@ class SkillRegistry:
     def get_skill(self, name):
         return self.skills.get(name)
 
+    def discover(self, request):
+        from blob.skills.discovery import discover
+        disabled = self.controls.state["disabled_skills"] if self.controls else ()
+        return discover(self.skills, request, disabled=disabled)
+
     def describe(self, name):
         skill = self.get_skill(name)
         if skill is None:
@@ -48,7 +53,9 @@ class SkillRegistry:
                 "arguments": getattr(skill, "argument_schema", None),
                 "permissions": sorted(getattr(skill, "permissions", ())),
                 "timeout_seconds": getattr(skill, "timeout_seconds", 15),
-                "model_callable": getattr(skill, "model_callable", True)}
+                "model_callable": getattr(skill, "model_callable", True),
+                "triggers": list(getattr(skill, "triggers", ())),
+                "examples": list((*skill.definition.examples, *skill.tool.examples)) if isinstance(skill, CommandSkill) else []}
 
     def prompt_text(self, *, permitted=None):
         lines = []

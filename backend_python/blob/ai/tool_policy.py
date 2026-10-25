@@ -75,10 +75,7 @@ class ModelToolPolicy:
                 policy.urls.add(public_url(url.rstrip(".,;!?")))
             except ValueError:
                 pass
-        for name in registry.skills:
-            if "." in name and (normalized(name) in normalized(request) or
-                                normalized(name.split(".")[0]) in normalized(request)):
-                policy.allowed.add(name)
+        policy.allowed.update(match["name"] for match in registry.discover(request))
         return policy
 
     def arguments(self, name, args):
