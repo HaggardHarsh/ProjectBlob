@@ -24,6 +24,10 @@ Omit it when those are already installed. Setup never runs pip as root or change
 the system Python. Downloads need an internet connection and several GB of free
 space. The C++ build uses two jobs by default; use `--jobs 1` on smaller machines.
 
+On Ubuntu 24.04, AppArmor can block the downloaded Chromium sandbox. If setup
+stops at the browser check, follow [Ubuntu AppArmor sandbox setup](#ubuntu-apparmor-sandbox-setup)
+below and rerun the same installer command.
+
 The installer requires Python 3.11 or newer before it starts; it does not replace
 the OS interpreter. On older systems, install a supported Python with venv support
 first, then invoke that interpreter explicitly, for example
@@ -146,13 +150,79 @@ journalctl --user -u blob-backend -u blob-overlay -n 80
 An Ubuntu/Debian machine missing browser libraries should rerun with
 `--install-system-deps`. On other distributions, use the missing-library report
 and install the corresponding native packages before retrying without that flag.
-If Chromium reports no usable sandbox on Ubuntu with restricted AppArmor user
-namespaces, configure a profile for its actual executable using the
-[Chromium guidance](https://chromium.googlesource.com/chromium/src/+/main/docs/security/apparmor-userns-restrictions.md),
-then retry setup. The CI profile targets only `/home/runner` and is not a desktop
-policy. Setup never bypasses the browser sandbox or changes the global namespace
-restriction.
 Existing manual installation and `make desktop-install` remain available; see
 [desktop lifecycle](desktop_privacy.md). The source installer is a first step
 toward distribution, not a signed standalone application package.
 See [verification results](evals/launch_criticals.md) for tested paths and remaining checks.
+
+## Ubuntu AppArmor sandbox setup
+
+A fresh Ubuntu 24.04 desktop VM required this extra configuration before Blob's
+Chromium installation check could pass. The installer can report
+`Chromium's sandbox could not start`; Chromium may report `No usable sandbox`.
+Check the kernel log to distinguish an AppArmor denial from missing libraries:
+
+```bash
+sudo journalctl -k -b --no-pager | grep -Ei 'apparmor|userns|chrome|bwrap' | tail -30
+```
+
+If the log shows Chromium entering `unprivileged_userns` followed by an AppArmor
+`DENIED` entry, allow user namespaces for the downloaded browser executables.
+Run the following as your normal desktop user in the Ubuntu machine where Blob
+is being installed (inside the VM when testing in VirtualBox):
+
+```bash
+sudo tee /etc/apparmor.d/blob-playwright >/dev/null <<EOF
+abi <abi/4.0>,
+include <tunables/global>
+
+profile blob-playwright "$HOME/.cache/ms-playwright/**/{chrome,chrome-headless-shell}" flags=(unconfined) {
+  userns,
+}
+EOF
+
+sudo apparmor_parser -r /etc/apparmor.d/blob-playwright
+```
+
+The shell expands `$HOME` to your own home directory; do not replace it with the
+tester's username or run this block from a root shell. If Playwright uses a custom
+browser directory, use the executable location reported in the error instead.
+The command is `apparmor_parser` with an **underscore**.
+
+Once the profile loads without errors, rerun from the ProjectBlob checkout:
+
+```bash
+python3 tools/setup.py --install-system-deps
+```
+
+No reboot is needed. Setup creates a new candidate and repeats its checks; cached
+downloads and installed system packages can be reused. This follows
+[Chromium's AppArmor guidance](https://chromium.googlesource.com/chromium/src/+/main/docs/security/apparmor-userns-restrictions.md).
+It keeps Chromium's sandbox enabled and leaves the system-wide AppArmor
+user-namespace restriction in place. Do not use `--no-sandbox` or disable AppArmor
+to make the check pass. The repository's `deploy/ci/apparmor-playwright` profile
+targets `/home/runner` and must not be installed unchanged on a desktop.
+
+### If AppArmor also blocks local command tools
+
+Blob uses Bubblewrap for read-only command isolation. If `/skills doctor` reports
+that isolation cannot start and the kernel log shows AppArmor denials for
+`/usr/bin/bwrap`, add its own user-namespace profile:
+
+```bash
+sudo tee /etc/apparmor.d/blob-bwrap >/dev/null <<'EOF'
+abi <abi/4.0>,
+include <tunables/global>
+
+profile blob-bwrap /usr/bin/bwrap flags=(unconfined) {
+  userns,
+}
+EOF
+
+sudo apparmor_parser -r /etc/apparmor.d/blob-bwrap
+```
+
+Then run `/skills doctor` again in Blob Chat. Folder approval is still required
+before file and command tools can read a project. These profiles permit user
+namespaces for the named executables; they do not grant Blob access to additional
+folders or turn off its command sandbox.

@@ -109,6 +109,8 @@ python3 tools/setup.py --install-system-deps
 
 The installer creates a separate runtime, installs Python dependencies and the browser, builds and checks the C++ overlay, and sets up per-user desktop services. It uses `sudo` for system packages. Allow several GB for dependencies and browser downloads.
 
+**Ubuntu 24.04 AppArmor setup:** If installation stops with “Chromium's sandbox could not start,” follow the [AppArmor setup instructions](docs/setup.md#ubuntu-apparmor-sandbox-setup), then rerun the installer. This was required in a fresh Ubuntu 24.04 desktop VM. The instructions keep Chromium's sandbox enabled and also cover AppArmor blocking Bubblewrap command tools.
+
 An interactive installation can ask for your API key through a masked prompt and save it in a private `.env` file. You can skip the key and add it later. Setup leaves existing `.env` files unchanged.
 
 After installation, double-click the slime or open **Blob Chat** from your application launcher. At the **`Blob>` prompt**, enter:
