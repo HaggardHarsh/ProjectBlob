@@ -11,7 +11,7 @@ OCR, Hermes and OpenShell are optional source-install features, not included her
 Download the `.deb`, open a terminal in its directory, then run:
 
 ```bash
-sudo apt install ./projectblob_0.1.0~demo1_amd64.deb
+sudo apt install ./*.deb
 blob-setup
 ```
 
