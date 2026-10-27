@@ -97,7 +97,16 @@ The Python backend handles conversation, retrieval, tools, and state. The C++ ov
 - **Optional screen features:** Local OCR and a working desktop capture integration. GNOME Wayland requires Blob's screen bridge.
 - **Optional camera features:** A camera and OpenCV's vision extra.
 
-### Recommended: fresh Ubuntu/Debian installation
+### Prebuilt Ubuntu 24.04 package
+
+The downloadable `.deb` test build targets Ubuntu Desktop 24.04 on Intel/AMD
+64-bit systems. It bundles the compiled companion, Python dependencies,
+Chromium headless shell and the local embedding model. Install a release asset
+with `sudo apt install ./projectblob_0.1.0~demo1_amd64.deb`, then run `blob-setup`
+as your normal desktop user. See the [package installation and build guide](deploy/debian/README.md)
+for credentials, existing source installations, removal and build instructions.
+
+### Fresh Ubuntu/Debian source installation
 
 Run from a terminal inside your graphical desktop, as your normal user:
 
